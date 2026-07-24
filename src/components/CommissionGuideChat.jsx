@@ -60,10 +60,11 @@ export default function CommissionGuideChat() {
       {/* Floating button */}
       <button
         onClick={handleOpen}
-        className="fixed bottom-24 right-[4.75rem] z-30 flex h-12 w-12 items-center justify-center rounded-full bg-brass text-obsidian shadow-lg shadow-brass/20 transition-all hover:scale-105 hover:bg-brass-light md:bottom-40 md:right-8 md:h-12 md:w-12"
+        className="fixed bottom-[calc(9.25rem+env(safe-area-inset-bottom))] right-4 z-30 flex h-12 w-12 items-center justify-center gap-2 rounded-full bg-brass px-3 text-obsidian shadow-lg shadow-brass/20 transition-all hover:scale-105 hover:bg-brass-light focus-visible:ring-2 focus-visible:ring-ivory md:bottom-[5.5rem] md:right-8 md:w-28"
         aria-label="Open commission guide"
       >
         <MessageCircle size={20} />
+        <span className="hidden text-xs font-medium md:inline">Art Guide</span>
       </button>
 
       {/* Chat panel */}
