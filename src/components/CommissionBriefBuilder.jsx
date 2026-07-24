@@ -138,7 +138,7 @@ export default function CommissionBriefBuilder({ form, set }) {
                     <div className="bg-carbon p-4 border border-brass/20">
                       <p className="text-brass text-2xl font-display">{pricing.priceRange}</p>
                       <p className="text-ivory/50 text-xs leading-relaxed mt-1">{pricing.rationale}</p>
-                      <p className="text-ivory/40 text-xs mt-2">50% deposit to begin: <span className="text-brass">${pricing.deposit}</span></p>
+                      <p className="text-ivory/40 text-xs mt-2">50% deposit to begin: <span className="text-brass">GH₵ {Number(pricing.deposit).toLocaleString()}</span></p>
                     </div>
                   )}
                   {pricing?.error && <p className="text-red-400/60 text-xs">{pricing.error}</p>}

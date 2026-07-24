@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Image, ShoppingBag, MessageSquare, BookOpen,
-  Users, Plus, Trash2, Pencil, Video, FileText, X, Check, Settings, Star, Download, MoreHorizontal, PackageCheck, Activity, PanelsTopLeft, Library
+  Users, Plus, Trash2, Pencil, Video, FileText, X, Check, Settings, Star, Download, MoreHorizontal, PackageCheck, Activity, PanelsTopLeft, Library, ArchiveRestore
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import PageTransition from '@/components/PageTransition';
@@ -21,12 +21,14 @@ import OrdersTab from '@/components/admin/OrdersTab';
 import SystemTab from '@/components/admin/SystemTab';
 import HeroSlidesTab from '@/components/admin/HeroSlidesTab';
 import MediaLibraryTab from '@/components/admin/MediaLibraryTab';
+import RecycleBinTab from '@/components/admin/RecycleBinTab';
 
 const allTabs = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'gallery', label: 'Gallery', icon: Image },
   { id: 'banners', label: 'Home Banners', icon: PanelsTopLeft },
   { id: 'media', label: 'Media Library', icon: Library },
+  { id: 'recycle', label: 'Recycle Bin', icon: ArchiveRestore },
   { id: 'videos', label: 'Videos', icon: Video },
   { id: 'shop', label: 'Shop', icon: ShoppingBag },
   { id: 'commissions', label: 'Commissions', icon: MessageSquare },
@@ -122,7 +124,7 @@ export default function Admin() {
   const { user } = useAuth();
   const roleTabs = {
     admin: allTabs.map(tab => tab.id),
-    editor: ['overview', 'gallery', 'banners', 'media', 'videos', 'shop', 'testimonials', 'quotes', 'pages', 'blog'],
+    editor: ['overview', 'gallery', 'banners', 'media', 'recycle', 'videos', 'shop', 'testimonials', 'quotes', 'pages', 'blog'],
     support: ['overview', 'inbox', 'commissions', 'orders'],
   };
   const tabs = allTabs.filter(tab => roleTabs[user?.role || 'support'].includes(tab.id));
@@ -144,8 +146,8 @@ export default function Admin() {
   const [showAddBlog, setShowAddBlog] = useState(false);
   const [bulkImport, setBulkImport] = useState(null); // 'artwork' | 'product' | null
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [newVideo, setNewVideo] = useState({ title: '', videoUrl: '', thumbnailUrl: '', category: 'Process', description: '', duration: '', isFeatured: false });
-  const [newArtwork, setNewArtwork] = useState({ title: '', category: 'Portraits', imageUrl: '', medium: '', description: '', price: '' });
+  const [newVideo, setNewVideo] = useState({ title: '', videoUrl: '', thumbnailUrl: '', category: 'Process', description: '', duration: '', isFeatured: false, status: 'draft' });
+  const [newArtwork, setNewArtwork] = useState({ title: '', category: 'Portraits', imageUrl: '', medium: '', description: '', price: '', status: 'draft' });
   const pendingMessageCount = messages.filter(message => !['replied', 'archived', 'spam'].includes(message.status)).length;
 
   useEffect(() => {
@@ -205,14 +207,14 @@ export default function Admin() {
     const v = await studioClient.entities.Video.create(newVideo);
     setVideos(prev => [v, ...prev]);
     setShowAddVideo(false);
-    setNewVideo({ title: '', videoUrl: '', thumbnailUrl: '', category: 'Process', description: '', duration: '', isFeatured: false });
+    setNewVideo({ title: '', videoUrl: '', thumbnailUrl: '', category: 'Process', description: '', duration: '', isFeatured: false, status: 'draft' });
   };
 
   const addArtwork = async () => {
     const a = await studioClient.entities.Artwork.create(newArtwork);
     setArtworks(prev => [a, ...prev]);
     setShowAddArtwork(false);
-    setNewArtwork({ title: '', category: 'Portraits', imageUrl: '', medium: '', description: '', price: '' });
+    setNewArtwork({ title: '', category: 'Portraits', imageUrl: '', medium: '', description: '', price: '', status: 'draft' });
   };
 
   const addProduct = async (data) => {
@@ -457,7 +459,7 @@ export default function Admin() {
                       )}
                       <div className="p-4">
                         <p className="text-ivory/80 font-tight text-sm">{p.title}</p>
-                        <p className="text-brass text-sm font-display mt-0.5">${p.price}</p>
+                        <p className="text-brass text-sm font-display mt-0.5">GH₵ {Number(p.price || 0).toLocaleString()}</p>
                         <p className="text-ivory/40 font-tight text-xs">{p.type}</p>
                         <div className="flex items-center gap-2 mt-3">
                           <button onClick={() => { setEditItem(p); setEditType('product'); }}
@@ -537,6 +539,7 @@ export default function Admin() {
           {activeTab === 'testimonials' && <TestimonialsTab />}
           {activeTab === 'banners' && <HeroSlidesTab />}
           {activeTab === 'media' && <MediaLibraryTab />}
+          {activeTab === 'recycle' && <RecycleBinTab />}
           {activeTab === 'quotes' && <QuotesTab />}
           {activeTab === 'inbox' && <InboxTab messages={messages} setMessages={setMessages} />}
           {activeTab === 'orders' && <OrdersTab />}
@@ -634,9 +637,11 @@ export default function Admin() {
               { key: 'medium', label: 'Medium' },
               { key: 'dimensions', label: 'Dimensions' },
               { key: 'year', label: 'Year' },
-              { key: 'price', label: 'Price ($)', type: 'number' },
+              { key: 'price', label: 'Price (GHS)', type: 'number' },
               { key: 'description', label: 'Description', type: 'textarea' },
               { key: 'isFeatured', label: 'Featured?', type: 'checkbox' },
+              { key: 'status', label: 'Publishing status', type: 'select', options: ['draft', 'published', 'archived'] },
+              { key: 'scheduledAt', label: 'Publish after', type: 'datetime-local' },
             ]}
           />
         )}
@@ -651,6 +656,8 @@ export default function Admin() {
               { key: 'duration', label: 'Duration (e.g. 4:30)' },
               { key: 'description', label: 'Description', type: 'textarea' },
               { key: 'isFeatured', label: 'Featured?', type: 'checkbox' },
+              { key: 'status', label: 'Publishing status', type: 'select', options: ['draft', 'published', 'archived'] },
+              { key: 'scheduledAt', label: 'Publish after', type: 'datetime-local' },
             ]}
           />
         )}
@@ -661,11 +668,13 @@ export default function Admin() {
               { key: 'title', label: 'Title' },
               { key: 'type', label: 'Type', type: 'select', options: ['Print', 'Framed', 'Digital Download', 'Original'] },
               { key: 'imageUrl', label: 'Product Image', type: 'upload', accept: 'image/*' },
-              { key: 'price', label: 'Price ($)', type: 'number' },
-              { key: 'stock', label: 'Stock', type: 'number' },
+              { key: 'price', label: 'Price (GHS)', type: 'number' },
+              { key: 'inventory', label: 'Inventory', type: 'number' },
               { key: 'dimensions', label: 'Dimensions' },
               { key: 'description', label: 'Description', type: 'textarea' },
               { key: 'isFeatured', label: 'Featured?', type: 'checkbox' },
+              { key: 'status', label: 'Publishing status', type: 'select', options: ['draft', 'published', 'archived'] },
+              { key: 'scheduledAt', label: 'Publish after', type: 'datetime-local' },
             ]}
           />
         )}
@@ -680,6 +689,7 @@ export default function Admin() {
               { key: 'publishedDate', label: 'Published Date', type: 'date' },
               { key: 'readTime', label: 'Read Time (minutes)', type: 'number' },
               { key: 'content', label: 'Content', type: 'textarea' },
+              { key: 'status', label: 'Publishing status', type: 'select', options: ['draft', 'published'] },
             ]}
           />
         )}
@@ -725,6 +735,9 @@ export default function Admin() {
                   <input type="checkbox" checked={newVideo.isFeatured} onChange={e => setNewVideo(p => ({ ...p, isFeatured: e.target.checked }))} className="accent-brass" />
                   <span className="text-ivory/60 text-sm">Mark as featured</span>
                 </label>
+                <select value={newVideo.status} onChange={event => setNewVideo(current => ({ ...current, status: event.target.value }))} className="w-full border border-brass/20 bg-obsidian px-4 py-3 text-sm text-ivory">
+                  <option value="draft">Save as draft</option><option value="published">Publish now</option>
+                </select>
               </div>
               <button onClick={addVideo} disabled={!newVideo.title || !newVideo.videoUrl}
                 className="w-full flex items-center justify-center gap-2 bg-brass text-obsidian py-3 font-tight text-sm tracking-widest uppercase hover:bg-brass-light transition-all mt-6 disabled:opacity-30">
@@ -745,7 +758,7 @@ export default function Admin() {
               <button onClick={() => setShowAddArtwork(false)} className="absolute top-5 right-5 text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>
               <h3 className="font-display text-2xl text-ivory mb-6">Add Artwork</h3>
               <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
-                {[['Title *', 'title'], ['Medium', 'medium'], ['Dimensions', 'dimensions'], ['Year', 'year'], ['Price ($)', 'price']].map(([label, key]) => (
+                {[['Title *', 'title'], ['Medium', 'medium'], ['Dimensions', 'dimensions'], ['Year', 'year'], ['Price (GHS)', 'price']].map(([label, key]) => (
                   <div key={key}>
                     <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">{label}</label>
                     <input value={newArtwork[key] || ''} onChange={e => setNewArtwork(p => ({ ...p, [key]: e.target.value }))}
@@ -761,6 +774,9 @@ export default function Admin() {
                     {ARTWORK_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
+                <select value={newArtwork.status} onChange={event => setNewArtwork(current => ({ ...current, status: event.target.value }))} className="w-full border border-brass/20 bg-obsidian px-4 py-3 text-sm text-ivory">
+                  <option value="draft">Save as draft</option><option value="published">Publish now</option>
+                </select>
                 <div>
                   <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">Description</label>
                   <textarea value={newArtwork.description} onChange={e => setNewArtwork(p => ({ ...p, description: e.target.value }))}

@@ -3,11 +3,13 @@ import { Link } from 'react-router-dom';
 import { Loader2, Lock, Mail, User, UserPlus } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import AuthLayout from '@/components/AuthLayout';
+import TurnstileWidget from '@/components/TurnstileWidget';
 
 export default function Register() {
   const [form, setForm] = useState({ full_name: '', email: '', password: '', confirm: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
 
   const submit = async event => {
     event.preventDefault();
@@ -16,7 +18,7 @@ export default function Register() {
     if (form.password.length < 12) return setError('Use at least 12 characters with uppercase, lowercase, and a number.');
     setLoading(true);
     try {
-      await studioClient.auth.register({ full_name: form.full_name, email: form.email, password: form.password });
+      await studioClient.auth.register({ full_name: form.full_name, email: form.email, password: form.password, turnstileToken });
       const redirect = new URLSearchParams(window.location.search).get('redirect') || '/';
       window.location.assign(redirect.startsWith('/') ? redirect : '/');
     } catch (err) {
@@ -47,6 +49,7 @@ export default function Register() {
           </label>
         ))}
         <p className="text-xs text-ivory/40">Passwords require at least 12 characters, uppercase and lowercase letters, and a number.</p>
+        <TurnstileWidget onToken={setTurnstileToken} />
         <button disabled={loading} className="flex w-full items-center justify-center gap-2 bg-brass py-3.5 text-sm uppercase tracking-wider text-obsidian disabled:opacity-50">
           {loading && <Loader2 className="animate-spin" size={16} />} Create account
         </button>

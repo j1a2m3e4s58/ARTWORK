@@ -16,6 +16,7 @@ export default function Account() {
   const [data, setData] = useState({ messages: [], commissions: [], orders: [], notifications: [] });
   const [name, setName] = useState(user?.full_name || '');
   const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '' });
+  const [closePassword, setClosePassword] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
@@ -81,9 +82,14 @@ export default function Account() {
   };
 
   const removeAccount = async () => {
+    if (!closePassword) return setError('Enter your current password before closing the account.');
     if (!window.confirm('Permanently close your account? Your business records will be retained only where legally required.')) return;
-    await studioClient.account.remove();
-    await logout();
+    try {
+      await studioClient.account.remove(closePassword);
+      await logout();
+    } catch (removeError) {
+      setError(removeError.message);
+    }
   };
   const logoutAll = async () => {
     await studioClient.account.logoutAll();
@@ -183,6 +189,7 @@ export default function Account() {
 
               <div className="border border-brass/10 bg-carbon p-5">
                 <button onClick={exportData} className="flex w-full items-center gap-2 border border-ivory/10 px-4 py-3 text-sm text-ivory/65"><Download size={15} /> Download my data</button>
+                <input type="password" autoComplete="current-password" value={closePassword} onChange={event => setClosePassword(event.target.value)} placeholder="Current password to close account" className="mt-3 min-h-11 w-full border border-red-400/15 bg-obsidian px-3 text-sm text-ivory" />
                 <button onClick={removeAccount} className="mt-3 flex w-full items-center gap-2 border border-red-400/15 px-4 py-3 text-sm text-red-300"><Trash2 size={15} /> Close account</button>
               </div>
             </aside>

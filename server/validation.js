@@ -47,6 +47,18 @@ export const schemas = {
     })).min(1).max(50),
     total: z.coerce.number().nonnegative().max(10000000),
     channel: z.enum(['whatsapp', 'manual', 'paystack']).default('whatsapp'),
+    deliveryMethod: z.enum(['digital', 'pickup', 'delivery']).default('delivery'),
+    shippingAddress: z.object({
+      recipientName: text(160),
+      phone: text(40),
+      addressLine1: text(240),
+      addressLine2: optionalText(240),
+      city: text(120),
+      region: optionalText(120),
+      country: text(120),
+      postalCode: optionalText(30),
+    }).optional(),
+    customerNote: optionalText(2000),
   }),
   Artwork: z.object({
     title: text(200), category: optionalText(100), imageUrl: safeUrl,

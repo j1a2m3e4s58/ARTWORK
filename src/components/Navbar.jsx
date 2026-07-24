@@ -10,21 +10,26 @@ const navLinks = [
   { label: 'Home', path: '/' },
   { label: 'Gallery', path: '/gallery' },
   { label: 'Commission', path: '/commission' },
-  { label: 'Shop', path: '/shop' },
-  { label: 'Videos', path: '/videos' },
+  { label: 'Available Works', path: '/shop', settingKey: 'show_shop' },
   { label: 'About', path: '/about' },
-  { label: 'Blog', path: '/blog' },
   { label: 'Contact', path: '/contact' },
+];
+const secondaryLinks = [
+  { label: 'Videos', path: '/videos', settingKey: 'show_videos' },
+  { label: 'Journal', path: '/blog', settingKey: 'show_blog' },
 ];
 
 export default function Navbar() {
   const settings = useSettings();
   const { user, logout } = useAuth();
-  const visibleLinks = navLinks.filter(link => {
-    const key = `show_${link.label.toLowerCase()}`;
-    if (['Videos', 'Blog'].includes(link.label)) return settings[key] === 'true';
+  const isVisible = link => {
+    const key = link.settingKey || `show_${link.label.toLowerCase()}`;
+    if (['show_videos', 'show_blog'].includes(key)) return settings[key] === 'true';
     return settings[key] !== 'false';
-  });
+  };
+  const visiblePrimaryLinks = navLinks.filter(isVisible);
+  const visibleSecondaryLinks = secondaryLinks.filter(isVisible);
+  const visibleLinks = [...visiblePrimaryLinks, ...visibleSecondaryLinks];
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
@@ -75,7 +80,7 @@ export default function Navbar() {
 
           {/* Desktop nav */}
           <div className="hidden lg:flex items-center gap-5 xl:gap-7">
-            {visibleLinks.map((link) => (
+            {visiblePrimaryLinks.map((link) => (
               <Link
                 key={link.path}
                 to={link.path}
@@ -89,6 +94,14 @@ export default function Navbar() {
                 }`} />
               </Link>
             ))}
+            {visibleSecondaryLinks.length > 0 && (
+              <details className="group relative">
+                <summary className="cursor-pointer list-none font-tight text-sm tracking-wide text-ivory/60 hover:text-ivory">Explore</summary>
+                <div className="absolute left-1/2 top-8 min-w-40 -translate-x-1/2 border border-brass/15 bg-carbon/95 p-2 shadow-2xl backdrop-blur-xl">
+                  {visibleSecondaryLinks.map(link => <Link key={link.path} to={link.path} className="block px-3 py-2 text-sm text-ivory/55 hover:bg-brass/10 hover:text-brass">{link.label}</Link>)}
+                </div>
+              </details>
+            )}
           </div>
 
           {/* Right actions */}

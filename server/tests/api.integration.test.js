@@ -35,8 +35,8 @@ test('API keeps public reads open while blocking unverified customer mutations',
       SITE_URL: baseUrl,
       DATA_DIR: dataDir,
       JWT_SECRET: 'integration-test-secret-that-is-longer-than-32-characters',
-      ADMIN_EMAIL: '',
-      ADMIN_PASSWORD: '',
+      ADMIN_EMAIL: 'admin@example.test',
+      ADMIN_PASSWORD: 'AdminCanvas2026!',
     },
     stdio: 'ignore',
   });
@@ -68,6 +68,43 @@ test('API keeps public reads open while blocking unverified customer mutations',
     assert.equal(protectedResponse.status, 403);
     const payload = await protectedResponse.json();
     assert.equal(payload.code, 'email_verification_required');
+
+    const login = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@example.test', password: 'AdminCanvas2026!' }),
+    });
+    assert.equal(login.status, 200);
+    const adminCookieHeader = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
+    const adminCsrf = decodeURIComponent(adminCookieHeader.match(/atelier_csrf=([^;]+)/)?.[1] || '');
+    const securedHeaders = { 'Content-Type': 'application/json', Cookie: adminCookieHeader, 'X-CSRF-Token': adminCsrf };
+    const productResponse = await fetch(`${baseUrl}/api/entities/ShopProduct`, {
+      method: 'POST',
+      headers: securedHeaders,
+      body: JSON.stringify({ title: 'Numbered Studio Print', type: 'Print', price: 250, imageUrl: 'https://example.com/print.jpg', inventory: 2, status: 'published' }),
+    });
+    assert.equal(productResponse.status, 201);
+    const product = await productResponse.json();
+    const orderPayload = {
+      items: [{ productId: product.id, title: product.title, price: 1, qty: 1 }],
+      total: 1,
+      channel: 'manual',
+      deliveryMethod: 'pickup',
+    };
+    const orderHeaders = { ...securedHeaders, 'Idempotency-Key': 'integration-order-1' };
+    const firstOrderResponse = await fetch(`${baseUrl}/api/entities/Order`, { method: 'POST', headers: orderHeaders, body: JSON.stringify(orderPayload) });
+    const secondOrderResponse = await fetch(`${baseUrl}/api/entities/Order`, { method: 'POST', headers: orderHeaders, body: JSON.stringify(orderPayload) });
+    assert.equal(firstOrderResponse.status, 201);
+    assert.equal(secondOrderResponse.status, 200);
+    const firstOrder = await firstOrderResponse.json();
+    const secondOrder = await secondOrderResponse.json();
+    assert.equal(firstOrder.id, secondOrder.id);
+    assert.equal(firstOrder.total, 250);
+
+    const cancelResponse = await fetch(`${baseUrl}/api/orders/${firstOrder.id}/cancel`, { method: 'POST', headers: securedHeaders });
+    assert.equal(cancelResponse.status, 200);
+    const productsAfter = await fetch(`${baseUrl}/api/entities/ShopProduct?limit=10`, { headers: { Cookie: adminCookieHeader } }).then(response => response.json());
+    assert.equal(productsAfter.find(item => item.id === product.id).inventory, 2);
   } finally {
     child.kill();
     if (child.exitCode === null) await once(child, 'exit');

@@ -7,9 +7,6 @@ import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import { usePageContent } from '@/hooks/usePageContent';
 
-const CATEGORIES = ['All', 'Process', 'Time-lapse', 'Tutorial', 'Behind the Scenes', 'Commission Reveal'];
-
-
 function formatViews(n) {
   if (!n) return 'New';
   if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
@@ -69,6 +66,7 @@ export default function Videos() {
   }, []);
 
   const allVideos = dbVideos;
+  const categories = ['All', ...new Set(allVideos.map(video => video.category).filter(Boolean))];
   const filtered = activeCategory === 'All' ? allVideos : allVideos.filter(v => v.category === activeCategory);
   const [featured, ...rest] = filtered;
 
@@ -94,7 +92,7 @@ export default function Videos() {
 
         {/* Category filters */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12 mb-12 flex flex-wrap gap-2">
-          {CATEGORIES.map(cat => (
+          {categories.map(cat => (
             <button key={cat} onClick={() => setActiveCategory(cat)}
               className={`font-tight text-xs uppercase tracking-widest px-5 py-2.5 border transition-all duration-300 ${
                 activeCategory === cat ? 'bg-brass text-obsidian border-brass' : 'border-brass/20 text-ivory/50 hover:border-brass/40 hover:text-ivory/80'

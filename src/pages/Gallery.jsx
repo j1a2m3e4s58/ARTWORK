@@ -9,9 +9,6 @@ import GalleryGuidedSearch from '@/components/GalleryGuidedSearch';
 import { usePageContent } from '@/hooks/usePageContent';
 import { useAuth } from '@/lib/AuthContext';
 
-const CATEGORIES = ['All', 'Portraits', 'Sketches', 'Digital Art', 'Pencil Drawings', 'Anime Art', 'Realism'];
-
-
 export default function Gallery() {
   const page = usePageContent('Gallery');
   const { user } = useAuth();
@@ -21,6 +18,7 @@ export default function Gallery() {
   const [lightbox, setLightbox] = useState(null);
   const [likedIds, setLikedIds] = useState([]);
   const [aiResults, setAiResults] = useState(null);
+  const categories = ['All', ...new Set(artworks.map(artwork => artwork.category).filter(Boolean))];
 
   useEffect(() => {
     studioClient.entities.Artwork.list('-created_date', 100).then(data => {
@@ -84,7 +82,7 @@ export default function Gallery() {
         {/* Category filters */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12 mb-12">
           <div className="flex flex-wrap gap-2">
-            {CATEGORIES.map((cat) => (
+            {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}

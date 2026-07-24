@@ -11,7 +11,7 @@ export default function BulkImportModal({ type, onClose, onImported }) {
   const isArtwork = type === 'artwork';
   const sampleCsv = isArtwork
     ? `title,category,imageUrl,medium,dimensions,year,price,description\nMy Portrait,Portraits,https://example.com/img.jpg,Oil on Canvas,24x30in,2024,350,A beautiful portrait`
-    : `title,type,imageUrl,price,stock,dimensions,description\nMy Print,Print,https://example.com/img.jpg,89,5,20x28in,Fine art giclee print`;
+    : `title,type,imageUrl,price,inventory,dimensions,description\nMy Print,Print,https://example.com/img.jpg,89,5,20x28in,Fine art giclee print`;
 
   const handleFile = async (e) => {
     const file = e.target.files[0];
@@ -43,7 +43,7 @@ export default function BulkImportModal({ type, onClose, onImported }) {
     for (const row of rows) {
       const data = { ...row };
       if (data.price) data.price = parseFloat(data.price);
-      if (data.stock) data.stock = parseInt(data.stock);
+      if (data.inventory) data.inventory = parseInt(data.inventory);
       const record = await entity.create(data).catch(() => null);
       if (record) created.push(record); else failed.push(row.title);
     }
@@ -69,7 +69,7 @@ export default function BulkImportModal({ type, onClose, onImported }) {
             <div className="bg-obsidian border border-brass/10 p-4 rounded">
               <p className="text-ivory/40 text-xs font-tight uppercase tracking-widest mb-2">Expected columns:</p>
               <p className="text-ivory/60 text-xs font-mono leading-relaxed">
-                {isArtwork ? 'title, category, imageUrl, medium, dimensions, year, price, description' : 'title, type, imageUrl, price, stock, dimensions, description'}
+                {isArtwork ? 'title, category, imageUrl, medium, dimensions, year, price, description' : 'title, type, imageUrl, price, inventory, dimensions, description'}
               </p>
             </div>
             <a href={`data:text/csv;charset=utf-8,${encodeURIComponent(sampleCsv)}`} download={`${type}_import_template.csv`}

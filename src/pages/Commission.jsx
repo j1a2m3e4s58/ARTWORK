@@ -12,9 +12,9 @@ import CommissionGuideChat from '@/components/CommissionGuideChat';
 import { useAuth } from '@/lib/AuthContext';
 
 const DEFAULT_PACKAGES = [
-  { name: 'Sketch Study', price: '$80', duration: '5-7 days', features: ['One subject', 'Pencil / Charcoal', 'Digital delivery', '1 revision', 'A4 size'] },
-  { name: 'Fine Portrait', price: '$200', duration: '10-14 days', features: ['One subject', 'Choice of medium', 'High-res digital + print', '3 revisions', 'A3 size', 'Certificate of authenticity'], featured: true },
-  { name: 'Masterwork', price: '$450+', duration: '3-5 weeks', features: ['Multiple subjects', 'Premium medium', 'Original shipped worldwide', 'Unlimited revisions', 'Custom size', 'Certificate + framing'] },
+  { name: 'Sketch Study', price: 'GH₵ 800', duration: '5-7 days', features: ['One subject', 'Pencil / Charcoal', 'Digital delivery', '1 revision', 'A4 size'] },
+  { name: 'Fine Portrait', price: 'GH₵ 2,000', duration: '10-14 days', features: ['One subject', 'Choice of medium', 'High-res digital + print', '3 revisions', 'A3 size', 'Certificate of authenticity'], featured: true },
+  { name: 'Masterwork', price: 'GH₵ 4,500+', duration: '3-5 weeks', features: ['Multiple subjects', 'Premium medium', 'Original shipped worldwide', 'Unlimited revisions', 'Custom size', 'Certificate + framing'] },
 ];
 
 const DEFAULT_FAQS = [
@@ -25,7 +25,7 @@ const DEFAULT_FAQS = [
 ];
 
 const ARTWORK_TYPES = ['Portrait', 'Digital Art', 'Sketch', 'Pencil Drawing', 'Anime Art', 'Realism', 'Other'];
-const BUDGETS = ['Under $100', '$100–$250', '$250–$500', '$500–$1,000', '$1,000+'];
+const BUDGETS = ['Under GH₵ 1,000', 'GH₵ 1,000–2,500', 'GH₵ 2,500–5,000', 'GH₵ 5,000–10,000', 'GH₵ 10,000+'];
 
 export default function Commission() {
   const settings = useSettings();

@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
 const provider = process.env.PAYMENT_PROVIDER || 'manual';
 const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
 
@@ -40,4 +42,12 @@ export async function initializePayment({ email, amount, reference, callbackUrl,
 export async function verifyPayment(reference) {
   if (provider !== 'paystack') throw new Error('Secure online checkout is not enabled.');
   return paystackRequest(`/transaction/verify/${encodeURIComponent(reference)}`);
+}
+
+export function verifyPaymentWebhook(rawBody, signature) {
+  if (!paystackSecret || !signature) return false;
+  const expected = createHmac('sha512', paystackSecret).update(rawBody).digest('hex');
+  const first = Buffer.from(expected);
+  const second = Buffer.from(String(signature));
+  return first.length === second.length && timingSafeEqual(first, second);
 }

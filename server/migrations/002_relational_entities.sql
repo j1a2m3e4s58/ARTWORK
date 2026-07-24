@@ -7,7 +7,7 @@ BEGIN
   FOREACH table_name IN ARRAY ARRAY[
     'artworks', 'artwork_likes', 'audit_logs', 'blog_posts',
     'commission_requests', 'hero_slides', 'messages', 'media_assets',
-    'newsletter_subscribers', 'notifications', 'orders', 'email_outbox',
+    'newsletter_subscribers', 'notifications', 'orders', 'email_outbox', 'payment_events',
     'quotes', 'shop_products', 'site_content', 'testimonials', 'users',
     'videos', 'password_reset_tokens', 'invite_tokens',
     'email_verification_tokens'
@@ -35,4 +35,6 @@ CREATE INDEX IF NOT EXISTS messages_user_idx ON messages ((data->>'userId'));
 CREATE INDEX IF NOT EXISTS media_owner_idx ON media_assets ((data->>'userId'));
 CREATE INDEX IF NOT EXISTS commissions_user_idx ON commission_requests ((data->>'userId'));
 CREATE INDEX IF NOT EXISTS orders_user_idx ON orders ((data->>'userId'));
+CREATE INDEX IF NOT EXISTS orders_payment_reference_idx ON orders ((data->>'paymentReference'));
+CREATE UNIQUE INDEX IF NOT EXISTS payment_events_provider_id_idx ON payment_events ((data->>'providerEventId'));
 CREATE INDEX IF NOT EXISTS site_content_key_idx ON site_content ((data->>'key'));

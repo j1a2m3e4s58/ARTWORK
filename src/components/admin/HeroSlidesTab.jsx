@@ -16,6 +16,8 @@ const EMPTY_SLIDE = {
   secondaryLabel: 'Request Commission',
   secondaryLink: '/commission',
   active: true,
+  status: 'draft',
+  scheduledAt: '',
   sortOrder: 0,
 };
 
@@ -109,6 +111,16 @@ function SlideForm({ initialValue, onSave, onCancel, saving }) {
         />
         Visible on the home page
       </label>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="space-y-2"><span className="font-tight text-[10px] uppercase tracking-widest text-ivory/40">Publishing status</span>
+          <select value={form.status || 'published'} onChange={event => set('status', event.target.value)} className="w-full border border-brass/20 bg-obsidian px-4 py-3 text-sm text-ivory">
+            <option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option>
+          </select>
+        </label>
+        <label className="space-y-2"><span className="font-tight text-[10px] uppercase tracking-widest text-ivory/40">Publish after</span>
+          <input type="datetime-local" value={form.scheduledAt || ''} onChange={event => set('scheduledAt', event.target.value)} className="w-full border border-brass/20 bg-obsidian px-4 py-3 text-sm text-ivory" />
+        </label>
+      </div>
 
       <button
         type="button"

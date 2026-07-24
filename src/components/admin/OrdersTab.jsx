@@ -34,7 +34,7 @@ export default function OrdersTab() {
                 </select>
               </div>
               <div className="my-4 space-y-2">
-                {order.items.map(item => <div key={item.productId} className="flex justify-between gap-3 text-sm text-ivory/55"><span>{item.title} × {item.qty}</span><span>${(item.price * item.qty).toFixed(2)}</span></div>)}
+                {order.items.map(item => <div key={item.productId} className="flex justify-between gap-3 text-sm text-ivory/55"><span>{item.title} × {item.qty}</span><span>{order.currency || 'GHS'} {(item.price * item.qty).toLocaleString()}</span></div>)}
               </div>
               <div className="flex justify-between border-t border-brass/10 pt-3"><span className="text-xs uppercase tracking-wider text-ivory/30">Total</span><strong className="font-display text-xl text-brass">${Number(order.total).toFixed(2)}</strong></div>
             </article>

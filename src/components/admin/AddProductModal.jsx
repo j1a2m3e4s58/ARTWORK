@@ -6,7 +6,7 @@ import FileUploadField from './FileUploadField';
 const PRODUCT_TYPES = ['Print', 'Framed', 'Digital Download', 'Original'];
 
 export default function AddProductModal({ onAdd, onClose }) {
-  const [form, setForm] = useState({ title: '', type: 'Print', imageUrl: '', price: '', stock: 1, dimensions: '', description: '', isFeatured: false });
+  const [form, setForm] = useState({ title: '', type: 'Print', imageUrl: '', price: '', inventory: 1, dimensions: '', description: '', isFeatured: false, status: 'draft' });
 
   return (
     <motion.div className="fixed inset-0 z-[9900] flex items-center justify-center p-4"
@@ -18,7 +18,7 @@ export default function AddProductModal({ onAdd, onClose }) {
         <button onClick={onClose} className="absolute top-5 right-5 text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>
         <h3 className="font-display text-2xl text-ivory mb-6">Add Product</h3>
         <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
-          {[['Title *', 'title'], ['Price ($)', 'price'], ['Stock', 'stock'], ['Dimensions', 'dimensions']].map(([label, key]) => (
+          {[['Title *', 'title'], ['Price (GHS)', 'price'], ['Inventory', 'inventory'], ['Dimensions', 'dimensions']].map(([label, key]) => (
             <div key={key}>
               <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">{label}</label>
               <input value={form[key] || ''} onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
@@ -32,6 +32,9 @@ export default function AddProductModal({ onAdd, onClose }) {
               {PRODUCT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
+          <select value={form.status} onChange={event => setForm(current => ({ ...current, status: event.target.value }))} className="w-full border border-brass/20 bg-obsidian px-4 py-3 text-sm text-ivory">
+            <option value="draft">Save as draft</option><option value="published">Publish now</option>
+          </select>
           <FileUploadField label="Product Image" value={form.imageUrl}
             onChange={url => setForm(p => ({ ...p, imageUrl: url }))} accept="image/*" placeholder="Paste URL or upload image" />
           <div>

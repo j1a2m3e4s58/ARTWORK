@@ -13,7 +13,7 @@ const databasePath = path.join(dataDir, 'db.json');
 
 const entityNames = [
   'Artwork', 'ArtworkLike', 'AuditLog', 'BlogPost', 'CommissionRequest', 'HeroSlide', 'Message', 'NewsletterSubscriber',
-  'Media', 'Notification', 'Order', 'Outbox', 'Quote', 'ShopProduct', 'SiteContent',
+  'Media', 'Notification', 'Order', 'Outbox', 'PaymentEvent', 'Quote', 'ShopProduct', 'SiteContent',
   'Testimonial', 'User', 'Video',
 ];
 const tokenCollections = ['passwordResetTokens', 'inviteTokens', 'emailVerificationTokens'];
@@ -31,6 +31,7 @@ const tableNames = {
   Notification: 'notifications',
   Order: 'orders',
   Outbox: 'email_outbox',
+  PaymentEvent: 'payment_events',
   Quote: 'quotes',
   ShopProduct: 'shop_products',
   SiteContent: 'site_content',
@@ -66,6 +67,8 @@ async function createRelationalSchema(client) {
   await client.query('CREATE INDEX IF NOT EXISTS media_owner_idx ON media_assets ((data->>\'userId\'))');
   await client.query('CREATE INDEX IF NOT EXISTS commissions_user_idx ON commission_requests ((data->>\'userId\'))');
   await client.query('CREATE INDEX IF NOT EXISTS orders_user_idx ON orders ((data->>\'userId\'))');
+  await client.query('CREATE INDEX IF NOT EXISTS orders_payment_reference_idx ON orders ((data->>\'paymentReference\'))');
+  await client.query('CREATE UNIQUE INDEX IF NOT EXISTS payment_events_provider_id_idx ON payment_events ((data->>\'providerEventId\'))');
   await client.query('CREATE INDEX IF NOT EXISTS site_content_key_idx ON site_content ((data->>\'key\'))');
 }
 
@@ -171,6 +174,38 @@ export const checkDatabase = async () => {
   const result = await postgresPool.query('SELECT 1 AS ok');
   return { ok: result.rows[0]?.ok === 1, kind: databaseKind };
 };
+export const hasRelationalDatabase = Boolean(postgresPool);
+
+export async function queryCollection(name, { filters = {}, sort = '-created_date', limit = 50, offset = 0, includeDeleted = false } = {}) {
+  if (!postgresPool || !tableNames[name]) return null;
+  const values = [];
+  const where = [];
+  if (!includeDeleted) where.push("COALESCE(data->>'deleted_at', '') = ''");
+  for (const [key, value] of Object.entries(filters)) {
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(key)) continue;
+    values.push(key, String(value));
+    where.push(`data ->> $${values.length - 1} = $${values.length}`);
+  }
+  const descending = String(sort).startsWith('-');
+  const sortKey = String(sort).replace(/^-/, '');
+  const safeSort = /^[A-Za-z][A-Za-z0-9_]*$/.test(sortKey) ? sortKey : 'created_date';
+  values.push(safeSort, Math.min(200, Math.max(1, Number(limit) || 50)), Math.max(0, Number(offset) || 0));
+  const sortParam = values.length - 2;
+  const limitParam = values.length - 1;
+  const offsetParam = values.length;
+  const table = tableNames[name];
+  const condition = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const [records, count] = await Promise.all([
+    postgresPool.query(
+      `SELECT data FROM ${table} ${condition}
+       ORDER BY COALESCE(data ->> $${sortParam}, '') ${descending ? 'DESC' : 'ASC'}
+       LIMIT $${limitParam} OFFSET $${offsetParam}`,
+      values,
+    ),
+    postgresPool.query(`SELECT COUNT(*)::int AS total FROM ${table} ${condition}`, values.slice(0, values.length - 3)),
+  ]);
+  return { records: records.rows.map(row => row.data), total: count.rows[0]?.total || 0 };
+}
 
 for (const name of collectionNames) {
   if (!Array.isArray(db.data[name])) db.data[name] = [];

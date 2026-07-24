@@ -12,13 +12,13 @@ import multer from 'multer';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { fileTypeFromBuffer } from 'file-type';
-import { db, save, newId, now, backupDatabase, databaseKind, closeDatabase, checkDatabase } from './db.js';
+import { db, save, newId, now, backupDatabase, databaseKind, closeDatabase, checkDatabase, queryCollection } from './db.js';
 import { sendEmail, checkEmail } from './email.js';
 import { validateEntity } from './validation.js';
-import { storageProvider, storeFile, checkStorage } from './storage.js';
+import { storageProvider, storeFile, deleteStoredFile, checkStorage } from './storage.js';
 import { authenticator } from 'otplib';
 import QRCode from 'qrcode';
-import { initializePayment, paymentStatus, verifyPayment } from './payments.js';
+import { initializePayment, paymentStatus, verifyPayment, verifyPaymentWebhook } from './payments.js';
 import { canUseProtectedFeature, passwordProblem, requiresProductionMfa } from './security.js';
 import { reportOperationalError } from './operations.js';
 
@@ -35,6 +35,7 @@ if (!jwtSecret || jwtSecret.length < 32) {
 }
 
 const app = express();
+app.post('/api/payments/webhook', express.raw({ type: 'application/json', limit: '512kb' }), handlePaymentWebhook);
 app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
@@ -45,10 +46,11 @@ app.use(helmet({
       imgSrc: ["'self'", 'data:', 'https:'],
       mediaSrc: ["'self'", 'https:'],
       frameSrc: ["'self'", 'https://www.youtube.com', 'https://player.vimeo.com'],
-      connectSrc: ["'self'", 'https://api.cloudinary.com'],
+      connectSrc: ["'self'", 'https://api.cloudinary.com', 'https://challenges.cloudflare.com'],
       styleSrc: ["'self'", "'unsafe-inline'"],
       fontSrc: ["'self'", 'data:'],
-      scriptSrc: ["'self'"],
+      scriptSrc: ["'self'", 'https://challenges.cloudflare.com'],
+      childSrc: ["'self'", 'https://challenges.cloudflare.com'],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
@@ -89,6 +91,26 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
 });
+const turnstileConfigured = Boolean(process.env.TURNSTILE_SECRET_KEY);
+async function verifyHuman(req, res, next) {
+  if (!turnstileConfigured) return next();
+  if (req.params.name && req.params.name !== 'NewsletterSubscriber') return next();
+  const responseToken = String(req.body.turnstileToken || '');
+  if (!responseToken) return res.status(400).json({ error: 'Complete the human verification challenge.' });
+  try {
+    const body = new URLSearchParams({
+      secret: process.env.TURNSTILE_SECRET_KEY,
+      response: responseToken,
+      remoteip: req.ip,
+    });
+    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body, signal: AbortSignal.timeout(8000) });
+    const result = await response.json();
+    if (!result.success) return res.status(400).json({ error: 'Human verification failed. Please try again.' });
+    next();
+  } catch {
+    res.status(503).json({ error: 'Human verification is temporarily unavailable.' });
+  }
+}
 
 const publicRead = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
 const authenticatedCreate = new Set(['CommissionRequest', 'Message', 'Order']);
@@ -100,6 +122,81 @@ const hashToken = token => createHash('sha256').update(token).digest('hex');
 const token = () => randomBytes(32).toString('hex');
 const secureCookie = process.env.NODE_ENV === 'production';
 const encryptionKey = createHash('sha256').update(jwtSecret).digest();
+
+function reserveOrderInventory(order) {
+  const reservations = order.items.map((item) => {
+    const product = db.data.ShopProduct.find(candidate => candidate.id === item.productId && !candidate.deleted_at);
+    if (!product) throw Object.assign(new Error(`${item.title || 'A product'} is no longer available.`), { status: 409 });
+    if (Number.isInteger(product.inventory)) {
+      if (product.inventory < item.qty) throw Object.assign(new Error(`Only ${product.inventory} of “${product.title}” remain.`), { status: 409 });
+    }
+    return { product, qty: item.qty };
+  });
+  const reserved = [];
+  reservations.forEach(({ product, qty }) => {
+    if (!Number.isInteger(product.inventory)) return;
+    product.inventory -= qty;
+    reserved.push({ productId: product.id, qty });
+  });
+  order.inventoryReserved = reserved.length > 0;
+  order.reservedItems = reserved;
+  order.inventoryReservedAt = now();
+}
+
+function releaseOrderInventory(order) {
+  if (!order.inventoryReserved || order.inventoryReleasedAt) return;
+  for (const item of order.reservedItems || []) {
+    const product = db.data.ShopProduct.find(candidate => candidate.id === item.productId);
+    if (product && Number.isInteger(product.inventory)) product.inventory += item.qty;
+  }
+  order.inventoryReleasedAt = now();
+  order.inventoryReserved = false;
+}
+
+async function confirmPaidOrder(order, payment, providerEventId) {
+  if (order.paymentStatus === 'paid') return false;
+  const expectedAmount = Math.round(Number(order.total) * 100);
+  if (payment.status !== 'success' || Number(payment.amount) !== expectedAmount || payment.currency !== paymentStatus.currency) {
+    order.paymentStatus = payment.status || 'failed';
+    return false;
+  }
+  order.paymentStatus = 'paid';
+  order.status = 'confirmed';
+  order.paidAt = payment.paid_at || now();
+  order.paymentTransactionId = String(payment.id || providerEventId || '');
+  order.statusHistory ||= [];
+  order.statusHistory.push({ status: 'confirmed', at: now(), actorId: 'payment-provider' });
+  return true;
+}
+
+async function handlePaymentWebhook(req, res) {
+  if (!verifyPaymentWebhook(req.body, req.get('x-paystack-signature'))) return res.status(401).send('Invalid signature');
+  let payload;
+  try {
+    payload = JSON.parse(req.body.toString('utf8'));
+  } catch {
+    return res.status(400).send('Invalid payload');
+  }
+  const providerEventId = String(payload.data?.id || `${payload.event}:${payload.data?.reference || ''}`);
+  if (db.data.PaymentEvent.some(event => event.providerEventId === providerEventId)) return res.status(200).send('Already processed');
+  const eventRecord = {
+    id: newId(), provider: 'paystack', providerEventId, type: payload.event,
+    reference: payload.data?.reference || '', created_date: now(),
+  };
+  db.data.PaymentEvent.push(eventRecord);
+  if (payload.event === 'charge.success') {
+    const order = db.data.Order.find(item => item.paymentReference === payload.data?.reference);
+    if (order) {
+      const paid = await confirmPaidOrder(order, payload.data, providerEventId);
+      eventRecord.orderId = order.id;
+      eventRecord.result = paid ? 'confirmed' : 'ignored';
+    } else {
+      eventRecord.result = 'order_not_found';
+    }
+  }
+  await save();
+  res.status(200).send('Accepted');
+}
 
 function encrypt(value) {
   const iv = randomBytes(12);
@@ -179,6 +276,29 @@ async function processEmailOutbox() {
   } finally {
     outboxProcessing = false;
   }
+}
+
+async function runMaintenance() {
+  let changed = false;
+  const currentTime = Date.now();
+  for (const order of db.data.Order) {
+    if (order.paymentStatus !== 'paid' && !['cancelled', 'expired'].includes(order.status) && new Date(order.expiresAt || 0).getTime() <= currentTime) {
+      order.status = 'expired';
+      order.expiredAt = now();
+      releaseOrderInventory(order);
+      changed = true;
+    }
+  }
+  for (const collection of ['passwordResetTokens', 'inviteTokens', 'emailVerificationTokens']) {
+    const before = db.data[collection].length;
+    db.data[collection] = db.data[collection].filter(item => new Date(item.expiresAt || 0).getTime() > currentTime);
+    changed ||= before !== db.data[collection].length;
+  }
+  const outboxCutoff = currentTime - Number(process.env.EMAIL_LOG_RETENTION_DAYS || 90) * 86_400_000;
+  const outboxBefore = db.data.Outbox.length;
+  db.data.Outbox = db.data.Outbox.filter(item => item.status !== 'delivered' || new Date(item.created_date).getTime() > outboxCutoff);
+  changed ||= outboxBefore !== db.data.Outbox.length;
+  if (changed) await save();
 }
 
 function sign(user) {
@@ -578,6 +698,11 @@ const outboxTimer = setInterval(() => processEmailOutbox().catch(error => {
   reportOperationalError('email_outbox_failed', error);
 }), 60_000);
 outboxTimer.unref();
+const maintenanceTimer = setInterval(() => runMaintenance().catch(error => {
+  reportOperationalError('maintenance_failed', error);
+}), 60 * 60 * 1000);
+maintenanceTimer.unref();
+await runMaintenance();
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, database: databaseKind }));
 app.get('/api/ready', async (_req, res) => {
@@ -588,11 +713,11 @@ app.get('/api/ready', async (_req, res) => {
   const storage = checkStorage();
   const production = process.env.NODE_ENV === 'production';
   const required = production
-    ? [database.ok, email.ok, storage.ok, Boolean(process.env.APP_ORIGIN), Boolean(process.env.SITE_URL)]
+    ? [database.ok, email.ok, storage.ok, Boolean(process.env.APP_ORIGIN), Boolean(process.env.SITE_URL), turnstileConfigured]
     : [database.ok];
   const payload = {
     ok: required.every(Boolean),
-    services: { database, email, storage },
+    services: { database, email, storage, humanVerification: { ok: turnstileConfigured } },
     payment: paymentStatus,
     environment: process.env.NODE_ENV || 'development',
   };
@@ -620,7 +745,7 @@ app.get('/api/admin/system-status', requireAdmin, async (_req, res) => {
   });
 });
 
-app.post('/api/auth/register', authLimiter, async (req, res) => {
+app.post('/api/auth/register', authLimiter, verifyHuman, async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
   const fullName = String(req.body.full_name || '').trim();
@@ -694,7 +819,7 @@ app.get('/api/auth/me', (req, res) => {
   res.json(user ? hiddenUserFields(user) : null);
 });
 
-app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
+app.post('/api/auth/forgot-password', authLimiter, verifyHuman, async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const user = db.data.User.find(item => item.email === email);
   if (user) {
@@ -737,7 +862,7 @@ app.post('/api/admin/users', requireAdmin, async (req, res) => {
   const user = {
     id: newId(), email, full_name: String(req.body.full_name || '').trim(),
     passwordHash: await bcrypt.hash(token(), 12),
-    role: ['customer', 'editor', 'support', 'admin'].includes(req.body.role) ? req.body.role : 'customer',
+    role: ['editor', 'support', 'admin'].includes(req.body.role) ? req.body.role : 'support',
     status: 'invited', emailVerified: false, sessionVersion: 0,
     created_date: now(), invitedBy: req.user.id,
   };
@@ -856,7 +981,7 @@ app.post('/api/admin/mfa/disable', requireAdmin, authLimiter, async (req, res) =
   res.json({ success: true });
 });
 
-app.get('/api/entities/:name', (req, res) => {
+app.get('/api/entities/:name', async (req, res) => {
   const { name } = req.params;
   if (!Array.isArray(db.data[name])) return res.status(404).json({ error: 'Unknown entity.' });
   const user = readUser(req);
@@ -867,14 +992,35 @@ app.get('/api/entities/:name', (req, res) => {
   if (!publicRead.has(name) && !canManage(user, name) && !(user && ownData)) {
     return res.status(403).json({ error: 'You do not have access to these records.' });
   }
-  let records = db.data[name].filter(record => !record.deleted_at);
+  const includeDeleted = req.query.includeDeleted === 'true' && canManage(user, name);
+  const queryFilters = Object.fromEntries(Object.entries(req.query).filter(([key]) => !['sort', 'limit', 'offset', 'page', 'includeDeleted'].includes(key)));
+  if (user && ownData && !canManage(user, name)) queryFilters.userId = user.id;
+  const requestedLimit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+  const requestedOffset = req.query.offset
+    ? Math.max(0, Number(req.query.offset) || 0)
+    : Math.max(0, (Number(req.query.page || 1) - 1) * requestedLimit);
+  const queried = await queryCollection(name, {
+    filters: queryFilters,
+    sort: req.query.sort || '-created_date',
+    limit: requestedLimit,
+    offset: requestedOffset,
+    includeDeleted,
+  });
+  let records = queried?.records || db.data[name].filter(record => includeDeleted || !record.deleted_at);
   if (user && ownData && !canManage(user, name)) records = records.filter(record => record.userId === user.id);
   if (!staffRoles.has(user?.role)) {
     if (name === 'BlogPost') records = records.filter(record => record.status === 'published' || !record.status);
     if (name === 'Testimonial') records = records.filter(record => record.status === 'approved');
+    if (['Artwork', 'HeroSlide', 'ShopProduct', 'Video'].includes(name)) {
+      records = records.filter(record => (
+        !['draft', 'archived'].includes(record.status)
+        && record.active !== false
+        && (!record.scheduledAt || new Date(record.scheduledAt).getTime() <= Date.now())
+      ));
+    }
   }
   for (const [key, value] of Object.entries(req.query)) {
-    if (!['sort', 'limit', 'includeDeleted'].includes(key)) records = records.filter(record => String(record[key]) === String(value));
+    if (!['sort', 'limit', 'offset', 'page', 'includeDeleted'].includes(key)) records = records.filter(record => String(record[key]) === String(value));
   }
   const sort = req.query.sort;
   if (sort) {
@@ -882,12 +1028,15 @@ app.get('/api/entities/:name', (req, res) => {
     const key = desc ? sort.slice(1) : sort;
     records.sort((a, b) => String(a[key] || '').localeCompare(String(b[key] || '')) * (desc ? -1 : 1));
   }
-  if (req.query.limit) records = records.slice(0, Number(req.query.limit));
+  if (!queried) records = records.slice(requestedOffset, requestedOffset + requestedLimit);
   if (name === 'User') records = records.map(hiddenUserFields);
+  res.setHeader('x-total-count', String(queried?.total ?? records.length));
+  res.setHeader('x-page-limit', String(requestedLimit));
+  res.setHeader('x-page-offset', String(requestedOffset));
   res.json(records);
 });
 
-app.post('/api/entities/:name', mutationLimiter, limitPublicForms, async (req, res) => {
+app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, async (req, res) => {
   const { name } = req.params;
   if (!Array.isArray(db.data[name])) return res.status(404).json({ error: 'Unknown entity.' });
   const user = readUser(req);
@@ -898,6 +1047,13 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, async (req, r
   if (authenticatedCreate.has(name) && !user) return res.status(401).json({ error: 'Please log in to continue.' });
   if (authenticatedCreate.has(name) && !user.emailVerified) {
     return res.status(403).json({ error: 'Verify your email address before sending messages, commissions, or orders.', code: 'email_verification_required' });
+  }
+  if (name === 'Order') {
+    const idempotencyKey = String(req.get('idempotency-key') || '').trim().slice(0, 120);
+    if (idempotencyKey) {
+      const existingOrder = db.data.Order.find(item => item.userId === user.id && item.idempotencyKey === idempotencyKey && !item.deleted_at);
+      if (existingOrder) return res.status(200).json(existingOrder);
+    }
   }
   let clean;
   try {
@@ -921,7 +1077,12 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, async (req, r
       const product = db.data.ShopProduct.find(candidate => candidate.id === item.productId && !candidate.deleted_at);
       return { productId: product.id, title: product.title, price: Number(product.price), qty: item.qty };
     });
-    clean.total = clean.items.reduce((sum, item) => sum + item.price * item.qty, 0);
+    clean.subtotal = clean.items.reduce((sum, item) => sum + item.price * item.qty, 0);
+    if (clean.deliveryMethod === 'delivery' && !clean.shippingAddress) {
+      return res.status(400).json({ error: 'Enter a delivery address or choose studio pickup.' });
+    }
+    clean.shipping = clean.deliveryMethod === 'delivery' ? Math.max(0, Number(process.env.SHIPPING_FLAT_RATE || 0)) : 0;
+    clean.total = clean.subtotal + clean.shipping;
   }
   const record = { ...clean, id: newId(), created_date: now() };
   if (user) {
@@ -936,11 +1097,19 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, async (req, r
   if (name === 'CommissionRequest') {
     record.status = 'pending';
     record.statusHistory = [{ status: 'pending', at: now(), actorId: user.id }];
+    record.expiresAt = new Date(Date.now() + (record.channel === 'paystack' ? 30 : 24 * 60) * 60 * 1000).toISOString();
   }
   if (name === 'Order') {
     record.status = 'pending';
     record.paymentStatus = 'unpaid';
+    record.currency = paymentStatus.currency;
+    record.idempotencyKey = String(req.get('idempotency-key') || '').trim().slice(0, 120) || null;
     record.statusHistory = [{ status: 'pending', at: now(), actorId: user.id }];
+    try {
+      reserveOrderInventory(record);
+    } catch (error) {
+      return res.status(error.status || 409).json({ error: error.message });
+    }
   }
   db.data[name].push(record);
   if (name === 'CommissionRequest') {
@@ -967,6 +1136,7 @@ app.post('/api/payments/initialize', requireVerifiedUser, mutationLimiter, async
   const order = db.data.Order.find(item => item.id === req.body.orderId && item.userId === req.user.id && !item.deleted_at);
   if (!order) return res.status(404).json({ error: 'Order not found.' });
   if (order.paymentStatus === 'paid') return res.status(409).json({ error: 'This order is already paid.' });
+  if (order.paymentReference) return res.status(409).json({ error: 'Secure checkout has already been initialized for this order.' });
   if (!paymentStatus.configured) return res.status(503).json({ error: 'Online payment is not configured. Choose WhatsApp ordering instead.' });
   try {
     const reference = `atelier-${order.id}-${Date.now()}`;
@@ -995,22 +1165,29 @@ app.get('/api/payments/verify/:reference', requireVerifiedUser, async (req, res)
   if (order.paymentStatus === 'paid') return res.json({ paid: true, order });
   try {
     const payment = await verifyPayment(req.params.reference);
-    const expectedAmount = Math.round(Number(order.total) * 100);
-    const paid = payment.status === 'success'
-      && Number(payment.amount) === expectedAmount
-      && payment.currency === paymentStatus.currency;
-    order.paymentStatus = paid ? 'paid' : payment.status || 'failed';
-    if (paid) {
-      order.status = 'confirmed';
-      order.paidAt = payment.paid_at || now();
-      order.statusHistory.push({ status: 'confirmed', at: now(), actorId: req.user.id });
-    }
+    const paid = await confirmPaidOrder(order, payment, payment.id);
     await audit(req.user, paid ? 'order.payment_confirmed' : 'order.payment_failed', 'Order', order.id);
     await save();
     res.json({ paid, order });
   } catch (error) {
     res.status(502).json({ error: error.message });
   }
+});
+
+app.post('/api/orders/:id/cancel', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const order = db.data.Order.find(item => item.id === req.params.id && item.userId === req.user.id && !item.deleted_at);
+  if (!order) return res.status(404).json({ error: 'Order not found.' });
+  if (order.paymentStatus === 'paid' || ['confirmed', 'fulfilled', 'shipped'].includes(order.status)) {
+    return res.status(409).json({ error: 'This order can no longer be cancelled online. Contact the studio for help.' });
+  }
+  order.status = 'cancelled';
+  order.cancelledAt = now();
+  releaseOrderInventory(order);
+  order.statusHistory ||= [];
+  order.statusHistory.push({ status: 'cancelled', at: now(), actorId: req.user.id });
+  await audit(req.user, 'order.cancelled', 'Order', order.id);
+  await save();
+  res.json(order);
 });
 
 app.post('/api/email/send', requireVerifiedUser, async (req, res) => {
@@ -1024,6 +1201,7 @@ app.patch('/api/entities/:name/:id', requireStaff, mutationLimiter, async (req, 
   const records = db.data[req.params.name];
   const record = records?.find(item => item.id === req.params.id);
   if (!record) return res.status(404).json({ error: 'Record not found.' });
+  if (req.params.name === 'AuditLog') return res.status(403).json({ error: 'Audit records are append-only.' });
   if (!canManage(req.user, req.params.name)) return res.status(403).json({ error: 'You do not have permission to change this record.' });
   if (req.params.name === 'User' && record.id === req.user.id && (req.body.role || req.body.status === 'suspended')) {
     return res.status(400).json({ error: 'You cannot change your own role or suspend your own account.' });
@@ -1042,6 +1220,10 @@ app.patch('/api/entities/:name/:id', requireStaff, mutationLimiter, async (req, 
   }
   if (req.params.name === 'User' && changes.role && !['customer', 'editor', 'support', 'admin'].includes(changes.role)) {
     return res.status(400).json({ error: 'Invalid user role.' });
+  }
+  if (req.params.name === 'User' && record.role === 'admin' && (changes.role && changes.role !== 'admin' || changes.status === 'suspended')) {
+    const activeAdmins = db.data.User.filter(item => item.role === 'admin' && item.status === 'active' && !item.deleted_at);
+    if (activeAdmins.length <= 1) return res.status(409).json({ error: 'The final active administrator cannot be demoted or suspended.' });
   }
   if (['CommissionRequest', 'Order'].includes(req.params.name) && changes.status && changes.status !== record.status) {
     record.statusHistory ||= [];
@@ -1068,12 +1250,32 @@ app.delete('/api/entities/:name/:id', requireStaff, mutationLimiter, async (req,
   if (!canManage(req.user, req.params.name)) return res.status(403).json({ error: 'You do not have permission to delete this record.' });
   const record = records.find(item => item.id === req.params.id);
   if (!record) return res.status(404).json({ error: 'Record not found.' });
+  if (req.params.name === 'AuditLog') return res.status(403).json({ error: 'Audit records are append-only.' });
+  if (req.params.name === 'User' && record.role === 'admin') {
+    const activeAdmins = db.data.User.filter(item => item.role === 'admin' && item.status === 'active' && !item.deleted_at);
+    if (activeAdmins.length <= 1) return res.status(409).json({ error: 'The final active administrator cannot be deleted.' });
+  }
   if (req.params.name === 'User' && record.id === req.user.id) return res.status(400).json({ error: 'You cannot delete your own account.' });
   record.deleted_at = now();
   record.deleted_by = req.user.id;
   await audit(req.user, `${req.params.name.toLowerCase()}.deleted`, req.params.name, record.id);
   await save();
   res.json({ success: true });
+});
+
+app.post('/api/entities/:name/:id/restore', requireStaff, mutationLimiter, async (req, res) => {
+  const records = db.data[req.params.name];
+  const record = records?.find(item => item.id === req.params.id);
+  if (!record) return res.status(404).json({ error: 'Record not found.' });
+  if (!canManage(req.user, req.params.name)) return res.status(403).json({ error: 'You do not have permission to restore this record.' });
+  if (req.params.name === 'AuditLog') return res.status(403).json({ error: 'Audit records cannot be changed.' });
+  delete record.deleted_at;
+  delete record.deleted_by;
+  record.restoredAt = now();
+  record.restoredBy = req.user.id;
+  await audit(req.user, `${req.params.name.toLowerCase()}.restored`, req.params.name, record.id);
+  await save();
+  res.json(record);
 });
 
 app.post('/api/messages/:id/reply', requireStaff, mutationLimiter, async (req, res) => {
@@ -1123,14 +1325,16 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, upload.single('fil
   const allowed = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'video/mp4', 'video/webm']);
   if (!detected || !allowed.has(detected.mime)) return res.status(400).json({ error: 'Only JPG, PNG, WebP, AVIF, MP4 and WebM files are accepted.' });
   const fileId = newId();
-  const fileUrl = await storeFile({ buffer: req.file.buffer, mime: detected.mime, extension: detected.ext, uploadDir, id: fileId });
+  const stored = await storeFile({ buffer: req.file.buffer, mime: detected.mime, extension: detected.ext, uploadDir, id: fileId });
   const media = {
     id: fileId,
-    url: fileUrl,
+    url: stored.url,
     filename: String(req.file.originalname || `${fileId}.${detected.ext}`).slice(0, 240),
     mime: detected.mime,
     bytes: req.file.size,
     provider: storageProvider,
+    publicId: stored.publicId,
+    resourceType: stored.resourceType,
     userId: req.user.id,
     purpose: staffRoles.has(req.user.role) ? 'content-library' : 'customer-reference',
     altText: '',
@@ -1140,7 +1344,18 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, upload.single('fil
   db.data.Media.push(media);
   await audit(req.user, 'file.uploaded', 'Upload', fileId, { mime: detected.mime, bytes: req.file.size, provider: storageProvider });
   await save();
-  res.status(201).json({ file_url: fileUrl, media });
+  res.status(201).json({ file_url: stored.url, media });
+});
+
+app.delete('/api/admin/media/:id/purge', requireAdmin, mutationLimiter, async (req, res) => {
+  const media = db.data.Media.find(item => item.id === req.params.id);
+  if (!media) return res.status(404).json({ error: 'Media record not found.' });
+  if (!media.deleted_at) return res.status(409).json({ error: 'Move media to the recycle bin before permanently deleting it.' });
+  await deleteStoredFile({ publicId: media.publicId, resourceType: media.resourceType, uploadDir });
+  db.data.Media = db.data.Media.filter(item => item.id !== media.id);
+  await audit(req.user, 'media.purged', 'Media', media.id, { provider: media.provider });
+  await save();
+  res.json({ success: true });
 });
 
 app.patch('/api/account/profile', requireUser, mutationLimiter, async (req, res) => {
@@ -1177,6 +1392,8 @@ app.post('/api/account/logout-all', requireUser, authLimiter, async (req, res) =
 });
 
 app.delete('/api/account', requireUser, mutationLimiter, async (req, res) => {
+  const passwordValid = await bcrypt.compare(String(req.body.password || ''), req.user.passwordHash);
+  if (!passwordValid) return res.status(400).json({ error: 'Enter your current password to close the account.' });
   req.user.status = 'deleted';
   req.user.deleted_at = now();
   req.user.sessionVersion = (req.user.sessionVersion || 0) + 1;
@@ -1221,6 +1438,31 @@ app.post('/api/admin/outbox/retry', requireAdmin, async (req, res) => {
   await save();
   await processEmailOutbox();
   res.json({ success: true });
+});
+
+app.get('/api/metrics', (req, res) => {
+  const configuredToken = process.env.METRICS_TOKEN;
+  if (!configuredToken || !safeEqual(configuredToken, req.get('authorization')?.replace(/^Bearer\s+/i, ''))) {
+    return res.status(401).type('text/plain').send('Unauthorized');
+  }
+  const lines = [
+    '# HELP atelier_pending_messages Messages waiting for a staff reply.',
+    '# TYPE atelier_pending_messages gauge',
+    `atelier_pending_messages ${db.data.Message.filter(item => !['replied', 'archived', 'spam'].includes(item.status) && !item.deleted_at).length}`,
+    '# HELP atelier_pending_orders Orders not yet completed.',
+    '# TYPE atelier_pending_orders gauge',
+    `atelier_pending_orders ${db.data.Order.filter(item => item.status === 'pending' && !item.deleted_at).length}`,
+    '# HELP atelier_email_queue Email messages waiting for delivery.',
+    '# TYPE atelier_email_queue gauge',
+    `atelier_email_queue ${db.data.Outbox.filter(item => item.status === 'pending').length}`,
+    '# HELP atelier_email_failures Email messages that exhausted retries.',
+    '# TYPE atelier_email_failures gauge',
+    `atelier_email_failures ${db.data.Outbox.filter(item => item.status === 'failed').length}`,
+    '# HELP atelier_process_resident_memory_bytes Resident process memory.',
+    '# TYPE atelier_process_resident_memory_bytes gauge',
+    `atelier_process_resident_memory_bytes ${process.memoryUsage().rss}`,
+  ];
+  res.type('text/plain; version=0.0.4').send(`${lines.join('\n')}\n`);
 });
 
 if (process.env.NODE_ENV === 'production') {

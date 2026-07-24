@@ -12,6 +12,7 @@ import PWAUpdateBanner from '@/components/PWAUpdateBanner';
 import AppErrorBoundary from '@/components/AppErrorBoundary';
 import AdminLayout from '@/components/AdminLayout';
 import AccountLayout from '@/components/AccountLayout';
+import FeatureRoute from '@/components/FeatureRoute';
 
 const Home = lazy(() => import('@/pages/Home'));
 const Gallery = lazy(() => import('@/pages/Gallery'));
@@ -51,13 +52,13 @@ const AuthenticatedApp = () => {
         <Route path="/" element={<Home />} />
         <Route path="/gallery" element={<Gallery />} />
         <Route path="/commission" element={<Commission />} />
-        <Route path="/shop" element={<Shop />} />
+        <Route path="/shop" element={<FeatureRoute setting="show_shop"><Shop /></FeatureRoute>} />
         <Route path="/about" element={<About />} />
-        <Route path="/blog" element={<Blog />} />
-        <Route path="/blog/:slug" element={<BlogPost />} />
-        <Route path="/videos" element={<Videos />} />
+        <Route path="/blog" element={<FeatureRoute setting="show_blog" defaultEnabled={false}><Blog /></FeatureRoute>} />
+        <Route path="/blog/:slug" element={<FeatureRoute setting="show_blog" defaultEnabled={false}><BlogPost /></FeatureRoute>} />
+        <Route path="/videos" element={<FeatureRoute setting="show_videos"><Videos /></FeatureRoute>} />
         <Route path="/contact" element={<Contact />} />
-        <Route path="/testimonials" element={<Testimonials />} />
+        <Route path="/testimonials" element={<FeatureRoute setting="show_testimonials" defaultEnabled={false}><Testimonials /></FeatureRoute>} />
         <Route path="/privacy" element={<LegalPage type="privacy" />} />
         <Route path="/terms" element={<LegalPage type="terms" />} />
       </Route>

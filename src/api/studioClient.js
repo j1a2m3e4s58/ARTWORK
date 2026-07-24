@@ -6,17 +6,28 @@
     ?.split('=')
     .slice(1)
     .join('=');
-  const response = await fetch(url, {
-    credentials: 'include',
-    ...options,
-    headers: {
-      ...(!isForm ? { 'Content-Type': 'application/json' } : {}),
-      ...(csrfToken ? { 'X-CSRF-Token': decodeURIComponent(csrfToken) } : {}),
-      ...options.headers,
-    },
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      credentials: 'include',
+      ...options,
+      headers: {
+        ...(!isForm ? { 'Content-Type': 'application/json' } : {}),
+        ...(csrfToken ? { 'X-CSRF-Token': decodeURIComponent(csrfToken) } : {}),
+        ...options.headers,
+      },
+    });
+  } catch {
+    const message = 'Unable to reach the studio service. Check your connection and try again.';
+    window.dispatchEvent(new CustomEvent('atelier:api-error', { detail: { status: 0, message, url } }));
+    throw new Error(message);
+  }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'Request failed.');
+  if (!response.ok) {
+    const message = data.error || 'Request failed.';
+    window.dispatchEvent(new CustomEvent('atelier:api-error', { detail: { status: response.status, message, url } }));
+    throw new Error(message);
+  }
   return data;
 };
 
@@ -33,14 +44,21 @@ const createEntity = name => ({
     if (limit) params.set('limit', limit);
     return request(`/api/entities/${name}?${params}`);
   },
-  create(data) {
-    return request(`/api/entities/${name}`, { method: 'POST', body: JSON.stringify(data) });
+  create(data, options = {}) {
+    return request(`/api/entities/${name}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      headers: options.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : undefined,
+    });
   },
   update(id, data) {
     return request(`/api/entities/${name}/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
   },
   delete(id) {
     return request(`/api/entities/${name}/${id}`, { method: 'DELETE' });
+  },
+  restore(id) {
+    return request(`/api/entities/${name}/${id}/restore`, { method: 'POST' });
   },
   bulkCreate(items) {
     return Promise.all(items.map(item => this.create(item)));
@@ -65,6 +83,9 @@ export const studioClient = {
     },
     backup() {
       return request('/api/admin/backup', { method: 'POST' });
+    },
+    purgeMedia(id) {
+      return request(`/api/admin/media/${id}/purge`, { method: 'DELETE' });
     },
   },
   messages: {
@@ -102,8 +123,8 @@ export const studioClient = {
     }),
     register: data => request('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
     logout: () => request('/api/auth/logout', { method: 'POST' }),
-    resetPasswordRequest: email => request('/api/auth/forgot-password', {
-      method: 'POST', body: JSON.stringify({ email }),
+    resetPasswordRequest: (email, turnstileToken) => request('/api/auth/forgot-password', {
+      method: 'POST', body: JSON.stringify({ email, turnstileToken }),
     }),
     resetPassword: ({ resetToken, newPassword }) => request('/api/auth/reset-password', {
       method: 'POST', body: JSON.stringify({ token: resetToken, password: newPassword }),
@@ -131,8 +152,8 @@ export const studioClient = {
     logoutAll() {
       return request('/api/account/logout-all', { method: 'POST' });
     },
-    remove() {
-      return request('/api/account', { method: 'DELETE' });
+    remove(password) {
+      return request('/api/account', { method: 'DELETE', body: JSON.stringify({ password }) });
     },
     export() {
       return request('/api/account/export');
@@ -153,6 +174,9 @@ export const studioClient = {
     config: () => request('/api/payments/config'),
     initialize: orderId => request('/api/payments/initialize', { method: 'POST', body: JSON.stringify({ orderId }) }),
     verify: reference => request(`/api/payments/verify/${encodeURIComponent(reference)}`),
+  },
+  orders: {
+    cancel: id => request(`/api/orders/${id}/cancel`, { method: 'POST' }),
   },
   mfa: {
     setup: () => request('/api/admin/mfa/setup', { method: 'POST' }),

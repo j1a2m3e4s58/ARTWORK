@@ -1,7 +1,7 @@
 const packages = {
-  'Sketch Study': { base: 80, timeline: '5–7 days' },
-  'Fine Portrait': { base: 200, timeline: '10–14 days' },
-  Masterwork: { base: 450, timeline: '3–5 weeks' },
+  'Sketch Study': { base: 800, timeline: '5–7 days' },
+  'Fine Portrait': { base: 2000, timeline: '10–14 days' },
+  Masterwork: { base: 4500, timeline: '3–5 weeks' },
 };
 
 export async function guidedSearch(query, artworks) {
@@ -35,7 +35,7 @@ export async function buildCommissionBrief(description) {
   return {
     artworkType,
     suggestedPackage,
-    estimatedPrice: suggestedPackage === 'Masterwork' ? '$450+' : `$${selected.base}`,
+    estimatedPrice: suggestedPackage === 'Masterwork' ? 'GH₵ 4,500+' : `GH₵ ${selected.base.toLocaleString()}`,
     estimatedTimeline: selected.timeline,
     moodTags: ['personal', 'considered', 'handcrafted'],
     clarifyingQuestions: [
@@ -56,7 +56,7 @@ export async function calculateGuidePrice({ artworkType, complexity = 3, numSubj
   const high = Math.round(suggestedPrice * 1.2);
   return {
     suggestedPrice,
-    priceRange: `$${suggestedPrice}–$${high}`,
+    priceRange: `GH₵ ${suggestedPrice.toLocaleString()}–${high.toLocaleString()}`,
     rationale: 'This planning estimate uses the selected package, complexity, and number of subjects. The artist confirms the final quote after reviewing your brief.',
     deposit: Math.round(suggestedPrice / 2),
   };
@@ -65,7 +65,7 @@ export async function calculateGuidePrice({ artworkType, complexity = 3, numSubj
 export function guidedReply(message) {
   const text = message.toLowerCase();
   if (text.includes('price') || text.includes('cost') || text.includes('budget')) {
-    return 'Planning prices begin at $80 for a sketch study, $200 for a fine portrait, and $450 for a masterwork. Your final quote is confirmed by the artist.';
+    return 'Planning prices begin at GH₵ 800 for a sketch study, GH₵ 2,000 for a fine portrait, and GH₵ 4,500 for a masterwork. Your final quote is confirmed by the artist.';
   }
   if (text.includes('time') || text.includes('deadline')) {
     return 'Typical delivery is 5–7 days for studies, 10–14 days for portraits, and 3–5 weeks for masterworks. Add your deadline to the commission form.';

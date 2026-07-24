@@ -3,6 +3,7 @@ import { Instagram, Twitter, Youtube, Mail, ArrowUpRight, X } from 'lucide-react
 import { useState, useEffect } from 'react';
 import { studioClient } from '@/api/studioClient';
 import { useSettings } from '@/hooks/useSettings';
+import TurnstileWidget from './TurnstileWidget';
 
 const FALLBACK_GALLERY = [];
 
@@ -14,6 +15,7 @@ export default function Footer() {
   const [newsletterConsent, setNewsletterConsent] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [galleryPreviews, setGalleryPreviews] = useState(FALLBACK_GALLERY);
+  const [turnstileToken, setTurnstileToken] = useState('');
 
   useEffect(() => {
     studioClient.entities.Artwork.list('-created_date', 6).then(data => {
@@ -28,7 +30,7 @@ export default function Footer() {
     if (!email || !newsletterConsent) return;
     setSubscriptionError('');
     try {
-      await studioClient.entities.NewsletterSubscriber.create({ email, consent: true });
+      await studioClient.entities.NewsletterSubscriber.create({ email, consent: true, turnstileToken });
       setSubscribed(true);
       setEmail('');
     } catch (error) {
@@ -133,6 +135,7 @@ export default function Footer() {
                   <input type="checkbox" checked={newsletterConsent} onChange={event => setNewsletterConsent(event.target.checked)} className="mt-0.5 accent-brass" required />
                   I agree to receive studio news and understand I can unsubscribe at any time.
                 </label>
+                <TurnstileWidget onToken={setTurnstileToken} />
                 {subscriptionError && <p role="alert" className="text-xs text-red-300">{subscriptionError}</p>}
                 <button type="submit" className="bg-brass text-obsidian text-sm font-tight tracking-wide py-2.5 hover:bg-brass-light transition-colors">
                   {settings.newsletter_button || 'Subscribe'}

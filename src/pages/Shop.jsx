@@ -1,5 +1,6 @@
 ﻿import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useRef } from 'react';
 import { ShoppingBag, Heart, X, Plus, Minus, MessageCircle, CreditCard } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
@@ -9,7 +10,6 @@ import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import { useSettings } from '@/hooks/useSettings';
 
-const TYPE_FILTERS = ['All', 'Print', 'Framed', 'Digital Download', 'Original'];
 const typeBadge = { Print: 'bg-brass/10 text-brass', Framed: 'bg-violet/30 text-soft-pink', 'Digital Download': 'bg-art-orange/10 text-art-orange', Original: 'bg-green-500/10 text-green-400' };
 
 
@@ -24,7 +24,13 @@ export default function Shop() {
   const [cartOpen, setCartOpen] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [ordering, setOrdering] = useState(false);
-  const [payment, setPayment] = useState({ configured: false, provider: 'manual', currency: settings.currency || 'USD' });
+  const [payment, setPayment] = useState({ configured: false, provider: 'manual', currency: settings.currency || 'GHS' });
+  const [deliveryMethod, setDeliveryMethod] = useState('delivery');
+  const [shippingAddress, setShippingAddress] = useState({
+    recipientName: user?.full_name || '', phone: '', addressLine1: '', addressLine2: '',
+    city: '', region: '', country: 'Ghana', postalCode: '',
+  });
+  const checkoutKey = useRef(crypto.randomUUID());
 
   useEffect(() => {
     studioClient.entities.ShopProduct.list('-created_date', 100).then(data => {
@@ -36,6 +42,7 @@ export default function Shop() {
   }, []);
 
   const filtered = filter === 'All' ? products : products.filter(p => p.type === filter);
+  const typeFilters = ['All', ...new Set(products.map(product => product.type).filter(Boolean))];
 
   const addToCart = (product) => {
     setCart(prev => {
@@ -52,14 +59,24 @@ export default function Shop() {
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
   const formatMoney = value => new Intl.NumberFormat(settings.locale || 'en-GH', {
     style: 'currency',
-    currency: payment.configured ? payment.currency : (settings.currency || 'USD'),
+    currency: payment.configured ? payment.currency : (settings.currency || 'GHS'),
     maximumFractionDigits: 2,
   }).format(Number(value) || 0);
   const createOrder = channel => studioClient.entities.Order.create({
     items: cart.map(item => ({ productId: item.id, title: item.title, price: item.price, qty: item.qty })),
     total: cartTotal,
     channel,
-  });
+    deliveryMethod,
+    shippingAddress: deliveryMethod === 'delivery' ? shippingAddress : undefined,
+  }, { idempotencyKey: checkoutKey.current });
+  const validateDelivery = () => {
+    if (deliveryMethod !== 'delivery') return true;
+    if (!shippingAddress.recipientName || !shippingAddress.phone || !shippingAddress.addressLine1 || !shippingAddress.city || !shippingAddress.country) {
+      setOrderError('Complete the required delivery details before continuing.');
+      return false;
+    }
+    return true;
+  };
   const orderViaWhatsApp = async () => {
     if (!user) {
       window.location.assign('/login?redirect=/shop');
@@ -69,6 +86,7 @@ export default function Shop() {
       setOrderError('WhatsApp ordering is not configured yet. Please use the contact page.');
       return;
     }
+    if (!validateDelivery()) return;
     setOrdering(true);
     setOrderError('');
     try {
@@ -76,6 +94,7 @@ export default function Shop() {
       const message = `Hello! I'd like to order:\n\n${cart.map(item => `• ${item.title} (x${item.qty}) — ${formatMoney(item.price * item.qty)}`).join('\n')}\n\nTotal: ${formatMoney(cartTotal)}`;
       window.open(`https://wa.me/${settings.whatsapp_number.replace(/[^\d]/g, '')}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
       setCart([]);
+      checkoutKey.current = crypto.randomUUID();
       setCartOpen(false);
     } catch (submitError) {
       setOrderError(submitError.message);
@@ -88,6 +107,7 @@ export default function Shop() {
       window.location.assign('/login?redirect=/shop');
       return;
     }
+    if (!validateDelivery()) return;
     setOrdering(true);
     setOrderError('');
     try {
@@ -126,7 +146,7 @@ export default function Shop() {
 
         {/* Filters */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12 mb-12 flex flex-wrap gap-2">
-          {TYPE_FILTERS.map(f => (
+          {typeFilters.map(f => (
             <button key={f} onClick={() => setFilter(f)}
               className={`font-tight text-xs uppercase tracking-widest px-5 py-2.5 border transition-all duration-300 ${filter === f ? 'bg-brass text-obsidian border-brass' : 'border-brass/20 text-ivory/50 hover:border-brass/40'}`}>
               {f}
@@ -212,10 +232,38 @@ export default function Shop() {
               </div>
               {cart.length > 0 && (
                 <div className="p-6 border-t border-brass/10">
+                  <fieldset className="mb-5">
+                    <legend className="mb-2 text-xs uppercase tracking-widest text-ivory/40">Delivery</legend>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[['delivery', 'Delivery'], ['pickup', 'Pickup'], ['digital', 'Digital']].map(([value, label]) => (
+                        <button key={value} type="button" onClick={() => setDeliveryMethod(value)}
+                          className={`min-h-11 border px-2 text-xs ${deliveryMethod === value ? 'border-brass bg-brass/10 text-brass' : 'border-ivory/10 text-ivory/45'}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </fieldset>
+                  {deliveryMethod === 'delivery' && (
+                    <div className="mb-5 grid grid-cols-2 gap-2">
+                      {[
+                        ['recipientName', 'Recipient name *'], ['phone', 'Phone *'],
+                        ['addressLine1', 'Address *'], ['addressLine2', 'Address line 2'],
+                        ['city', 'City *'], ['region', 'Region'],
+                        ['country', 'Country *'], ['postalCode', 'Postal code'],
+                      ].map(([key, label]) => (
+                        <label key={key} className={['addressLine1', 'addressLine2'].includes(key) ? 'col-span-2' : ''}>
+                          <span className="sr-only">{label}</span>
+                          <input value={shippingAddress[key]} onChange={event => setShippingAddress(current => ({ ...current, [key]: event.target.value }))}
+                            placeholder={label} className="min-h-11 w-full border border-brass/15 bg-obsidian px-3 text-sm text-ivory placeholder:text-ivory/25" />
+                        </label>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex justify-between mb-4">
-                    <span className="text-ivory/50 font-tight text-sm">Total</span>
+                    <span className="text-ivory/50 font-tight text-sm">Subtotal</span>
                     <span className="font-display text-2xl text-brass">{formatMoney(cartTotal)}</span>
                   </div>
+                  {deliveryMethod === 'delivery' && <p className="mb-4 text-xs text-ivory/35">Any delivery fee is calculated securely by the studio at checkout.</p>}
                   {payment.configured && (
                     <button onClick={paySecurely} disabled={ordering}
                       className="mb-3 flex min-h-12 w-full items-center justify-center gap-2 bg-brass py-3 font-tight text-sm uppercase tracking-widest text-obsidian transition-all hover:bg-brass-light disabled:opacity-50">
