@@ -133,7 +133,7 @@ export default function Home() {
           style={{ background: '#3D2B52' }} />
 
         <motion.div
-          className="relative z-10 max-w-7xl mx-auto px-6 lg:px-12 pt-24"
+          className="relative z-10 mx-auto w-full max-w-7xl px-5 pt-16 sm:px-6 sm:pt-24 lg:px-12"
           style={{ opacity: heroOpacity }}
         >
           <motion.div
@@ -181,27 +181,77 @@ export default function Home() {
           </motion.p>
 
           <motion.div
-            className="flex flex-wrap gap-4"
+            className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-4"
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 1.1, duration: 0.8 }}
           >
             <Link to={activeSlide.primaryLink || '/gallery'}
-              className="flex items-center gap-2 bg-brass text-obsidian px-8 py-4 font-tight text-sm tracking-widest uppercase hover:bg-brass-light transition-all duration-300 group"
+              className="group flex min-h-12 w-full items-center justify-center gap-2 bg-brass px-6 py-3 font-tight text-xs uppercase tracking-widest text-obsidian transition-all duration-300 hover:bg-brass-light sm:w-auto sm:px-8 sm:py-4 sm:text-sm"
             >
               {activeSlide.primaryLabel || 'View Gallery'}
               <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
             </Link>
             <Link to={activeSlide.secondaryLink || '/commission'}
-              className="flex items-center gap-2 border border-ivory/20 text-ivory/80 px-8 py-4 font-tight text-sm tracking-widest uppercase hover:border-brass/40 hover:text-brass transition-all duration-300"
+              className="flex min-h-12 w-full items-center justify-center gap-2 border border-ivory/20 px-6 py-3 font-tight text-xs uppercase tracking-widest text-ivory/80 transition-all duration-300 hover:border-brass/40 hover:text-brass sm:w-auto sm:px-8 sm:py-4 sm:text-sm"
             >
               {activeSlide.secondaryLabel || 'Request Commission'}
             </Link>
           </motion.div>
+
+          {slides.length > 1 && (
+            <div className="mt-6 w-full border border-ivory/15 bg-obsidian/70 p-2.5 shadow-2xl backdrop-blur-xl md:hidden">
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setHeroIndex(index => (index - 1 + slides.length) % slides.length)}
+                    className="flex h-11 w-11 items-center justify-center border border-ivory/15 text-ivory/75 transition-colors hover:border-brass/50 hover:text-brass focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
+                    aria-label="Previous banner"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHeroPaused(value => !value)}
+                    className="flex h-11 w-11 items-center justify-center border border-brass/35 bg-brass/10 text-brass transition-colors hover:bg-brass/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
+                    aria-label={heroPaused ? 'Resume automatic banner rotation' : 'Pause automatic banner rotation'}
+                  >
+                    {heroPaused ? <Play size={17} /> : <Pause size={17} />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHeroIndex(index => (index + 1) % slides.length)}
+                    className="flex h-11 w-11 items-center justify-center border border-ivory/15 text-ivory/75 transition-colors hover:border-brass/50 hover:text-brass focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
+                    aria-label="Next banner"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+                <span className="ml-auto whitespace-nowrap pr-1 font-tight text-[10px] tracking-[0.22em] text-ivory/55" aria-live="polite">
+                  {String((heroIndex % slides.length) + 1).padStart(2, '0')} / {String(slides.length).padStart(2, '0')}
+                </span>
+              </div>
+              <div className="mt-2.5 flex w-full items-center gap-1" aria-label="Choose a banner">
+                {slides.map((slide, i) => (
+                  <button
+                    key={slide.id || i}
+                    type="button"
+                    onClick={() => setHeroIndex(i)}
+                    aria-label={`Show banner ${i + 1}: ${slide.title}`}
+                    aria-current={i === heroIndex % slides.length ? 'true' : undefined}
+                    className="flex h-5 min-w-0 flex-1 items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
+                  >
+                    <span className={`block h-0.5 w-full transition-colors duration-300 ${i === heroIndex % slides.length ? 'bg-brass' : 'bg-ivory/20 hover:bg-ivory/40'}`} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </motion.div>
 
         {/* Hero dots */}
-        <div className="absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 gap-2 md:bottom-10">
+        <div className="absolute bottom-10 left-1/2 z-10 hidden -translate-x-1/2 gap-2 md:flex">
           {slides.map((slide, i) => (
             <button key={slide.id || i} onClick={() => setHeroIndex(i)}
               aria-label={`Show banner ${i + 1}: ${slide.title}`}
@@ -211,7 +261,7 @@ export default function Home() {
         </div>
 
         {slides.length > 1 && (
-          <div className="absolute bottom-36 left-6 z-20 flex items-center gap-2 md:bottom-8 lg:left-12">
+          <div className="absolute bottom-8 left-6 z-20 hidden items-center gap-2 md:flex lg:left-12">
             <button
               type="button"
               onClick={() => setHeroIndex(index => (index - 1 + slides.length) % slides.length)}
@@ -244,7 +294,7 @@ export default function Home() {
 
         {/* Scroll indicator */}
         <motion.div
-          className="absolute bottom-10 right-12 flex flex-col items-center gap-2 z-10"
+          className="absolute bottom-10 right-12 z-10 hidden flex-col items-center gap-2 md:flex"
           animate={{ y: [0, 8, 0] }}
           transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
         >
