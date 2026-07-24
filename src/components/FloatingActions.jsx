@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ChevronUp, MessageCircle } from 'lucide-react';
+import { ChevronUp } from 'lucide-react';
+import { FaWhatsapp } from 'react-icons/fa6';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSettings } from '@/hooks/useSettings';
 
@@ -37,7 +38,7 @@ export default function FloatingActions() {
         aria-label={cleanNumber ? 'Contact Reigns Atelier on WhatsApp' : 'Open the contact page'}
         title={cleanNumber ? 'WhatsApp' : 'Contact Reigns Atelier'}
       >
-        <MessageCircle size={19} aria-hidden="true" />
+        <FaWhatsapp className="h-[22px] w-[22px] shrink-0" aria-hidden="true" />
         <span className="hidden text-xs font-medium md:inline">WhatsApp</span>
       </a>
     </div>
