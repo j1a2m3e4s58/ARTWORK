@@ -26,8 +26,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 const uploadDir = path.join(here, 'uploads');
 mkdirSync(uploadDir, { recursive: true });
-const port = Number(process.env.API_PORT || 43130);
-const host = process.env.API_HOST || '127.0.0.1';
+const port = Number(process.env.PORT || process.env.API_PORT || 43130);
+const host = process.env.API_HOST || (process.env.RENDER === 'true' ? '0.0.0.0' : '127.0.0.1');
 const jwtSecret = process.env.JWT_SECRET;
 
 if (!jwtSecret || jwtSecret.length < 32) {
