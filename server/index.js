@@ -86,10 +86,10 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-const publicRead = new Set(['Artwork', 'BlogPost', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
+const publicRead = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
 const authenticatedCreate = new Set(['CommissionRequest', 'Message', 'Order']);
 const staffRoles = new Set(['admin', 'editor', 'support']);
-const contentEntities = new Set(['Artwork', 'BlogPost', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
+const contentEntities = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
 const supportEntities = new Set(['CommissionRequest', 'Message', 'Order']);
 const hiddenUserFields = ({ passwordHash, mfaSecret, pendingMfaSecret, ...user }) => user;
 const hashToken = token => createHash('sha256').update(token).digest('hex');
@@ -213,6 +213,86 @@ async function ensureSeeds() {
       ['The artist sees possibility where others see only space.', 'Anonymous'],
     ];
     db.data.Quote = quotes.map(([text, author]) => ({ id: newId(), text, author, active: true, created_date: now() }));
+  }
+  const pexelsImage = id => `https://images.pexels.com/photos/${id}/pexels-photo-${id}.jpeg?auto=compress&cs=tinysrgb&w=1600`;
+  if (!db.data.HeroSlide.length) {
+    db.data.HeroSlide = [
+      {
+        title: 'Art Made', accentTitle: 'With Intention', eyebrow: 'Reigns Atelier',
+        subtitle: 'Portraits, sketches and commissioned pieces shaped by patience, observation and a devotion to detail.',
+        imageUrl: pexelsImage('6972775'), primaryLabel: 'Explore the Gallery', primaryLink: '/gallery',
+        secondaryLabel: 'Request a Commission', secondaryLink: '/commission', sortOrder: 1, active: true,
+      },
+      {
+        title: 'Every Line', accentTitle: 'Tells a Story', eyebrow: 'Inside the Sketchbook',
+        subtitle: 'Discover graphite studies, portrait explorations and the quiet moments where an idea becomes visible.',
+        imageUrl: pexelsImage('33679744'), primaryLabel: 'View Sketches', primaryLink: '/gallery',
+        secondaryLabel: 'Watch the Process', secondaryLink: '/videos', sortOrder: 2, active: true,
+      },
+      {
+        title: 'From Vision', accentTitle: 'To Masterpiece', eyebrow: 'Bespoke Fine Art',
+        subtitle: 'Bring a meaningful person, memory or idea to life through a carefully crafted original artwork.',
+        imageUrl: pexelsImage('20511250'), primaryLabel: 'Start Your Piece', primaryLink: '/commission',
+        secondaryLabel: 'How It Works', secondaryLink: '/about', sortOrder: 3, active: true,
+      },
+      {
+        title: 'See the Craft', accentTitle: 'In Motion', eyebrow: 'Studio Films',
+        subtitle: 'Step behind the finished work and watch composition, shading and texture develop one mark at a time.',
+        imageUrl: pexelsImage('35075085'), primaryLabel: 'Watch Studio Films', primaryLink: '/videos',
+        secondaryLabel: 'Meet the Artist', secondaryLink: '/about', sortOrder: 4, active: true,
+      },
+    ].map(item => ({ id: newId(), ...item, sourceName: 'Pexels', created_date: now() }));
+  }
+  if (!db.data.Artwork.length) {
+    const artworks = [
+      ['Portrait in Progress', '6972775', 'Pencil Drawings', 'Graphite on paper'],
+      ['Studies of Expression', '6972773', 'Portraits', 'Graphite study'],
+      ['The First Gentle Lines', '10474349', 'Sketches', 'Pencil in sketchbook'],
+      ['A Face Emerging', '6973173', 'Realism', 'Graphite portrait'],
+      ['Collected Sketches', '33679744', 'Sketches', 'Mixed pencil studies'],
+      ['Figure and Form', '33568893', 'Pencil Drawings', 'Pencil on paper'],
+      ['Quiet Concentration', '35075085', 'Sketches', 'Graphite design study'],
+      ['Atelier Study', '7147544', 'Digital Art', 'Creative process study'],
+      ['The Working Studio', '20511250', 'Realism', 'Oil and canvas process'],
+      ['Colour and Character', '36764902', 'Portraits', 'Paint on canvas'],
+      ['The Artist’s Desk', '3778786', 'Sketches', 'Pencil and paper'],
+    ];
+    db.data.Artwork = artworks.map(([title, imageId, category, medium], index) => ({
+      id: newId(), title, category, medium, imageUrl: pexelsImage(imageId),
+      description: 'A curated studio-process image. Replace this starter piece with original Reigns Atelier work from the admin gallery.',
+      isFeatured: index < 5, likes: 0, sourceName: 'Pexels', created_date: now(),
+    }));
+  }
+  if (!db.data.Video.length) {
+    db.data.Video = [
+      {
+        title: 'Portrait Sketch — From First Line to Form',
+        videoUrl: 'https://videos.pexels.com/video-files/6970180/6970180-hd_1920_1080_30fps.mp4',
+        thumbnailUrl: pexelsImage('6972775'), category: 'Process', duration: '0:15',
+        description: 'A close-up study of the drawing process, from construction lines to delicate portrait details.',
+        isFeatured: true, sourceName: 'Pexels',
+      },
+      {
+        title: 'Inside a Working Sketchbook',
+        videoUrl: 'https://videos.pexels.com/video-files/10475301/10475301-hd_1080_1920_30fps.mp4',
+        thumbnailUrl: pexelsImage('10474349'), category: 'Behind the Scenes', duration: '0:12',
+        description: 'A focused artist develops an idea in a sketchbook inside the studio.',
+        isFeatured: false, sourceName: 'Pexels',
+      },
+      {
+        title: 'Pencil Marks in Motion',
+        videoUrl: 'https://cdn.pixabay.com/video/2017/07/23/10824-226624979_large.mp4',
+        thumbnailUrl: pexelsImage('35075085'), category: 'Time-lapse', duration: '0:20',
+        description: 'A short study of hand, pencil and paper working together.',
+        isFeatured: false, sourceName: 'Pixabay',
+      },
+    ].map(item => ({ id: newId(), ...item, views: 0, created_date: now() }));
+  }
+  if (!db.data.SiteContent.some(item => item.key === 'show_videos')) {
+    db.data.SiteContent.push({
+      id: newId(), key: 'show_videos', value: 'true', page: 'Settings',
+      group: 'Navigation', created_date: now(),
+    });
   }
   await save();
 }

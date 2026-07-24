@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Image, ShoppingBag, MessageSquare, BookOpen,
-  Users, Plus, Trash2, Pencil, Video, FileText, X, Check, Settings, Star, Download, MoreHorizontal, PackageCheck, Activity
+  Users, Plus, Trash2, Pencil, Video, FileText, X, Check, Settings, Star, Download, MoreHorizontal, PackageCheck, Activity, PanelsTopLeft
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import PageTransition from '@/components/PageTransition';
@@ -19,10 +19,12 @@ import UsersTab from '@/components/admin/UsersTab';
 import { useAuth } from '@/lib/AuthContext';
 import OrdersTab from '@/components/admin/OrdersTab';
 import SystemTab from '@/components/admin/SystemTab';
+import HeroSlidesTab from '@/components/admin/HeroSlidesTab';
 
 const allTabs = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'gallery', label: 'Gallery', icon: Image },
+  { id: 'banners', label: 'Home Banners', icon: PanelsTopLeft },
   { id: 'videos', label: 'Videos', icon: Video },
   { id: 'shop', label: 'Shop', icon: ShoppingBag },
   { id: 'commissions', label: 'Commissions', icon: MessageSquare },
@@ -118,7 +120,7 @@ export default function Admin() {
   const { user } = useAuth();
   const roleTabs = {
     admin: allTabs.map(tab => tab.id),
-    editor: ['overview', 'gallery', 'videos', 'shop', 'testimonials', 'quotes', 'pages', 'blog'],
+    editor: ['overview', 'gallery', 'banners', 'videos', 'shop', 'testimonials', 'quotes', 'pages', 'blog'],
     support: ['overview', 'inbox', 'commissions', 'orders'],
   };
   const tabs = allTabs.filter(tab => roleTabs[user?.role || 'support'].includes(tab.id));
@@ -531,6 +533,7 @@ export default function Admin() {
 
           {/* -- TESTIMONIALS -- */}
           {activeTab === 'testimonials' && <TestimonialsTab />}
+          {activeTab === 'banners' && <HeroSlidesTab />}
           {activeTab === 'quotes' && <QuotesTab />}
           {activeTab === 'inbox' && <InboxTab messages={messages} setMessages={setMessages} />}
           {activeTab === 'orders' && <OrdersTab />}

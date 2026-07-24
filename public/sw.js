@@ -1,4 +1,4 @@
-const CACHE = 'reigns-atelier-v3';
+const CACHE = 'reigns-atelier-v4';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/brand/reigns-app-icon-192.png', '/brand/reigns-app-icon-512.png'];
 
 self.addEventListener('install', event => {

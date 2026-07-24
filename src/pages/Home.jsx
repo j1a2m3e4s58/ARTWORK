@@ -1,18 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
-import { ArrowRight, Star, ArrowDown } from 'lucide-react';
+import { ArrowRight, Star, ArrowDown, ChevronLeft, ChevronRight, Play } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import { useSettings } from '@/hooks/useSettings';
-
-const HERO_IMAGES_DEFAULT = [
-  '/brand/reigns-atelier-logo.jpg',
-  '/brand/reigns-atelier-logo.jpg',
-  '/brand/reigns-atelier-logo.jpg',
-];
 
 const FEATURED_ARTWORKS_FALLBACK = [];
 
@@ -42,12 +36,9 @@ const DEFAULT_QUOTES = [
 
 export default function Home() {
   const settings = useSettings();
-  const HERO_IMAGES = [
-    settings.hero_image_1 || HERO_IMAGES_DEFAULT[0],
-    settings.hero_image_2 || HERO_IMAGES_DEFAULT[1],
-    settings.hero_image_3 || HERO_IMAGES_DEFAULT[2],
-  ];
   const [heroIndex, setHeroIndex] = useState(0);
+  const [heroSlides, setHeroSlides] = useState([]);
+  const [studioVideos, setStudioVideos] = useState([]);
   const [testimonials, setTestimonials] = useState(() => TESTIMONIALS_PREVIEW.filter(() => false));
   const [featuredArtworks, setFeaturedArtworks] = useState(() => FEATURED_ARTWORKS_FALLBACK.filter(() => false));
   const [quotes, setQuotes] = useState(DEFAULT_QUOTES);
@@ -61,6 +52,10 @@ export default function Home() {
     studioClient.entities.Artwork.filter({ isFeatured: true }).then(data => {
       if (data.length > 0) setFeaturedArtworks(data.slice(0, 5));
     }).catch(() => {});
+    studioClient.entities.HeroSlide.list('sortOrder', 50).then(data => {
+      setHeroSlides(data.filter(slide => slide.active !== false));
+    }).catch(() => {});
+    studioClient.entities.Video.list('-created_date', 3).then(setStudioVideos).catch(() => {});
     studioClient.entities.Quote.list('created_date').then(async data => {
       if (data.length) {
         setQuotes(data.filter(quote => quote.active !== false));
@@ -80,10 +75,26 @@ export default function Home() {
   const heroY = useTransform(scrollYProgress, [0, 1], ['0%', '30%']);
   const heroOpacity = useTransform(scrollYProgress, [0, 0.8], [1, 0]);
 
+  const fallbackSlide = {
+    id: 'fallback',
+    eyebrow: 'Fine Art Studio',
+    title: 'Reigns',
+    accentTitle: 'Atelier',
+    subtitle: settings.hero_subtitle || 'Where imagination bleeds onto canvas. Fine art portraits, digital masterpieces, and bespoke commissions crafted with devotion.',
+    imageUrl: settings.hero_image_1 || '/brand/reigns-atelier-logo.jpg',
+    primaryLabel: 'View Gallery',
+    primaryLink: '/gallery',
+    secondaryLabel: 'Request Commission',
+    secondaryLink: '/commission',
+  };
+  const slides = heroSlides.length ? heroSlides : [fallbackSlide];
+  const activeSlide = slides[heroIndex % slides.length] || fallbackSlide;
+
   useEffect(() => {
-    const t = setInterval(() => setHeroIndex(i => (i + 1) % HERO_IMAGES.length), 6000);
+    const seconds = Math.max(4, Number(settings.hero_slide_seconds) || 7);
+    const t = setInterval(() => setHeroIndex(i => (i + 1) % slides.length), seconds * 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [slides.length, settings.hero_slide_seconds]);
 
   return (
     <PageTransition>
@@ -92,7 +103,7 @@ export default function Home() {
         {/* Background images */}
         <AnimatePresence mode="wait">
           <motion.div
-            key={heroIndex}
+            key={activeSlide.id || heroIndex}
             className="absolute inset-0"
             initial={{ opacity: 0, scale: 1.06 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -101,8 +112,8 @@ export default function Home() {
             style={{ y: heroY }}
           >
             <img
-              src={HERO_IMAGES[heroIndex]}
-              alt=""
+              src={activeSlide.imageUrl}
+              alt={activeSlide.title}
               className="w-full h-full object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-r from-obsidian via-obsidian/70 to-obsidian/20" />
@@ -128,38 +139,41 @@ export default function Home() {
           >
             <div className="flex items-center gap-3 mb-6">
               <div className="w-8 h-px bg-brass" />
-              <span className="font-tight text-xs uppercase tracking-[0.35em] text-brass/70">Fine Art Studio</span>
+              <span className="font-tight text-xs uppercase tracking-[0.35em] text-brass/70">{activeSlide.eyebrow || 'Fine Art Studio'}</span>
             </div>
           </motion.div>
 
           <div className="overflow-hidden mb-2">
             <motion.h1
+              key={`${activeSlide.id}-title`}
               className="font-display text-6xl md:text-8xl lg:text-[112px] leading-[0.9] text-ivory"
               initial={{ y: 120, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.5, duration: 1, ease: [0.16, 1, 0.3, 1] }}
             >
-              Reigns
+              {activeSlide.title}
             </motion.h1>
           </div>
           <div className="overflow-hidden mb-8">
             <motion.h1
+              key={`${activeSlide.id}-accent`}
               className="font-display text-6xl md:text-8xl lg:text-[112px] leading-[0.9] italic text-brass"
               initial={{ y: 120, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.65, duration: 1, ease: [0.16, 1, 0.3, 1] }}
             >
-              Atelier
+              {activeSlide.accentTitle}
             </motion.h1>
           </div>
 
           <motion.p
+            key={`${activeSlide.id}-subtitle`}
             className="text-ivory/50 text-lg md:text-xl max-w-lg leading-relaxed mb-10 font-light"
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.9, duration: 0.8 }}
           >
-            {settings.hero_subtitle || 'Where imagination bleeds onto canvas. Fine art portraits, digital masterpieces, and bespoke commissions crafted with devotion.'}
+            {activeSlide.subtitle}
           </motion.p>
 
           <motion.div
@@ -168,28 +182,53 @@ export default function Home() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 1.1, duration: 0.8 }}
           >
-            <Link to="/gallery"
+            <Link to={activeSlide.primaryLink || '/gallery'}
               className="flex items-center gap-2 bg-brass text-obsidian px-8 py-4 font-tight text-sm tracking-widest uppercase hover:bg-brass-light transition-all duration-300 group"
             >
-              View Gallery
+              {activeSlide.primaryLabel || 'View Gallery'}
               <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
             </Link>
-            <Link to="/commission"
+            <Link to={activeSlide.secondaryLink || '/commission'}
               className="flex items-center gap-2 border border-ivory/20 text-ivory/80 px-8 py-4 font-tight text-sm tracking-widest uppercase hover:border-brass/40 hover:text-brass transition-all duration-300"
             >
-              Request Commission
+              {activeSlide.secondaryLabel || 'Request Commission'}
             </Link>
           </motion.div>
         </motion.div>
 
         {/* Hero dots */}
         <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex gap-2 z-10">
-          {HERO_IMAGES.map((_, i) => (
-            <button key={i} onClick={() => setHeroIndex(i)}
-              className={`w-6 h-px transition-all duration-300 ${i === heroIndex ? 'bg-brass' : 'bg-ivory/20'}`}
+          {slides.map((slide, i) => (
+            <button key={slide.id || i} onClick={() => setHeroIndex(i)}
+              aria-label={`Show banner ${i + 1}: ${slide.title}`}
+              className={`h-1 transition-all duration-500 ${i === heroIndex % slides.length ? 'w-12 bg-brass' : 'w-6 bg-ivory/25 hover:bg-ivory/50'}`}
             />
           ))}
         </div>
+
+        {slides.length > 1 && (
+          <div className="absolute bottom-8 left-6 lg:left-12 z-20 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setHeroIndex(index => (index - 1 + slides.length) % slides.length)}
+              className="w-11 h-11 border border-ivory/20 bg-obsidian/30 backdrop-blur-sm text-ivory/70 hover:text-brass hover:border-brass/50 transition-colors flex items-center justify-center"
+              aria-label="Previous banner"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setHeroIndex(index => (index + 1) % slides.length)}
+              className="w-11 h-11 border border-ivory/20 bg-obsidian/30 backdrop-blur-sm text-ivory/70 hover:text-brass hover:border-brass/50 transition-colors flex items-center justify-center"
+              aria-label="Next banner"
+            >
+              <ChevronRight size={18} />
+            </button>
+            <span className="ml-2 font-tight text-[10px] tracking-[0.25em] text-ivory/45">
+              {String((heroIndex % slides.length) + 1).padStart(2, '0')} / {String(slides.length).padStart(2, '0')}
+            </span>
+          </div>
+        )}
 
         {/* Scroll indicator */}
         <motion.div
@@ -243,6 +282,78 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <section className="border-y border-brass/10 bg-carbon/60 overflow-hidden py-4" aria-label="Studio disciplines">
+        <motion.div
+          className="flex w-max items-center gap-8 whitespace-nowrap font-tight text-[10px] md:text-xs uppercase tracking-[0.35em] text-brass/60"
+          animate={{ x: ['0%', '-50%'] }}
+          transition={{ duration: 28, repeat: Infinity, ease: 'linear' }}
+        >
+          {[...Array(2)].flatMap((_, copy) => [
+            'Portraiture', 'Graphite Studies', 'Fine Art', 'Sketchbook Stories',
+            'Commissioned Work', 'Studio Films', 'Original Art',
+          ].map(item => (
+            <span key={`${copy}-${item}`} className="flex items-center gap-8">
+              {item}<span className="w-1 h-1 rounded-full bg-brass/60" />
+            </span>
+          )))}
+        </motion.div>
+      </section>
+
+      {studioVideos.length > 0 && (
+        <section className="py-28 relative overflow-hidden bg-carbon/30">
+          <motion.div
+            className="absolute -right-32 top-12 w-96 h-96 border border-brass/10 rounded-full"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 45, repeat: Infinity, ease: 'linear' }}
+          />
+          <div className="max-w-7xl mx-auto px-6 lg:px-12 relative">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-5 mb-12">
+              <div>
+                <ScrollReveal><SectionLabel>Inside the Atelier</SectionLabel></ScrollReveal>
+                <ScrollReveal delay={0.1}>
+                  <h2 className="font-display text-4xl md:text-6xl text-ivory mt-2">Watch the work <em className="text-brass">take shape</em></h2>
+                </ScrollReveal>
+              </div>
+              <Link to="/videos" className="inline-flex items-center gap-2 text-brass font-tight text-sm tracking-wide hover:gap-4 transition-all">
+                View All Films <ArrowRight size={16} />
+              </Link>
+            </div>
+
+            <div className="grid md:grid-cols-12 gap-5">
+              {studioVideos.map((video, index) => (
+                <ScrollReveal
+                  key={video.id}
+                  delay={index * 0.12}
+                  className={index === 0 ? 'md:col-span-7' : 'md:col-span-5'}
+                >
+                  <Link to="/videos" className="group relative block overflow-hidden border border-brass/10 bg-obsidian aspect-video">
+                    <img
+                      src={video.thumbnailUrl}
+                      alt={video.title}
+                      className="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700"
+                      loading="lazy"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-obsidian via-obsidian/20 to-transparent" />
+                    <motion.div
+                      className="absolute inset-0 flex items-center justify-center"
+                      whileHover={{ scale: 1.08 }}
+                    >
+                      <span className="w-16 h-16 rounded-full border border-brass/60 bg-obsidian/50 backdrop-blur flex items-center justify-center shadow-[0_0_40px_rgba(201,169,110,0.15)]">
+                        <Play size={22} className="text-brass ml-1" fill="currentColor" />
+                      </span>
+                    </motion.div>
+                    <div className="absolute left-5 right-5 bottom-5">
+                      <p className="text-[10px] uppercase tracking-[0.25em] text-brass/80 mb-1">{video.category}</p>
+                      <h3 className="font-display text-xl md:text-2xl text-ivory">{video.title}</h3>
+                    </div>
+                  </Link>
+                </ScrollReveal>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* -- ARTIST QUOTE -- */}
       <section className="py-24 relative overflow-hidden">

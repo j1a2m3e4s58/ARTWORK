@@ -48,7 +48,7 @@ const createEntity = name => ({
 });
 
 const entityNames = [
-  'Artwork', 'AuditLog', 'BlogPost', 'CommissionRequest', 'Message', 'NewsletterSubscriber',
+  'Artwork', 'AuditLog', 'BlogPost', 'CommissionRequest', 'HeroSlide', 'Message', 'NewsletterSubscriber',
   'Notification', 'Order', 'Outbox', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'User', 'Video',
 ];
 

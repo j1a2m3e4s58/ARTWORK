@@ -11,8 +11,51 @@ const CATEGORIES = ['All', 'Process', 'Time-lapse', 'Tutorial', 'Behind the Scen
 
 
 function formatViews(n) {
+  if (!n) return 'New';
   if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
   return n;
+}
+
+function embedUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.hostname.includes('youtu.be')) return `https://www.youtube.com/embed/${url.pathname.slice(1)}?autoplay=1`;
+    if (url.hostname.includes('youtube.com')) {
+      if (url.pathname.startsWith('/embed/')) return `${value}${value.includes('?') ? '&' : '?'}autoplay=1`;
+      return `https://www.youtube.com/embed/${url.searchParams.get('v')}?autoplay=1`;
+    }
+    if (url.hostname.includes('vimeo.com')) return `https://player.vimeo.com/video/${url.pathname.split('/').filter(Boolean).at(-1)}?autoplay=1`;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function VideoPlayer({ video }) {
+  const embed = embedUrl(video.videoUrl);
+  if (embed) {
+    return (
+      <iframe
+        src={embed}
+        className="w-full h-full"
+        allowFullScreen
+        allow="autoplay; fullscreen"
+        title={video.title}
+      />
+    );
+  }
+  return (
+    <video
+      src={video.videoUrl}
+      poster={video.thumbnailUrl}
+      className="w-full h-full object-contain bg-black"
+      controls
+      autoPlay
+      playsInline
+    >
+      Your browser does not support this studio film.
+    </video>
+  );
 }
 
 export default function Videos() {
@@ -156,13 +199,7 @@ export default function Videos() {
                 </button>
               </div>
               <div className="aspect-video bg-obsidian border border-brass/10 overflow-hidden">
-                <iframe
-                  src={playing.videoUrl + '?autoplay=1'}
-                  className="w-full h-full"
-                  allowFullScreen
-                  allow="autoplay; fullscreen"
-                  title={playing.title}
-                />
+                <VideoPlayer video={playing} />
               </div>
               {playing.description && (
                 <p className="text-ivory/40 text-sm mt-4 leading-relaxed">{playing.description}</p>

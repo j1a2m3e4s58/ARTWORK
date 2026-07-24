@@ -22,3 +22,16 @@ test('orders require positive quantities', () => {
 test('published blog slugs are URL safe', () => {
   assert.throws(() => validateEntity('BlogPost', { title: 'Post', slug: '../bad', content: 'Content' }));
 });
+
+test('home banners require safe images and bounded ordering', () => {
+  assert.throws(() => validateEntity('HeroSlide', {
+    title: 'Unsafe banner',
+    imageUrl: 'javascript:alert(1)',
+    sortOrder: 1,
+  }));
+  assert.equal(validateEntity('HeroSlide', {
+    title: 'Studio Stories',
+    imageUrl: 'https://images.example.com/studio.jpg',
+    sortOrder: 3,
+  }).sortOrder, 3);
+});
