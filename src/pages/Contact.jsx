@@ -77,11 +77,11 @@ export default function Contact() {
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <h2 className="font-display text-3xl text-ivory mb-8">Send a Message</h2>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <input placeholder="Your name" value={form.name} onChange={e => set('name', e.target.value)}
-                      className="bg-carbon border border-brass/15 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/40 transition-colors text-sm" required />
+                      className="min-w-0 w-full bg-carbon border border-brass/15 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/40 transition-colors text-sm" required />
                     <input type="email" placeholder="Email address" value={form.email} onChange={e => set('email', e.target.value)}
-                      className="bg-carbon border border-brass/15 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/40 transition-colors text-sm" required />
+                      className="min-w-0 w-full bg-carbon border border-brass/15 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/40 transition-colors text-sm" required />
                   </div>
                   <input placeholder="Subject" value={form.subject} onChange={e => set('subject', e.target.value)}
                     className="w-full bg-carbon border border-brass/15 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/40 transition-colors text-sm" />
@@ -125,7 +125,7 @@ export default function Contact() {
               <ScrollReveal delay={0.25}>
                 <div>
                   <h3 className="font-tight text-xs uppercase tracking-widest text-ivory/30 mb-5">Follow the Journey</h3>
-                  <div className="flex gap-4">
+                  <div className="flex flex-wrap gap-4">
                     {[
                       { icon: Instagram, href: settings.instagram_url || 'https://instagram.com', label: 'Instagram' },
                       { icon: Twitter, href: settings.twitter_url || 'https://twitter.com', label: 'Twitter' },

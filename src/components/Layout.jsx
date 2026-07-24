@@ -4,10 +4,11 @@ import Footer from './Footer';
 import FloatingSocial from './FloatingSocial';
 import BackToTop from './BackToTop';
 import WhatsAppButton from './WhatsAppButton';
+import MobileBottomNav from './MobileBottomNav';
 
 export default function Layout() {
   return (
-    <div className="min-h-screen bg-obsidian text-ivory">
+    <div className="min-h-screen bg-obsidian pb-20 text-ivory md:pb-0">
       <Navbar />
       <FloatingSocial />
       <main>
@@ -16,6 +17,7 @@ export default function Layout() {
       <Footer />
       <BackToTop />
       <WhatsAppButton />
+      <MobileBottomNav />
     </div>
   );
 }

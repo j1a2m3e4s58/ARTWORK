@@ -23,7 +23,7 @@ export default function WhatsAppButton() {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="fixed bottom-5 right-4 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg hover:bg-[#20BA5A] transition-colors duration-300 md:bottom-24 md:right-8 md:h-auto md:w-auto md:rounded-none md:gap-2 md:px-4 md:py-2.5"
+      className="fixed bottom-24 right-4 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg hover:bg-[#20BA5A] transition-colors duration-300 md:bottom-24 md:right-8 md:h-auto md:w-auto md:rounded-none md:gap-2 md:px-4 md:py-2.5"
       initial={{ opacity: 0, scale: 0.8 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ delay: 2.5, duration: 0.5 }}

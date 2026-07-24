@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, ShoppingBag } from 'lucide-react';
+import { Menu, X, ShoppingBag, ArrowUpRight } from 'lucide-react';
 import AdminGate from './AdminGate';
 import { useSettings } from '@/hooks/useSettings';
 
@@ -111,41 +111,63 @@ export default function Navbar() {
       <AnimatePresence>
         {menuOpen && (
           <motion.div
-            className="fixed inset-0 z-40 glass-dark flex flex-col items-center justify-center"
-            initial={{ opacity: 0, clipPath: 'circle(0% at top right)' }}
-            animate={{ opacity: 1, clipPath: 'circle(150% at top right)' }}
-            exit={{ opacity: 0, clipPath: 'circle(0% at top right)' }}
-            transition={{ duration: 0.5, ease: [0.76, 0, 0.24, 1] }}
+            className="fixed inset-0 z-40 bg-black/55 px-4 pt-24 backdrop-blur-sm md:hidden"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            onClick={() => setMenuOpen(false)}
           >
-            <div className="noise-overlay absolute inset-0" />
-            <div className="flex flex-col items-center gap-8">
-              {navLinks.map((link, i) => (
-                <motion.div
-                  key={link.path}
-                  initial={{ opacity: 0, y: 30 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.08 + 0.2 }}
-                >
-                  <Link
-                    to={link.path}
-                    className={`font-display text-3xl transition-colors duration-300 ${
-                      location.pathname === link.path ? 'text-brass' : 'text-ivory/80 hover:text-brass'
-                    }`}
-                  >
-                    {link.label}
-                  </Link>
-                </motion.div>
-              ))}
-            </div>
             <motion.div
-              className="absolute bottom-12 flex gap-6"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.7 }}
+              className="relative mx-auto max-w-md overflow-hidden rounded-2xl border border-brass/15 bg-carbon/95 p-5 shadow-2xl shadow-black/60"
+              initial={{ opacity: 0, y: -18, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -12, scale: 0.98 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              onClick={e => e.stopPropagation()}
             >
-              <a href={settings.instagram_url || 'https://instagram.com'} target="_blank" rel="noopener noreferrer" className="text-ivory/40 hover:text-brass transition-colors font-tight text-xs tracking-widest uppercase">Instagram</a>
-              <a href={settings.twitter_url || 'https://twitter.com'} target="_blank" rel="noopener noreferrer" className="text-ivory/40 hover:text-brass transition-colors font-tight text-xs tracking-widest uppercase">Twitter</a>
-              <a href={settings.youtube_url || 'https://youtube.com'} target="_blank" rel="noopener noreferrer" className="text-ivory/40 hover:text-brass transition-colors font-tight text-xs tracking-widest uppercase">YouTube</a>
+              <div className="mb-4 flex items-center justify-between border-b border-ivory/10 pb-4">
+                <div>
+                  <p className="font-tight text-[10px] uppercase tracking-[0.28em] text-brass/70">Explore</p>
+                  <p className="mt-1 font-display text-xl text-ivory">Reigns Atelier</p>
+                </div>
+                <button
+                  onClick={() => setMenuOpen(false)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-ivory/10 text-ivory/60 transition-colors hover:border-brass/40 hover:text-brass"
+                  aria-label="Close menu"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {navLinks.map((link, i) => (
+                  <motion.div
+                    key={link.path}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.035 + 0.05 }}
+                  >
+                    <Link
+                      to={link.path}
+                      className={`flex min-h-14 items-center justify-between rounded-xl border px-4 font-tight text-sm tracking-wide transition-all ${
+                        location.pathname === link.path
+                          ? 'border-brass/30 bg-brass/10 text-brass'
+                          : 'border-ivory/[0.06] bg-ivory/[0.025] text-ivory/65 hover:border-brass/20 hover:text-ivory'
+                      }`}
+                    >
+                      {link.label}
+                      <ArrowUpRight size={14} className="opacity-45" />
+                    </Link>
+                  </motion.div>
+                ))}
+              </div>
+
+              <div className="mt-4 flex items-center justify-center gap-6 border-t border-ivory/10 pt-4">
+                <a href={settings.instagram_url || 'https://instagram.com'} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">Instagram</a>
+                <a href={settings.twitter_url || 'https://twitter.com'} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">Twitter</a>
+                <a href={settings.youtube_url || 'https://youtube.com'} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">YouTube</a>
+              </div>
             </motion.div>
           </motion.div>
         )}
