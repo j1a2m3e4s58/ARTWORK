@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Image, ShoppingBag, MessageSquare, BookOpen,
   Users, Plus, Trash2, Pencil, Video, FileText, X, Check, Settings, Star, Download, Sparkles
 } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 import PageTransition from '@/components/PageTransition';
 import FileUploadField from '@/components/admin/FileUploadField';
 import TestimonialsTab from '@/components/admin/TestimonialsTab';
@@ -16,6 +16,9 @@ import PagesTab from '@/components/admin/PagesTab';
 import AIStudioTab from '@/components/admin/AIStudioTab';
 import AIInsightsCard from '@/components/admin/AIInsightsCard';
 import ArtworkAutoSuggest from '@/components/admin/ArtworkAutoSuggest';
+import QuotesTab from '@/components/admin/QuotesTab';
+import InboxTab from '@/components/admin/InboxTab';
+import UsersTab from '@/components/admin/UsersTab';
 
 const tabs = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -25,6 +28,9 @@ const tabs = [
   { id: 'shop', label: 'Shop', icon: ShoppingBag },
   { id: 'commissions', label: 'Commissions', icon: MessageSquare },
   { id: 'testimonials', label: 'Testimonials', icon: Star },
+  { id: 'quotes', label: 'Art Quotes', icon: FileText },
+  { id: 'inbox', label: 'Inbox', icon: MessageSquare },
+  { id: 'users', label: 'Users', icon: Users },
   { id: 'pages', label: 'Page Content', icon: FileText },
   { id: 'blog', label: 'Blog', icon: BookOpen },
   { id: 'subscribers', label: 'Subscribers', icon: Users },
@@ -129,56 +135,56 @@ export default function Admin() {
 
   useEffect(() => {
     const loaders = {
-      gallery: () => base44.entities.Artwork.list('-created_date', 50).then(setArtworks),
-      videos: () => base44.entities.Video.list('-created_date', 50).then(setVideos),
-      shop: () => base44.entities.ShopProduct.list('-created_date', 50).then(setProducts),
-      commissions: () => base44.entities.CommissionRequest.list('-created_date', 50).then(setCommissions),
-      subscribers: () => base44.entities.NewsletterSubscriber.list('-created_date', 50).then(setSubscribers),
-      blog: () => base44.entities.BlogPost.list('-created_date', 50).then(setBlogPosts),
+      gallery: () => studioClient.entities.Artwork.list('-created_date', 50).then(setArtworks),
+      videos: () => studioClient.entities.Video.list('-created_date', 50).then(setVideos),
+      shop: () => studioClient.entities.ShopProduct.list('-created_date', 50).then(setProducts),
+      commissions: () => studioClient.entities.CommissionRequest.list('-created_date', 50).then(setCommissions),
+      subscribers: () => studioClient.entities.NewsletterSubscriber.list('-created_date', 50).then(setSubscribers),
+      blog: () => studioClient.entities.BlogPost.list('-created_date', 50).then(setBlogPosts),
     };
     if (loaders[activeTab]) loaders[activeTab]();
   }, [activeTab]);
 
   const handleDelete = async (entity, id, setter) => {
-    await base44.entities[entity].delete(id);
+    await studioClient.entities[entity].delete(id);
     setter(prev => prev.filter(i => i.id !== id));
     setConfirmDel(null);
   };
 
   const handleUpdate = async (entity, id, data, setter) => {
-    await base44.entities[entity].update(id, data);
+    await studioClient.entities[entity].update(id, data);
     setter(prev => prev.map(i => i.id === id ? { ...i, ...data } : i));
     setEditItem(null); setEditType(null);
   };
 
   const addVideo = async () => {
-    const v = await base44.entities.Video.create(newVideo);
+    const v = await studioClient.entities.Video.create(newVideo);
     setVideos(prev => [v, ...prev]);
     setShowAddVideo(false);
     setNewVideo({ title: '', videoUrl: '', thumbnailUrl: '', category: 'Process', description: '', duration: '', isFeatured: false });
   };
 
   const addArtwork = async () => {
-    const a = await base44.entities.Artwork.create(newArtwork);
+    const a = await studioClient.entities.Artwork.create(newArtwork);
     setArtworks(prev => [a, ...prev]);
     setShowAddArtwork(false);
     setNewArtwork({ title: '', category: 'Portraits', imageUrl: '', medium: '', description: '', price: '' });
   };
 
   const addProduct = async (data) => {
-    const p = await base44.entities.ShopProduct.create(data);
+    const p = await studioClient.entities.ShopProduct.create(data);
     setProducts(prev => [p, ...prev]);
     setShowAddProduct(false);
   };
 
   const addBlogPost = async (data) => {
-    const post = await base44.entities.BlogPost.create(data);
+    const post = await studioClient.entities.BlogPost.create(data);
     setBlogPosts(prev => [post, ...prev]);
     setShowAddBlog(false);
   };
 
   const updateContent = async (id, value) => {
-    await base44.entities.SiteContent.update(id, { value });
+    await studioClient.entities.SiteContent.update(id, { value });
     setSiteContent(prev => prev.map(c => c.id === id ? { ...c, value } : c));
   };
 
@@ -461,6 +467,9 @@ export default function Admin() {
 
           {/* ── TESTIMONIALS ── */}
           {activeTab === 'testimonials' && <TestimonialsTab />}
+          {activeTab === 'quotes' && <QuotesTab />}
+          {activeTab === 'inbox' && <InboxTab />}
+          {activeTab === 'users' && <UsersTab />}
 
           {/* ── PAGE CONTENT ── */}
           {activeTab === 'pages' && <PagesTab />}

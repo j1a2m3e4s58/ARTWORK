@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, Upload, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 
 export default function BulkImportModal({ type, onClose, onImported }) {
   const [status, setStatus] = useState('idle'); // idle | parsing | importing | done | error
@@ -36,7 +36,7 @@ export default function BulkImportModal({ type, onClose, onImported }) {
     }
 
     setStatus('importing');
-    const entity = isArtwork ? base44.entities.Artwork : base44.entities.ShopProduct;
+    const entity = isArtwork ? studioClient.entities.Artwork : studioClient.entities.ShopProduct;
     const created = [];
     const failed = [];
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Check, Plus, Globe, MessageCircle, User, BookOpen } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 
 const PAGE_CONTENT_DEFAULTS = [
   // Commission page
@@ -33,12 +33,18 @@ const PAGE_CONTENT_DEFAULTS = [
   { key: 'about_timeline', label: 'Timeline Events (format: year|event, one per line)', value: '2016|First sketchbook — drawing obsessively since childhood becomes a craft\n2018|First paid commission at 17 — a portrait that changed everything\n2020|Went fully digital — mastered Procreate and the Wacom tablet universe\n2022|Opened Reigns Atelier — turned passion into a professional studio\n2023|100+ commissions completed across 20 countries\n2025|First gallery exhibition — "Shadows & Lines" in Nairobi', group: 'About Page', page: 'About' },
   { key: 'about_skills', label: 'Skills (format: name|level%, one per line)', value: 'Pencil & Charcoal|97\nDigital Illustration|93\nOil & Acrylic|85\nWatercolor|80\nInk Drawing|90\nPortrait Study|95', group: 'About Page', page: 'About' },
   // Contact page
+  { key: 'contact_eyebrow', label: 'Section Label', value: 'Get in Touch', group: 'Contact Page', page: 'Contact' },
+  { key: 'contact_title', label: 'Page Title', value: "Let's Connect", group: 'Contact Page', page: 'Contact' },
+  { key: 'contact_form_title', label: 'Form Heading', value: 'Send a Message', group: 'Contact Page', page: 'Contact' },
+  { key: 'contact_details_title', label: 'Contact Details Heading', value: 'Contact Details', group: 'Contact Page', page: 'Contact' },
+  { key: 'contact_social_title', label: 'Social Links Heading', value: 'Follow the Journey', group: 'Contact Page', page: 'Contact' },
+  { key: 'contact_success_title', label: 'Success Message Title', value: 'Message Sent', group: 'Contact Page', page: 'Contact' },
+  { key: 'contact_success_body', label: 'Success Message Body', value: 'Thank you for reaching out. I will respond within 24–48 hours.', group: 'Contact Page', page: 'Contact' },
   { key: 'contact_studio_location', label: 'Studio Location Text', value: 'Nairobi, Kenya (Remote worldwide)', group: 'Contact Page', page: 'Contact' },
   { key: 'contact_instagram_handle', label: 'Instagram Display Handle', value: '@reignsatelier', group: 'Contact Page', page: 'Contact' },
   // Home page
   { key: 'hero_title', label: 'Hero Title', value: 'Reigns Atelier', group: 'Home Page', page: 'Home' },
   { key: 'hero_subtitle', label: 'Hero Subtitle', value: 'Where imagination bleeds onto canvas. Fine art portraits, digital masterpieces, and bespoke commissions crafted with devotion.', group: 'Home Page', page: 'Home' },
-  { key: 'artist_quote', label: 'Artist Quote', value: 'Art is not what you see, but what you make others see. Every line I draw is a conversation between the visible and the invisible.', group: 'Home Page', page: 'Home' },
   { key: 'stat_artworks', label: 'Stat: Artworks Created', value: '350+', group: 'Home Page', page: 'Home' },
   { key: 'stat_clients', label: 'Stat: Happy Clients', value: '180+', group: 'Home Page', page: 'Home' },
   { key: 'stat_years', label: 'Stat: Years of Practice', value: '8', group: 'Home Page', page: 'Home' },
@@ -94,7 +100,7 @@ export default function PagesTab() {
   const pages = ['Home', 'Commission', 'About', 'Contact'];
 
   useEffect(() => {
-    Promise.all(pages.map(p => base44.entities.SiteContent.filter({ page: p }))).then(results => {
+    Promise.all(pages.map(p => studioClient.entities.SiteContent.filter({ page: p }))).then(results => {
       const map = {};
       results.flat().forEach(r => { map[r.key] = r; });
       setRecords(map);
@@ -109,7 +115,7 @@ export default function PagesTab() {
     const created = {};
     for (const def of PAGE_CONTENT_DEFAULTS) {
       if (!records[def.key]) {
-        const rec = await base44.entities.SiteContent.create({ key: def.key, label: def.label, value: def.value, page: def.page });
+        const rec = await studioClient.entities.SiteContent.create({ key: def.key, label: def.label, value: def.value, page: def.page });
         created[def.key] = rec;
       }
     }
@@ -120,10 +126,10 @@ export default function PagesTab() {
   const handleSave = async (key, value) => {
     const def = PAGE_CONTENT_DEFAULTS.find(d => d.key === key);
     if (records[key]) {
-      await base44.entities.SiteContent.update(records[key].id, { value });
+      await studioClient.entities.SiteContent.update(records[key].id, { value });
       setRecords(prev => ({ ...prev, [key]: { ...prev[key], value } }));
     } else {
-      const rec = await base44.entities.SiteContent.create({ key, label: def?.label || key, value, page: def?.page || 'Home' });
+      const rec = await studioClient.entities.SiteContent.create({ key, label: def?.label || key, value, page: def?.page || 'Home' });
       setRecords(prev => ({ ...prev, [key]: rec }));
     }
   };

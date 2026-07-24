@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Heart, Share2, ZoomIn } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
@@ -34,7 +34,7 @@ export default function Gallery() {
   const [aiResults, setAiResults] = useState(null);
 
   useEffect(() => {
-    base44.entities.Artwork.list('-created_date', 100).then(data => {
+    studioClient.entities.Artwork.list('-created_date', 100).then(data => {
       if (data.length > 0) { setArtworks(data); setDbLoaded(true); }
     }).catch(() => {});
   }, []);
@@ -62,7 +62,7 @@ export default function Gallery() {
     const artwork = artworks.find(a => a.id === id);
     if (artwork && dbLoaded) {
       const newLikes = (artwork.likes || 0) + (isLiked ? -1 : 1);
-      base44.entities.Artwork.update(id, { likes: newLikes }).catch(() => {});
+      studioClient.entities.Artwork.update(id, { likes: newLikes }).catch(() => {});
       setArtworks(prev => prev.map(a => a.id === id ? { ...a, likes: newLikes } : a));
     }
   };

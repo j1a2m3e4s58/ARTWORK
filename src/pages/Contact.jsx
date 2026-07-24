@@ -6,7 +6,8 @@ import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import { useSettings } from '@/hooks/useSettings';
 import { usePageContent } from '@/hooks/usePageContent';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
+import { useAuth } from '@/lib/AuthContext';
 
 const INSTAGRAM_PREVIEWS = [
   'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=300&q=80',
@@ -19,6 +20,7 @@ const INSTAGRAM_PREVIEWS = [
 
 export default function Contact() {
   const settings = useSettings();
+  const { user } = useAuth();
   const page = usePageContent('Contact');
   const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' });
   const [sent, setSent] = useState(false);
@@ -28,11 +30,16 @@ export default function Contact() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!user) {
+      window.location.assign('/login?redirect=/contact');
+      return;
+    }
     setSending(true);
-    await base44.integrations.Core.SendEmail({
-      to: settings.contact_email || 'hello@reignsatelier.com',
-      subject: `Contact Form: ${form.subject || 'New message'} — from ${form.name}`,
-      body: `Name: ${form.name}\nEmail: ${form.email}\nSubject: ${form.subject}\n\n${form.message}`,
+    await studioClient.entities.Message.create({
+      ...form,
+      email: user.email,
+      userId: user.id,
+      status: 'unread',
     });
     setSending(false);
     setSent(true);
@@ -45,7 +52,7 @@ export default function Contact() {
 
         {/* Header */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12 mb-20">
-          <ScrollReveal><SectionLabel>Get in Touch</SectionLabel></ScrollReveal>
+          <ScrollReveal><SectionLabel>{page.contact_eyebrow || 'Get in Touch'}</SectionLabel></ScrollReveal>
           <ScrollReveal delay={0.1}>
             <h1 className="font-display text-5xl md:text-7xl text-ivory mt-2">
               Let's <em className="text-brass">Connect</em>
@@ -76,7 +83,7 @@ export default function Contact() {
                 </motion.div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  <h2 className="font-display text-3xl text-ivory mb-8">Send a Message</h2>
+                  <h2 className="font-display text-3xl text-ivory mb-8">{page.contact_form_title || 'Send a Message'}</h2>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <input placeholder="Your name" value={form.name} onChange={e => set('name', e.target.value)}
                       className="min-w-0 w-full bg-carbon border border-brass/15 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/40 transition-colors text-sm" required />
@@ -100,7 +107,7 @@ export default function Contact() {
             <div className="space-y-12">
               <ScrollReveal delay={0.15}>
                 <div>
-                  <h2 className="font-display text-3xl text-ivory mb-8">Contact Details</h2>
+                  <h2 className="font-display text-3xl text-ivory mb-8">{page.contact_details_title || 'Contact Details'}</h2>
                   <div className="space-y-6">
                     {[
                       { icon: Mail, label: 'Email', value: settings.contact_email || 'hello@reignsatelier.com', href: `mailto:${settings.contact_email || 'hello@reignsatelier.com'}` },
@@ -124,7 +131,7 @@ export default function Contact() {
 
               <ScrollReveal delay={0.25}>
                 <div>
-                  <h3 className="font-tight text-xs uppercase tracking-widest text-ivory/30 mb-5">Follow the Journey</h3>
+                  <h3 className="font-tight text-xs uppercase tracking-widest text-ivory/30 mb-5">{page.contact_social_title || 'Follow the Journey'}</h3>
                   <div className="flex flex-wrap gap-4">
                     {[
                       { icon: Instagram, href: settings.instagram_url || 'https://instagram.com', label: 'Instagram' },

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShoppingBag, Heart, X, Plus, Minus, ArrowRight, MessageCircle } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
@@ -28,7 +28,7 @@ export default function Shop() {
   const [cartOpen, setCartOpen] = useState(false);
 
   useEffect(() => {
-    base44.entities.ShopProduct.list('-created_date', 100).then(data => {
+    studioClient.entities.ShopProduct.list('-created_date', 100).then(data => {
       if (data.length > 0) setProducts(data);
     }).catch(() => {});
   }, []);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 
 let _cache = null;
 let _promise = null;
@@ -10,7 +10,7 @@ export function useSettings() {
   useEffect(() => {
     if (_cache) { setSettings(_cache); return; }
     if (!_promise) {
-      _promise = base44.entities.SiteContent.filter({ page: 'Settings' }).then(records => {
+      _promise = studioClient.entities.SiteContent.filter({ page: 'Settings' }).then(records => {
         const map = {};
         records.forEach(r => { map[r.key] = r.value; });
         _cache = map;

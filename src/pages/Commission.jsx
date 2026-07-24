@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowRight, Check, ChevronDown, Upload, Sparkles, Loader2 } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
@@ -9,6 +9,7 @@ import { useSettings } from '@/hooks/useSettings';
 import { usePageContent } from '@/hooks/usePageContent';
 import CommissionAIAssistant from '@/components/CommissionAIAssistant';
 import CommissionAgentChat from '@/components/CommissionAgentChat';
+import { useAuth } from '@/lib/AuthContext';
 
 const DEFAULT_PACKAGES = [
   { name: 'Sketch Study', price: '$80', duration: '5-7 days', features: ['One subject', 'Pencil / Charcoal', 'Digital delivery', '1 revision', 'A4 size'] },
@@ -28,6 +29,7 @@ const BUDGETS = ['Under $100', '$100–$250', '$250–$500', '$500–$1,000', '$
 
 export default function Commission() {
   const settings = useSettings();
+  const { user } = useAuth();
   const page = usePageContent('Commission');
   const packages = (() => { try { return JSON.parse(page.commission_packages); } catch { return DEFAULT_PACKAGES; } })();
   const faqs = (() => { try { return JSON.parse(page.commission_faqs); } catch { return DEFAULT_FAQS; } })();
@@ -45,16 +47,20 @@ export default function Commission() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    const { file_url } = await studioClient.integrations.Core.UploadFile({ file });
     set('referenceImageUrl', file_url);
     setUploading(false);
   };
 
   const handleSubmit = async () => {
-    await base44.entities.CommissionRequest.create(form);
+    if (!user) {
+      window.location.assign('/login?redirect=/commission');
+      return;
+    }
+    await studioClient.entities.CommissionRequest.create({ ...form, userId: user.id, accountEmail: user.email });
     // Auto-reply email to client
     try {
-      await base44.integrations.Core.SendEmail({
+      await studioClient.integrations.Core.SendEmail({
         to: form.email,
         subject: '✨ Your Commission Request — Reigns Atelier',
         body: `Hi ${form.name},\n\nThank you for your commission request! I've received your vision and will review it within 24 hours.\n\nHere's a summary of your request:\n- Artwork Type: ${form.artworkType}\n- Budget: ${form.budget}\n${form.package ? `- Package: ${form.package}\n` : ''}${form.deadline ? `- Deadline: ${form.deadline}\n` : ''}\nYour Vision: ${form.description}\n\nNext steps: I'll respond with a personalized quote and timeline. A 50% deposit secures your slot once we agree on details.\n\nWith anticipation,\nReigns Atelier`,

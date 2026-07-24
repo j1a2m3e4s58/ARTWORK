@@ -1,11 +1,11 @@
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 
 /**
  * Feature #3: Smart Artwork Onboarding
  * Analyzes an uploaded artwork image and suggests metadata.
  */
 export async function autoSuggestArtwork(imageUrl) {
-  const res = await base44.integrations.Core.InvokeLLM({
+  const res = await studioClient.integrations.Core.InvokeLLM({
     prompt: `You are an expert fine art curator. Analyze this artwork image and suggest metadata for a portfolio listing.
 
 Return JSON with these fields:
@@ -37,7 +37,7 @@ Return JSON with these fields:
  * Feature #2: AI Content Studio — Generate a blog post draft
  */
 export async function generateBlogDraft({ topic, tone, keywords }) {
-  const res = await base44.integrations.Core.InvokeLLM({
+  const res = await studioClient.integrations.Core.InvokeLLM({
     prompt: `You are a skilled art blogger for "Reigns Atelier", a fine art studio.
 Write a complete blog post.
 
@@ -69,7 +69,7 @@ Return JSON with:
  * Feature #2: AI Content Studio — Generate social media captions
  */
 export async function generateCaptions({ artworkTitle, description, platform }) {
-  const res = await base44.integrations.Core.InvokeLLM({
+  const res = await studioClient.integrations.Core.InvokeLLM({
     prompt: `You are a social media manager for a fine art studio.
 Write 3 engaging ${platform} captions for an artwork titled "${artworkTitle}".
 ${description ? `Artwork context: ${description}` : ''}
@@ -100,7 +100,7 @@ Return JSON with a "captions" array, each containing:
  * Feature #2: AI Content Studio — Generate an artwork description
  */
 export async function generateDescription({ title, medium, category, notes }) {
-  const res = await base44.integrations.Core.InvokeLLM({
+  const res = await studioClient.integrations.Core.InvokeLLM({
     prompt: `You are a fine art writer. Write a compelling gallery description for an artwork.
 
 Title: ${title}
@@ -121,7 +121,7 @@ Write a poetic, evocative 2-3 sentence description that captures the mood, techn
  * Feature #4: AI Business Dashboard — Generate insights from business data
  */
 export async function generateBusinessInsights(data) {
-  const res = await base44.integrations.Core.InvokeLLM({
+  const res = await studioClient.integrations.Core.InvokeLLM({
     prompt: `You are a business analyst for a fine art studio called "Reigns Atelier".
 Analyze this data and provide actionable insights in a warm, encouraging tone.
 
@@ -173,7 +173,7 @@ export async function semanticSearch(query, artworks) {
     medium: a.medium || '',
     tags: a.tags || [],
   }));
-  const res = await base44.integrations.Core.InvokeLLM({
+  const res = await studioClient.integrations.Core.InvokeLLM({
     prompt: `You are an art curator helping a visitor find artwork.
 The visitor searched: "${query}"
 
@@ -196,7 +196,7 @@ Return JSON with a "ids" array containing the IDs of artworks that match the que
  * Analyzes a client's plain-language description and suggests artwork details.
  */
 export async function analyzeCommissionVision(description, referenceImageUrl) {
-  const res = await base44.integrations.Core.InvokeLLM({
+  const res = await studioClient.integrations.Core.InvokeLLM({
     prompt: `You are a fine art commission consultant for "Reigns Atelier".
 A client described their vision: "${description}"
 
@@ -230,7 +230,7 @@ Analyze and return JSON with:
  * Suggests a fair price based on type, dimensions, complexity.
  */
 export async function suggestPrice({ artworkType, dimensions, complexity, numSubjects, medium }) {
-  const res = await base44.integrations.Core.InvokeLLM({
+  const res = await studioClient.integrations.Core.InvokeLLM({
     prompt: `You are a pricing consultant for a fine art studio.
 Suggest a fair commission price.
 

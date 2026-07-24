@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Check, Plus, Phone, Mail, Instagram, Twitter, Youtube, Globe, MessageCircle } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 
 const SETTING_DEFAULTS = [
+  { key: 'site_name', label: 'Company / Studio Name', value: 'Reigns Atelier', group: 'Branding', icon: 'globe' },
+  { key: 'site_logo_primary', label: 'Logo Primary Word', value: 'Reigns', group: 'Branding', icon: 'globe' },
+  { key: 'site_logo_secondary', label: 'Logo Secondary Word', value: 'Atelier', group: 'Branding', icon: 'globe' },
   { key: 'whatsapp_number', label: 'WhatsApp Number', value: '+1234567890', group: 'Contact', icon: 'phone', hint: 'Include country code e.g. +1234567890' },
   { key: 'contact_email', label: 'Contact Email', value: 'hello@reignsatelier.com', group: 'Contact', icon: 'mail' },
   { key: 'whatsapp_message', label: 'WhatsApp Default Message', value: "Hello, I'm interested in a commission from Reigns Atelier", group: 'Contact', icon: 'message' },
@@ -76,7 +79,7 @@ export default function SettingsTab() {
   const [initializing, setInitializing] = useState(false);
 
   useEffect(() => {
-    base44.entities.SiteContent.filter({ page: 'Settings' }).then(records => {
+    studioClient.entities.SiteContent.filter({ page: 'Settings' }).then(records => {
       const map = {};
       records.forEach(r => { map[r.key] = r; });
       setSettings(map);
@@ -89,7 +92,7 @@ export default function SettingsTab() {
     const created = {};
     for (const def of SETTING_DEFAULTS) {
       if (!settings[def.key]) {
-        const rec = await base44.entities.SiteContent.create({ key: def.key, label: def.label, value: def.value, page: 'Settings' });
+        const rec = await studioClient.entities.SiteContent.create({ key: def.key, label: def.label, value: def.value, page: 'Settings' });
         created[def.key] = rec;
       }
     }
@@ -99,11 +102,11 @@ export default function SettingsTab() {
 
   const handleSave = async (key, value) => {
     if (settings[key]) {
-      await base44.entities.SiteContent.update(settings[key].id, { value });
+      await studioClient.entities.SiteContent.update(settings[key].id, { value });
       setSettings(prev => ({ ...prev, [key]: { ...prev[key], value } }));
     } else {
       const def = SETTING_DEFAULTS.find(d => d.key === key);
-      const rec = await base44.entities.SiteContent.create({ key, label: def?.label || key, value, page: 'Settings' });
+      const rec = await studioClient.entities.SiteContent.create({ key, label: def?.label || key, value, page: 'Settings' });
       setSettings(prev => ({ ...prev, [key]: rec }));
     }
   };

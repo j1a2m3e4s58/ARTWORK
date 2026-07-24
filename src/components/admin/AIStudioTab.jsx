@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Sparkles, Loader2, FileText, Hash, Image, Copy, Check, Wand2 } from 'lucide-react';
 import { generateBlogDraft, generateCaptions, generateDescription } from '@/lib/aiHelpers';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 
 function SectionHeader({ icon: Icon, title, desc }) {
   return (
@@ -38,7 +38,7 @@ function BlogGenerator() {
 
   const handleCreate = async () => {
     const slug = result.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    await base44.entities.BlogPost.create({
+    await studioClient.entities.BlogPost.create({
       title: result.title,
       slug,
       content: result.content,

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Clock, Tag } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
@@ -18,7 +18,7 @@ export default function Blog() {
   const [posts, setPosts] = useState(DEMO_POSTS);
 
   useEffect(() => {
-    base44.entities.BlogPost.list('-created_date', 50).then(data => {
+    studioClient.entities.BlogPost.list('-created_date', 50).then(data => {
       if (data.length > 0) setPosts(data);
     }).catch(() => {});
   }, []);

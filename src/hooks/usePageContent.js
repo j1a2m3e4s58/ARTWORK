@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 
 // Cache per page
 const _caches = {};
@@ -11,7 +11,7 @@ export function usePageContent(page) {
   useEffect(() => {
     if (_caches[page]) { setContent(_caches[page]); return; }
     if (!_promises[page]) {
-      _promises[page] = base44.entities.SiteContent.filter({ page }).then(records => {
+      _promises[page] = studioClient.entities.SiteContent.filter({ page }).then(records => {
         const map = {};
         records.forEach(r => { map[r.key] = r.value; });
         _caches[page] = map;

@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { MessageCircle, X, Send, Loader2, Sparkles, MessageSquare } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { MessageCircle, X, Send, Loader2, Sparkles } from 'lucide-react';
+import { studioClient } from '@/api/studioClient';
 import ReactMarkdown from 'react-markdown';
+import { useAuth } from '@/lib/AuthContext';
 
 export default function CommissionAgentChat() {
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [conversation, setConversation] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -13,21 +15,26 @@ export default function CommissionAgentChat() {
   const startConversation = async () => {
     if (conversation) return;
     try {
-      const conv = await base44.agents.createConversation({
+      const conv = await studioClient.agents.createConversation({
         agent_name: 'commission_assistant',
         metadata: { name: 'Commission Chat' },
       });
       setConversation(conv);
       // Subscribe to updates
-      base44.agents.subscribeToConversation(conv.id, (data) => {
-        setMessages(data.messages || []);
-      });
+      setMessages([{
+        role: 'assistant',
+        content: 'Welcome to the commission studio. Tell me what you would like to create, and I’ll help shape the idea, budget, and timeline.',
+      }]);
     } catch (e) {
       setMessages([{ role: 'assistant', content: '⚠️ The AI assistant requires a Builder+ plan to activate. Please upgrade to enable live AI commission help.' }]);
     }
   };
 
   const handleOpen = () => {
+    if (!user) {
+      window.location.assign('/login?redirect=/commission');
+      return;
+    }
     setOpen(true);
     if (!conversation) startConversation();
   };
@@ -38,7 +45,9 @@ export default function CommissionAgentChat() {
     setInput('');
     setLoading(true);
     try {
-      await base44.agents.addMessage(conversation, { role: 'user', content: text });
+      setMessages(current => [...current, { role: 'user', content: text }]);
+      const reply = await studioClient.agents.addMessage(conversation, { role: 'user', content: text });
+      setMessages(current => [...current, reply]);
     } catch (e) {
       // ignore
     }
@@ -50,15 +59,15 @@ export default function CommissionAgentChat() {
       {/* Floating button */}
       <button
         onClick={handleOpen}
-        className="fixed bottom-6 right-6 z-[8000] w-14 h-14 bg-brass text-obsidian flex items-center justify-center rounded-full shadow-lg shadow-brass/20 hover:bg-brass-light transition-all hover:scale-105"
+        className="fixed bottom-24 right-[4.75rem] z-30 flex h-12 w-12 items-center justify-center rounded-full bg-brass text-obsidian shadow-lg shadow-brass/20 transition-all hover:scale-105 hover:bg-brass-light md:bottom-40 md:right-8 md:h-12 md:w-12"
         aria-label="AI Commission Assistant"
       >
-        <MessageCircle size={24} />
+        <MessageCircle size={20} />
       </button>
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-6 right-6 z-[9000] w-[360px] max-w-[calc(100vw-2rem)] h-[500px] max-h-[calc(100vh-4rem)] glass-panel border border-brass/30 flex flex-col">
+        <div className="fixed bottom-24 right-4 z-[9000] flex h-[500px] max-h-[calc(100dvh-8rem)] w-[360px] max-w-[calc(100vw-2rem)] flex-col border border-brass/30 glass-panel md:bottom-24 md:right-8">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-brass/15">
             <div className="flex items-center gap-2">
@@ -120,17 +129,6 @@ export default function CommissionAgentChat() {
             </button>
           </div>
 
-          {/* Channel links */}
-          <div className="px-3 pb-3 flex gap-2">
-            <a href={base44.agents?.getWhatsAppConnectURL?.('commission_assistant') || '#'} target="_blank" rel="noopener noreferrer"
-              className="flex-1 flex items-center justify-center gap-1 text-[10px] font-tight text-ivory/40 hover:text-green-400 border border-brass/10 py-1.5 transition-colors">
-              <MessageSquare size={10} /> WhatsApp
-            </a>
-            <a href={base44.agents?.getTelegramConnectURL?.('commission_assistant') || '#'} target="_blank" rel="noopener noreferrer"
-              className="flex-1 flex items-center justify-center gap-1 text-[10px] font-tight text-ivory/40 hover:text-blue-400 border border-brass/10 py-1.5 transition-colors">
-              <MessageSquare size={10} /> Telegram
-            </a>
-          </div>
         </div>
       )}
     </>

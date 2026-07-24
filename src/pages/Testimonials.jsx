@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Star } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
@@ -24,7 +24,7 @@ export default function Testimonials() {
   const [testimonials, setTestimonials] = useState(DEMO_TESTIMONIALS);
 
   useEffect(() => {
-    base44.entities.Testimonial.list('-created_date', 50).then(data => {
+    studioClient.entities.Testimonial.list('-created_date', 50).then(data => {
       if (data.length > 0) setTestimonials(data);
     }).catch(() => {});
   }, []);

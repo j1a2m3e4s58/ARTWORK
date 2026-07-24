@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
 import { ArrowRight, Star, ArrowDown } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
@@ -35,6 +35,21 @@ const TESTIMONIALS_PREVIEW = [
   { name: 'Sofia M.', rating: 5, text: 'An artist who truly listens. My reference photo became a living masterpiece in charcoal.', type: 'Pencil Drawing' },
 ];
 
+const DEFAULT_QUOTES = [
+  { text: 'Art enables us to find ourselves and lose ourselves at the same time.', author: 'Thomas Merton' },
+  { text: 'Creativity takes courage.', author: 'Henri Matisse' },
+  { text: 'Every artist was first an amateur.', author: 'Ralph Waldo Emerson' },
+  { text: 'A picture is a poem without words.', author: 'Horace' },
+  { text: 'Art washes away from the soul the dust of everyday life.', author: 'Pablo Picasso' },
+  { text: 'The aim of art is to represent not the outward appearance, but inward significance.', author: 'Aristotle' },
+  { text: 'Where words end, art begins.', author: 'Anonymous' },
+  { text: 'Color is the place where our brain and the universe meet.', author: 'Paul Cézanne' },
+  { text: 'An empty canvas is an invitation to become fearless.', author: 'Anonymous' },
+  { text: 'Great art does not explain itself; it awakens something within us.', author: 'Anonymous' },
+  { text: 'The artist sees possibility where others see only space.', author: 'Anonymous' },
+  { text: 'A single line can hold an entire lifetime of feeling.', author: 'Anonymous' },
+];
+
 export default function Home() {
   const settings = useSettings();
   const HERO_IMAGES = [
@@ -45,16 +60,31 @@ export default function Home() {
   const [heroIndex, setHeroIndex] = useState(0);
   const [testimonials, setTestimonials] = useState(TESTIMONIALS_PREVIEW);
   const [featuredArtworks, setFeaturedArtworks] = useState(FEATURED_ARTWORKS_FALLBACK);
+  const [quotes, setQuotes] = useState(DEFAULT_QUOTES);
+  const [quoteIndex, setQuoteIndex] = useState(0);
   const heroRef = useRef(null);
 
   useEffect(() => {
-    base44.entities.Testimonial.filter({ isFeatured: true }).then(data => {
+    studioClient.entities.Testimonial.filter({ isFeatured: true }).then(data => {
       if (data.length > 0) setTestimonials(data.slice(0, 3).map(t => ({ name: t.clientName, rating: t.rating, text: t.review, type: t.artworkType })));
     }).catch(() => {});
-    base44.entities.Artwork.filter({ isFeatured: true }).then(data => {
+    studioClient.entities.Artwork.filter({ isFeatured: true }).then(data => {
       if (data.length > 0) setFeaturedArtworks(data.slice(0, 5));
     }).catch(() => {});
+    studioClient.entities.Quote.list('created_date').then(async data => {
+      if (data.length) {
+        setQuotes(data.filter(quote => quote.active !== false));
+      } else {
+        const seeded = await Promise.all(DEFAULT_QUOTES.map(quote => studioClient.entities.Quote.create({ ...quote, active: true })));
+        setQuotes(seeded);
+      }
+    });
   }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => setQuoteIndex(index => (index + 1) % quotes.length), 8000);
+    return () => clearInterval(timer);
+  }, [quotes.length]);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
   const heroY = useTransform(scrollYProgress, [0, 1], ['0%', '30%']);
   const heroOpacity = useTransform(scrollYProgress, [0, 0.8], [1, 0]);
@@ -230,12 +260,19 @@ export default function Home() {
         <div className="max-w-4xl mx-auto px-6 lg:px-12 text-center relative">
           <ScrollReveal>
             <span className="font-display text-8xl text-brass/10 block mb-4">"</span>
-            <blockquote className="font-display text-2xl md:text-4xl text-ivory/90 leading-relaxed italic mb-8">
-              {settings.artist_quote || 'Art is not what you see, but what you make others see. Every line I draw is a conversation between the visible and the invisible.'}
-            </blockquote>
+            <AnimatePresence mode="wait">
+              <motion.blockquote key={quotes[quoteIndex]?.id || quoteIndex}
+                initial={{ opacity: 0, y: 18, filter: 'blur(6px)' }}
+                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, y: -14, filter: 'blur(4px)' }}
+                transition={{ duration: 0.7 }}
+                className="font-display text-2xl md:text-4xl text-ivory/90 leading-relaxed italic mb-8">
+                {quotes[quoteIndex]?.text}
+              </motion.blockquote>
+            </AnimatePresence>
             <div className="flex items-center justify-center gap-3">
               <div className="w-8 h-px bg-brass/40" />
-              <span className="font-tight text-xs uppercase tracking-[0.3em] text-brass/60">Reigns — Artist & Creator</span>
+              <span className="font-tight text-xs uppercase tracking-[0.3em] text-brass/60">{quotes[quoteIndex]?.author || 'Anonymous'}</span>
               <div className="w-8 h-px bg-brass/40" />
             </div>
           </ScrollReveal>

@@ -1,13 +1,13 @@
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 
 export default function WhatsAppButton() {
   const [number, setNumber] = useState('+1234567890');
   const [message, setMessage] = useState("Hello, I'm interested in a commission from Reigns Atelier");
 
   useEffect(() => {
-    base44.entities.SiteContent.filter({ page: 'Settings' }).then(records => {
+    studioClient.entities.SiteContent.filter({ page: 'Settings' }).then(records => {
       const numRec = records.find(r => r.key === 'whatsapp_number');
       const msgRec = records.find(r => r.key === 'whatsapp_message');
       if (numRec?.value) setNumber(numRec.value);

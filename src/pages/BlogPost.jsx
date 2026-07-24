@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Clock, Tag, Share2 } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 import ReactMarkdown from 'react-markdown';
 import ScrollReveal from '@/components/ScrollReveal';
 import PageTransition from '@/components/PageTransition';
@@ -49,12 +49,12 @@ export default function BlogPost() {
 
   useEffect(() => {
     // Try to find by slug in DB first, then by id, then fallback
-    base44.entities.BlogPost.filter({ slug }).then(results => {
+    studioClient.entities.BlogPost.filter({ slug }).then(results => {
       if (results.length > 0) {
         setPost(results[0]);
       } else {
         // Try by id (if slug is actually an id)
-        return base44.entities.BlogPost.filter({ id: slug }).then(byId => {
+        return studioClient.entities.BlogPost.filter({ id: slug }).then(byId => {
           if (byId.length > 0) setPost(byId[0]);
           else setPost(FALLBACK_POSTS[slug] || null);
         });

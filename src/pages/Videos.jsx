@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, X, Eye, Clock } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
@@ -64,7 +64,7 @@ export default function Videos() {
   const [playing, setPlaying] = useState(null);
 
   useEffect(() => {
-    base44.entities.Video.list('-created_date', 50).then(setDbVideos);
+    studioClient.entities.Video.list('-created_date', 50).then(setDbVideos);
   }, []);
 
   const allVideos = dbVideos.length > 0 ? dbVideos : DEMO_VIDEOS;

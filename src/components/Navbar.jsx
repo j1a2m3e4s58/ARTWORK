@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, ShoppingBag, ArrowUpRight } from 'lucide-react';
 import AdminGate from './AdminGate';
 import { useSettings } from '@/hooks/useSettings';
+import InstallAppButton from './InstallAppButton';
+import { useAuth } from '@/lib/AuthContext';
 
 const navLinks = [
   { label: 'Home', path: '/' },
@@ -18,6 +20,7 @@ const navLinks = [
 
 export default function Navbar() {
   const settings = useSettings();
+  const { user, logout } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [adminGateOpen, setAdminGateOpen] = useState(false);
@@ -59,8 +62,8 @@ export default function Navbar() {
             onContextMenu={e => e.preventDefault()}
           >
             <Link to="/" onClick={e => e.stopPropagation()}>
-              <span className="font-display text-xl text-ivory tracking-wide group-hover:text-brass transition-colors duration-300 block">Reigns</span>
-              <span className="font-tight text-[10px] uppercase tracking-[0.35em] text-brass/70 block">Atelier</span>
+              <span className="font-display text-xl text-ivory tracking-wide group-hover:text-brass transition-colors duration-300 block">{settings.site_logo_primary || 'Reigns'}</span>
+              <span className="font-tight text-[10px] uppercase tracking-[0.35em] text-brass/70 block">{settings.site_logo_secondary || 'Atelier'}</span>
             </Link>
           </div>
 
@@ -84,6 +87,14 @@ export default function Navbar() {
 
           {/* Right actions */}
           <div className="flex items-center gap-4">
+            {!user ? (
+              <div className="hidden md:flex items-center gap-3">
+                <Link to="/login" className="font-tight text-xs text-ivory/55 hover:text-brass">Log in</Link>
+                <Link to="/register" className="font-tight text-xs border border-brass/30 px-3 py-2 text-brass hover:bg-brass/10">Sign up</Link>
+              </div>
+            ) : (
+              <button onClick={() => logout()} className="hidden md:block font-tight text-xs text-ivory/45 hover:text-brass">Sign out</button>
+            )}
             <Link to="/shop" className="hidden md:flex items-center gap-2 text-ivory/60 hover:text-brass transition-colors duration-300">
               <ShoppingBag size={18} />
             </Link>
@@ -129,7 +140,7 @@ export default function Navbar() {
               <div className="mb-4 flex items-center justify-between border-b border-ivory/10 pb-4">
                 <div>
                   <p className="font-tight text-[10px] uppercase tracking-[0.28em] text-brass/70">Explore</p>
-                  <p className="mt-1 font-display text-xl text-ivory">Reigns Atelier</p>
+                  <p className="mt-1 font-display text-xl text-ivory">{settings.site_name || 'Reigns Atelier'}</p>
                 </div>
                 <button
                   onClick={() => setMenuOpen(false)}
@@ -167,6 +178,19 @@ export default function Navbar() {
                 <a href={settings.instagram_url || 'https://instagram.com'} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">Instagram</a>
                 <a href={settings.twitter_url || 'https://twitter.com'} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">Twitter</a>
                 <a href={settings.youtube_url || 'https://youtube.com'} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">YouTube</a>
+              </div>
+              <div className="mt-4">
+                <InstallAppButton />
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {!user ? (
+                  <>
+                    <Link to="/login" className="rounded-xl border border-ivory/10 px-3 py-2 text-center text-xs text-ivory/60">Log in</Link>
+                    <Link to="/register" className="rounded-xl bg-brass px-3 py-2 text-center text-xs text-obsidian">Sign up</Link>
+                  </>
+                ) : (
+                  <button onClick={() => logout()} className="col-span-2 rounded-xl border border-ivory/10 px-3 py-2 text-xs text-ivory/60">Sign out</button>
+                )}
               </div>
             </motion.div>
           </motion.div>

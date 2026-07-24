@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
 import { Instagram, Twitter, Youtube, Mail, ArrowUpRight, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 import { useSettings } from '@/hooks/useSettings';
+import { useAuth } from '@/lib/AuthContext';
 
 const FALLBACK_GALLERY = [
   'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=200&q=80',
@@ -15,13 +16,14 @@ const FALLBACK_GALLERY = [
 
 export default function Footer() {
   const settings = useSettings();
+  const { user } = useAuth();
   const [email, setEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [galleryPreviews, setGalleryPreviews] = useState(FALLBACK_GALLERY);
 
   useEffect(() => {
-    base44.entities.Artwork.list('-created_date', 6).then(data => {
+    studioClient.entities.Artwork.list('-created_date', 6).then(data => {
       const imgs = data.filter(a => a.imageUrl).map(a => a.imageUrl);
       if (imgs.length >= 3) setGalleryPreviews(imgs.slice(0, 6));
     }).catch(() => {});
@@ -30,8 +32,12 @@ export default function Footer() {
 
   const handleSubscribe = async (e) => {
     e.preventDefault();
+    if (!user) {
+      window.location.assign('/login');
+      return;
+    }
     if (!email) return;
-    await base44.entities.NewsletterSubscriber.create({ email, subscribedDate: new Date().toISOString().split('T')[0] });
+    await studioClient.entities.NewsletterSubscriber.create({ email, subscribedDate: new Date().toISOString().split('T')[0] });
     setSubscribed(true);
     setEmail('');
   };

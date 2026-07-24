@@ -22,6 +22,10 @@ import Contact from '@/pages/Contact';
 import Testimonials from '@/pages/Testimonials';
 import Admin from '@/pages/Admin';
 import Videos from '@/pages/Videos';
+import Login from '@/pages/Login';
+import Register from '@/pages/Register';
+import ForgotPassword from '@/pages/ForgotPassword';
+import ResetPassword from '@/pages/ResetPassword';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -52,7 +56,11 @@ const AuthenticatedApp = () => {
         <Route path="/videos" element={<Videos />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/testimonials" element={<Testimonials />} />
-        <Route path="/admin" element={<Admin />} />
+      <Route path="/admin" element={<Admin />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>

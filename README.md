@@ -1,39 +1,23 @@
-**Welcome to your Base44 project** 
+# Reigns Atelier
 
-**About**
+A refined, mobile-first fine-art portfolio and commission studio built with React and Vite.
 
-View and Edit  your app on [Base44.com](http://Base44.com) 
+## Run locally
 
-This project contains everything you need to run your app locally.
-
-**Edit the code in your local development environment**
-
-Any change pushed to the repo will also be reflected in the Base44 Builder.
-
-**Prerequisites:** 
-
-1. Clone the repository using the project's Git URL 
-2. Navigate to the project directory
-3. Install dependencies: `npm install`
-4. Create an `.env.local` file and set the right environment variables
-
-```
-VITE_BASE44_APP_ID=your_app_id
-VITE_BASE44_APP_BASE_URL=your_backend_url
-
-e.g.
-VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6
-VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
+```bash
+npm install
+npm run dev
 ```
 
-Run the app: `npm run dev`
+## Production build
 
-**Publish your changes**
+```bash
+npm run build
+npm run preview
+```
 
-Open [Base44.com](http://Base44.com) and click on Publish.
+## Installable app
 
-**Docs & Support**
+The site includes a web-app manifest, offline service worker, mobile install prompt, and custom palette icons. After deploying over HTTPS, visitors can install Reigns Atelier from the site or their browser menu.
 
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
-
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+Studio content and submissions are stored in the browser using local storage. Connect the data client in `src/api/studioClient.js` to your preferred production API when you need shared cloud data or transactional email.

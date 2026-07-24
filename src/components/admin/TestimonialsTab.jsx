@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Trash2, Pencil, Star, X, Check } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 import FileUploadField from './FileUploadField';
 
 function ConfirmDelete({ onConfirm, onCancel }) {
@@ -71,23 +71,23 @@ export default function TestimonialsTab() {
   const [showAdd, setShowAdd] = useState(false);
 
   useEffect(() => {
-    base44.entities.Testimonial.list('-created_date', 50).then(setTestimonials);
+    studioClient.entities.Testimonial.list('-created_date', 50).then(setTestimonials);
   }, []);
 
   const handleAdd = async (data) => {
-    const rec = await base44.entities.Testimonial.create(data);
+    const rec = await studioClient.entities.Testimonial.create(data);
     setTestimonials(prev => [rec, ...prev]);
     setShowAdd(false);
   };
 
   const handleUpdate = async (id, data) => {
-    await base44.entities.Testimonial.update(id, data);
+    await studioClient.entities.Testimonial.update(id, data);
     setTestimonials(prev => prev.map(t => t.id === id ? { ...t, ...data } : t));
     setEditItem(null);
   };
 
   const handleDelete = async (id) => {
-    await base44.entities.Testimonial.delete(id);
+    await studioClient.entities.Testimonial.delete(id);
     setTestimonials(prev => prev.filter(t => t.id !== id));
     setConfirmDel(null);
   };

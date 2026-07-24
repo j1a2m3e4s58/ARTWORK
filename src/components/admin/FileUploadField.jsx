@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { Upload, Link, Loader2, X } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { studioClient } from '@/api/studioClient';
 
 /**
  * Dual-mode field: paste a URL OR upload from PC.
@@ -19,7 +19,7 @@ export default function FileUploadField({ label, value, onChange, accept = 'imag
   const handleFile = async (file) => {
     if (!file) return;
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    const { file_url } = await studioClient.integrations.Core.UploadFile({ file });
     onChange(file_url);
     setUploading(false);
     setMode('url');
