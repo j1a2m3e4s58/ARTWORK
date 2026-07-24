@@ -288,6 +288,152 @@ async function ensureSeeds() {
       },
     ].map(item => ({ id: newId(), ...item, views: 0, created_date: now() }));
   }
+  const colourArtworkPack = [
+    {
+      seedKey: 'colour-brushes-studio',
+      title: 'Tools of Expression',
+      imageId: '32556142',
+      category: 'Realism',
+      medium: 'Paintbrush and pigment study',
+      description: 'A vibrant gathering of brushes, pigments and studio tools ready for the next work.',
+    },
+    {
+      seedKey: 'colour-abstract-palette',
+      title: 'Colour Finds Its Rhythm',
+      imageId: '31280584',
+      category: 'Digital Art',
+      medium: 'Abstract colour study',
+      description: 'An abstract canvas in progress where blue, yellow and green build an energetic visual rhythm.',
+    },
+    {
+      seedKey: 'colour-mural-studio',
+      title: 'The Painted Room',
+      imageId: '34301752',
+      category: 'Realism',
+      medium: 'Mixed-media studio study',
+      description: 'A creative room filled with paint, brushes and a blooming wall mural.',
+    },
+    {
+      seedKey: 'colour-brush-collection',
+      title: 'Brushes After Work',
+      imageId: '28935838',
+      category: 'Sketches',
+      medium: 'Studio still life',
+      description: 'A textured still life of well-used brushes carrying traces of many finished paintings.',
+    },
+    {
+      seedKey: 'colour-bold-strokes',
+      title: 'Chromatic Pulse',
+      imageId: '7374952',
+      category: 'Digital Art',
+      medium: 'Abstract brushwork',
+      description: 'Bold overlapping marks turn colour and motion into a vivid contemporary composition.',
+    },
+    {
+      seedKey: 'colour-palette-closeup',
+      title: 'The Working Palette',
+      imageId: '3922244',
+      category: 'Realism',
+      medium: 'Acrylic palette study',
+      description: 'Thick paint, mixed colour and working brushes reveal the material life behind a canvas.',
+    },
+    {
+      seedKey: 'colour-pastel-abstraction',
+      title: 'Soft Light, Bold Gesture',
+      imageId: '9175760',
+      category: 'Digital Art',
+      medium: 'Contemporary abstract',
+      description: 'Pastel colour fields and visible brush texture create a calm but expressive surface.',
+    },
+    {
+      seedKey: 'colour-paint-splatter',
+      title: 'Beautiful Disorder',
+      imageId: '32556662',
+      category: 'Digital Art',
+      medium: 'Mixed-media abstraction',
+      description: 'Paint splashes, cloth and layered colour celebrate the beautiful disorder of making art.',
+    },
+  ];
+  for (const item of colourArtworkPack) {
+    if (db.data.Artwork.some(artwork => artwork.seedKey === item.seedKey)) continue;
+    const { imageId, ...artwork } = item;
+    db.data.Artwork.push({
+      id: newId(), ...artwork, imageUrl: pexelsImage(imageId),
+      isFeatured: true, likes: 0, sourceName: 'Pexels', created_date: now(),
+    });
+  }
+  const colourVideoPack = [
+    {
+      seedKey: 'colour-video-paint-jars',
+      title: 'Painting with a Full Colour Palette',
+      videoUrl: 'https://videos.pexels.com/video-files/6957472/6957472-uhd_4096_2160_25fps.mp4',
+      thumbnailUrl: pexelsImage('32556142'),
+      category: 'Process',
+      duration: '0:18',
+      description: 'Brush, paint jars and canvas come together in an intimate view of the painting process.',
+    },
+    {
+      seedKey: 'colour-video-large-canvas',
+      title: 'Bold Strokes on a Large Canvas',
+      videoUrl: 'https://videos.pexels.com/video-files/7896667/7896667-uhd_4096_2160_25fps.mp4',
+      thumbnailUrl: pexelsImage('31280584'),
+      category: 'Behind the Scenes',
+      duration: '0:14',
+      description: 'A painter works at scale, building movement and energy with broad, confident brushwork.',
+    },
+    {
+      seedKey: 'colour-video-palette-table',
+      title: 'Pigment, Texture and Colour',
+      videoUrl: 'https://videos.pexels.com/video-files/6214338/6214338-hd_1920_1080_25fps.mp4',
+      thumbnailUrl: pexelsImage('3922244'),
+      category: 'Time-lapse',
+      duration: '0:16',
+      description: 'A colourful studio table reveals the tactile materials behind expressive painting.',
+    },
+  ];
+  for (const item of colourVideoPack) {
+    if (db.data.Video.some(video => video.seedKey === item.seedKey)) continue;
+    db.data.Video.push({
+      id: newId(), ...item, isFeatured: true, views: 0,
+      sourceName: 'Pexels', created_date: now(),
+    });
+  }
+  const colourBannerPack = [
+    {
+      seedKey: 'colour-banner-expression',
+      title: 'Colour Becomes',
+      accentTitle: 'Emotion',
+      eyebrow: 'Expressive Painting',
+      subtitle: 'Enter a world of saturated pigment, layered texture and brushwork that turns feeling into form.',
+      imageUrl: pexelsImage('31280584'),
+      primaryLabel: 'Explore Colour Works',
+      primaryLink: '/gallery',
+      secondaryLabel: 'Watch the Process',
+      secondaryLink: '/videos',
+      sortOrder: 5,
+      active: true,
+    },
+    {
+      seedKey: 'colour-banner-brush',
+      title: 'The Language',
+      accentTitle: 'Of the Brush',
+      eyebrow: 'Materials and Method',
+      subtitle: 'Every brush carries a different gesture. Discover the tools, textures and marks behind the finished work.',
+      imageUrl: pexelsImage('32556142'),
+      primaryLabel: 'Enter the Gallery',
+      primaryLink: '/gallery',
+      secondaryLabel: 'Commission Artwork',
+      secondaryLink: '/commission',
+      sortOrder: 6,
+      active: true,
+    },
+  ];
+  for (const item of colourBannerPack) {
+    if (db.data.HeroSlide.some(slide => slide.seedKey === item.seedKey)) continue;
+    db.data.HeroSlide.push({
+      id: newId(), ...item, sourceName: 'Pexels', created_date: now(),
+    });
+  }
   if (!db.data.SiteContent.some(item => item.key === 'show_videos')) {
     db.data.SiteContent.push({
       id: newId(), key: 'show_videos', value: 'true', page: 'Settings',
