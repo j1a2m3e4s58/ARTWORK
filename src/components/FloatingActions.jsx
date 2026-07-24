@@ -14,6 +14,9 @@ export default function FloatingActions() {
   }, []);
   const cleanNumber = String(settings.whatsapp_number || '').replace(/[^\d]/g, '');
   const message = settings.whatsapp_message || "Hello, I'm interested in a commission from Reigns Atelier";
+  const whatsappHref = cleanNumber
+    ? `https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`
+    : '/contact';
   return (
     <div className="fixed bottom-[calc(5.75rem+env(safe-area-inset-bottom))] right-4 z-30 flex flex-col items-end gap-2 md:bottom-8 md:right-8">
       <AnimatePresence>
@@ -26,13 +29,17 @@ export default function FloatingActions() {
           </motion.button>
         )}
       </AnimatePresence>
-      {cleanNumber && (
-        <a href={`https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`} target="_blank" rel="noopener noreferrer"
-          className="flex h-12 items-center justify-center gap-2 rounded-full bg-[#25D366] px-3 text-white shadow-lg hover:bg-[#20BA5A]"
-          aria-label="Contact Reigns Atelier on WhatsApp">
-          <MessageCircle size={19} /><span className="hidden text-xs font-medium md:inline">WhatsApp</span>
-        </a>
-      )}
+      <a
+        href={whatsappHref}
+        target={cleanNumber ? '_blank' : undefined}
+        rel={cleanNumber ? 'noopener noreferrer' : undefined}
+        className="flex h-12 min-w-12 items-center justify-center gap-2 rounded-full bg-[#25D366] px-3 text-white shadow-lg transition-transform hover:scale-105 hover:bg-[#20BA5A] focus-visible:ring-2 focus-visible:ring-white"
+        aria-label={cleanNumber ? 'Contact Reigns Atelier on WhatsApp' : 'Open the contact page'}
+        title={cleanNumber ? 'WhatsApp' : 'Contact Reigns Atelier'}
+      >
+        <MessageCircle size={19} aria-hidden="true" />
+        <span className="hidden text-xs font-medium md:inline">WhatsApp</span>
+      </a>
     </div>
   );
 }
