@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, ArrowUpRight, UserRound, ShieldCheck } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
@@ -33,7 +33,31 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const menuButtonRef = useRef(null);
+  const logoPressTimerRef = useRef(null);
+  const logoLongPressRef = useRef(false);
+
+  const cancelLogoPress = () => {
+    if (logoPressTimerRef.current) window.clearTimeout(logoPressTimerRef.current);
+    logoPressTimerRef.current = null;
+  };
+
+  const startLogoPress = event => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    cancelLogoPress();
+    logoLongPressRef.current = false;
+    logoPressTimerRef.current = window.setTimeout(() => {
+      logoLongPressRef.current = true;
+      navigate('/admin');
+    }, 850);
+  };
+
+  const handleLogoClick = event => {
+    if (!logoLongPressRef.current) return;
+    event.preventDefault();
+    logoLongPressRef.current = false;
+  };
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 60);
@@ -42,6 +66,7 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => setMenuOpen(false), [location]);
+  useEffect(() => () => cancelLogoPress(), []);
   useEffect(() => {
     document.body.style.overflow = menuOpen ? 'hidden' : '';
     const closeOnEscape = event => {
@@ -69,8 +94,18 @@ export default function Navbar() {
       >
         <div className="max-w-7xl mx-auto px-6 lg:px-12 flex items-center justify-between h-20">
           <div className="flex flex-col leading-none group select-none">
-            <Link to="/" onClick={e => e.stopPropagation()} className="flex items-center gap-3">
-              <img src="/brand/reigns-app-icon-192.png" alt="" className="h-11 w-11 rounded-full border border-brass/20 object-cover" />
+            <Link
+              to="/"
+              onClick={handleLogoClick}
+              onPointerDown={startLogoPress}
+              onPointerUp={cancelLogoPress}
+              onPointerCancel={cancelLogoPress}
+              onPointerLeave={cancelLogoPress}
+              onContextMenu={event => event.preventDefault()}
+              className="flex touch-manipulation items-center gap-3"
+              aria-label="Reigns Atelier home"
+            >
+              <img src="/brand/reigns-app-icon-192.png" alt="" draggable="false" className="h-11 w-11 rounded-full border border-brass/20 object-cover" />
               <span>
                 <span className="font-display text-xl text-ivory tracking-wide group-hover:text-brass transition-colors duration-300 block">{settings.site_logo_primary || 'Reigns'}</span>
                 <span className="font-tight text-[10px] uppercase tracking-[0.35em] text-brass/70 block">{settings.site_logo_secondary || 'Atelier'}</span>
