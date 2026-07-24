@@ -5,9 +5,15 @@ export default function CustomCursor() {
   const location = useLocation();
   const dotRef = useRef(null);
   const ringRef = useRef(null);
+  const disabled = location.pathname.startsWith('/admin');
 
   useEffect(() => {
-    if (location.pathname.startsWith('/admin')) return undefined;
+    document.documentElement.classList.toggle('custom-cursor-active', !disabled);
+    return () => document.documentElement.classList.remove('custom-cursor-active');
+  }, [disabled]);
+
+  useEffect(() => {
+    if (disabled) return undefined;
     const dot = dotRef.current;
     const ring = ringRef.current;
     if (!dot || !ring) return;
@@ -69,9 +75,9 @@ export default function CustomCursor() {
       cancelAnimationFrame(animFrame);
       observer.disconnect();
     };
-  }, [location.pathname]);
+  }, [disabled, location.pathname]);
 
-  if (location.pathname.startsWith('/admin')) return null;
+  if (disabled) return null;
 
   return (
     <>

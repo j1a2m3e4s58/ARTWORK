@@ -267,7 +267,12 @@
 }
 
 @media (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  html, a, button, input, textarea, select {
+  html.custom-cursor-active,
+  html.custom-cursor-active a,
+  html.custom-cursor-active button,
+  html.custom-cursor-active input,
+  html.custom-cursor-active textarea,
+  html.custom-cursor-active select {
     cursor: none;
   }
 }
