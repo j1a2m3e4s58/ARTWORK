@@ -146,6 +146,9 @@ export default function Admin() {
   const [showAddBlog, setShowAddBlog] = useState(false);
   const [bulkImport, setBulkImport] = useState(null); // 'artwork' | 'product' | null
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [tabLoading, setTabLoading] = useState(false);
+  const [tabError, setTabError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
   const [newVideo, setNewVideo] = useState({ title: '', videoUrl: '', thumbnailUrl: '', category: 'Process', description: '', duration: '', isFeatured: false, status: 'draft' });
   const [newArtwork, setNewArtwork] = useState({ title: '', category: 'Portraits', imageUrl: '', medium: '', description: '', price: '', status: 'draft' });
   const pendingMessageCount = messages.filter(message => !['replied', 'archived', 'spam'].includes(message.status)).length;
@@ -170,6 +173,7 @@ export default function Admin() {
   }, [user?.role]);
 
   useEffect(() => {
+    let active = true;
     const loaders = {
       overview: async () => {
         const requests = [
@@ -188,8 +192,27 @@ export default function Admin() {
       subscribers: () => studioClient.entities.NewsletterSubscriber.list('-created_date', 50).then(setSubscribers),
       blog: () => studioClient.entities.BlogPost.list('-created_date', 50).then(setBlogPosts),
     };
-    if (loaders[activeTab]) loaders[activeTab]();
-  }, [activeTab, user?.role]);
+    const loader = loaders[activeTab];
+    if (!loader) {
+      setTabLoading(false);
+      setTabError('');
+      return () => {
+        active = false;
+      };
+    }
+    setTabLoading(true);
+    setTabError('');
+    Promise.resolve(loader())
+      .catch(error => {
+        if (active) setTabError(error.message || 'This section could not be loaded.');
+      })
+      .finally(() => {
+        if (active) setTabLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeTab, user?.role, reloadKey]);
 
   const handleDelete = async (entity, id, setter) => {
     await studioClient.entities[entity].delete(id);
@@ -262,10 +285,10 @@ export default function Admin() {
         </div>
 
         {/* Mobile bottom bar */}
-        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-carbon/95 backdrop-blur-xl border-t border-brass/10 z-50 grid grid-cols-5 px-2 pb-[max(.4rem,env(safe-area-inset-bottom))]">
+        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-carbon/95 backdrop-blur-xl border-t border-brass/10 z-50 flex px-2 pb-[max(.4rem,env(safe-area-inset-bottom))]">
           {tabs.filter(tab => ['overview', 'inbox', 'commissions', 'users'].includes(tab.id)).map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => setActiveTab(id)}
-              className={`relative min-w-0 py-2 flex flex-col gap-1 items-center justify-center transition-colors ${activeTab === id ? 'text-brass' : 'text-ivory/30'}`}>
+              className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-2 transition-colors ${activeTab === id ? 'text-brass' : 'text-ivory/30'}`}>
               <Icon size={17} /><span className="text-[9px] font-tight">{label}</span>
               {id === 'inbox' && pendingMessageCount > 0 && (
                 <span className="absolute right-[24%] top-1 min-w-4 rounded-full bg-brass px-1 text-center text-[9px] font-semibold text-obsidian">
@@ -274,7 +297,7 @@ export default function Admin() {
               )}
             </button>
           ))}
-          <button onClick={() => setMobileMenuOpen(true)} className="py-2 flex flex-col gap-1 items-center justify-center text-ivory/35">
+          <button onClick={() => setMobileMenuOpen(true)} className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-2 text-ivory/35">
             <MoreHorizontal size={18} /><span className="text-[9px] font-tight">More</span>
           </button>
         </div>
@@ -305,6 +328,17 @@ export default function Admin() {
 
         {/* Content */}
         <div className="flex-1 md:ml-60 p-5 lg:p-8 pb-24 md:pb-8">
+          {tabLoading && (
+            <div className="sticky top-20 z-30 mb-4 h-0.5 overflow-hidden rounded-full bg-brass/10" role="status" aria-label="Loading admin section">
+              <motion.div className="h-full w-1/3 bg-brass" animate={{ x: ['-100%', '300%'] }} transition={{ repeat: Infinity, duration: 1.1, ease: 'easeInOut' }} />
+            </div>
+          )}
+          {tabError && (
+            <div className="mb-5 flex flex-col gap-3 rounded-xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-200 sm:flex-row sm:items-center sm:justify-between" role="alert">
+              <span>{tabError}</span>
+              <button onClick={() => setReloadKey(value => value + 1)} className="min-h-10 rounded-lg border border-red-300/20 px-4 text-xs font-semibold uppercase tracking-wider hover:bg-red-300/10">Try again</button>
+            </div>
+          )}
 
           {/* -- OVERVIEW -- */}
           {activeTab === 'overview' && (

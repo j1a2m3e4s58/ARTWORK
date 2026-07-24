@@ -3,7 +3,9 @@ import ReactDOM from 'react-dom/client'
 import App from '@/App.jsx'
 import '@/index.css'
 
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+const installableEnvironment = import.meta.env.PROD || ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
+if ('serviceWorker' in navigator && installableEnvironment) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').then(registration => {
       if (registration.waiting) window.dispatchEvent(new CustomEvent('atelier:update-ready', { detail: registration }));

@@ -11,6 +11,7 @@ import AccountRoute from '@/components/AccountRoute';
 import PWAUpdateBanner from '@/components/PWAUpdateBanner';
 import AppErrorBoundary from '@/components/AppErrorBoundary';
 import AdminLayout from '@/components/AdminLayout';
+import AdminAccessGate from '@/components/AdminAccessGate';
 import AccountLayout from '@/components/AccountLayout';
 import FeatureRoute from '@/components/FeatureRoute';
 
@@ -62,7 +63,7 @@ const AuthenticatedApp = () => {
         <Route path="/privacy" element={<LegalPage type="privacy" />} />
         <Route path="/terms" element={<LegalPage type="terms" />} />
       </Route>
-      <Route element={<AdminRoute><AdminLayout /></AdminRoute>}>
+      <Route element={<AdminRoute><AdminAccessGate><AdminLayout /></AdminAccessGate></AdminRoute>}>
         <Route path="/admin" element={<Admin />} />
       </Route>
       <Route element={<AccountRoute><AccountLayout /></AccountRoute>}>

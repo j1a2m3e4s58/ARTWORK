@@ -306,6 +306,7 @@ function sign(user) {
 }
 
 function setSession(res, user) {
+  res.clearCookie('atelier_admin_access');
   res.cookie('atelier_session', sign(user), {
     httpOnly: true,
     sameSite: 'lax',
@@ -331,6 +332,32 @@ function readUser(req) {
   }
 }
 
+function hasAdminAccess(req, user) {
+  try {
+    const accessToken = req.cookies.atelier_admin_access;
+    if (!accessToken || !user) return false;
+    const payload = jwt.verify(accessToken, jwtSecret);
+    return payload.purpose === 'admin_access'
+      && payload.id === user.id
+      && (payload.version || 0) === (user.sessionVersion || 0);
+  } catch {
+    return false;
+  }
+}
+
+function requireStaffIdentity(req, res, next) {
+  req.user = readUser(req);
+  if (!req.user || !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'Staff access required.' });
+  next();
+}
+
+function requireAdminAccess(req, res, next) {
+  if (!hasAdminAccess(req, req.user)) {
+    return res.status(403).json({ error: 'Re-enter your password to unlock Studio Control.', code: 'admin_unlock_required' });
+  }
+  next();
+}
+
 function requireUser(req, res, next) {
   req.user = readUser(req);
   if (!req.user) return res.status(401).json({ error: 'Please log in to continue.' });
@@ -352,7 +379,7 @@ function requireAdmin(req, res, next) {
   if (requiresProductionMfa(req.user)) {
     return res.status(403).json({ error: 'Multi-factor authentication is required for production administrators.', code: 'mfa_required' });
   }
-  next();
+  requireAdminAccess(req, res, next);
 }
 
 function requireAdminIdentity(req, res, next) {
@@ -367,7 +394,7 @@ function requireStaff(req, res, next) {
   if (requiresProductionMfa(req.user)) {
     return res.status(403).json({ error: 'Multi-factor authentication is required for production administrators.', code: 'mfa_required' });
   }
-  next();
+  requireAdminAccess(req, res, next);
 }
 
 app.use((req, res, next) => {
@@ -805,6 +832,7 @@ app.post('/api/auth/mfa/verify-login', authLimiter, async (req, res) => {
 app.post('/api/auth/logout', (_req, res) => {
   res.clearCookie('atelier_session');
   res.clearCookie('atelier_csrf');
+  res.clearCookie('atelier_admin_access');
   res.json({ success: true });
 });
 
@@ -817,6 +845,35 @@ app.get('/api/auth/me', (req, res) => {
     });
   }
   res.json(user ? hiddenUserFields(user) : null);
+});
+
+app.get('/api/admin/access', requireStaffIdentity, (req, res) => {
+  res.json({ unlocked: hasAdminAccess(req, req.user) });
+});
+
+app.post('/api/admin/unlock', requireStaffIdentity, authLimiter, async (req, res) => {
+  const passwordValid = await bcrypt.compare(String(req.body.password || ''), req.user.passwordHash);
+  if (!passwordValid) return res.status(401).json({ error: 'The password is incorrect.' });
+  if (requiresProductionMfa(req.user)) {
+    return res.status(403).json({ error: 'Multi-factor authentication is required before opening Studio Control.', code: 'mfa_required' });
+  }
+  const accessToken = jwt.sign({
+    id: req.user.id,
+    version: req.user.sessionVersion || 0,
+    purpose: 'admin_access',
+  }, jwtSecret, { expiresIn: '30m' });
+  res.cookie('atelier_admin_access', accessToken, {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: secureCookie,
+    maxAge: 30 * 60 * 1000,
+  });
+  res.json({ unlocked: true });
+});
+
+app.post('/api/admin/lock', requireStaffIdentity, (_req, res) => {
+  res.clearCookie('atelier_admin_access');
+  res.json({ unlocked: false });
 });
 
 app.post('/api/auth/forgot-password', authLimiter, verifyHuman, async (req, res) => {
@@ -989,12 +1046,13 @@ app.get('/api/entities/:name', async (req, res) => {
     return res.status(403).json({ error: 'Enable multi-factor authentication before accessing studio records.', code: 'mfa_required' });
   }
   const ownData = ['CommissionRequest', 'Message', 'Notification', 'Order'].includes(name);
-  if (!publicRead.has(name) && !canManage(user, name) && !(user && ownData)) {
+  const staffAccess = canManage(user, name) && hasAdminAccess(req, user);
+  if (!publicRead.has(name) && !staffAccess && !(user && ownData)) {
     return res.status(403).json({ error: 'You do not have access to these records.' });
   }
-  const includeDeleted = req.query.includeDeleted === 'true' && canManage(user, name);
+  const includeDeleted = req.query.includeDeleted === 'true' && staffAccess;
   const queryFilters = Object.fromEntries(Object.entries(req.query).filter(([key]) => !['sort', 'limit', 'offset', 'page', 'includeDeleted'].includes(key)));
-  if (user && ownData && !canManage(user, name)) queryFilters.userId = user.id;
+  if (user && ownData && !staffAccess) queryFilters.userId = user.id;
   const requestedLimit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
   const requestedOffset = req.query.offset
     ? Math.max(0, Number(req.query.offset) || 0)
@@ -1007,8 +1065,8 @@ app.get('/api/entities/:name', async (req, res) => {
     includeDeleted,
   });
   let records = queried?.records || db.data[name].filter(record => includeDeleted || !record.deleted_at);
-  if (user && ownData && !canManage(user, name)) records = records.filter(record => record.userId === user.id);
-  if (!staffRoles.has(user?.role)) {
+  if (user && ownData && !staffAccess) records = records.filter(record => record.userId === user.id);
+  if (!staffAccess) {
     if (name === 'BlogPost') records = records.filter(record => record.status === 'published' || !record.status);
     if (name === 'Testimonial') records = records.filter(record => record.status === 'approved');
     if (['Artwork', 'HeroSlide', 'ShopProduct', 'Video'].includes(name)) {
@@ -1041,6 +1099,9 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
   if (!Array.isArray(db.data[name])) return res.status(404).json({ error: 'Unknown entity.' });
   const user = readUser(req);
   const publicCreate = name === 'NewsletterSubscriber';
+  if (canManage(user, name) && !hasAdminAccess(req, user) && !authenticatedCreate.has(name) && !publicCreate) {
+    return res.status(403).json({ error: 'Re-enter your password to unlock Studio Control.', code: 'admin_unlock_required' });
+  }
   if (!canManage(user, name) && !authenticatedCreate.has(name) && !publicCreate) {
     return res.status(403).json({ error: 'You do not have permission to create this record.' });
   }
@@ -1320,6 +1381,9 @@ app.post('/api/artworks/:id/like', requireUser, mutationLimiter, async (req, res
 });
 
 app.post('/api/upload', requireVerifiedUser, mutationLimiter, upload.single('file'), async (req, res) => {
+  if (staffRoles.has(req.user.role) && !hasAdminAccess(req, req.user)) {
+    return res.status(403).json({ error: 'Re-enter your password to unlock Studio Control.', code: 'admin_unlock_required' });
+  }
   if (!req.file) return res.status(400).json({ error: 'Choose a supported image or video.' });
   const detected = await fileTypeFromBuffer(req.file.buffer);
   const allowed = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'video/mp4', 'video/webm']);

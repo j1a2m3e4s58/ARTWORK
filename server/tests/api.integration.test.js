@@ -77,8 +77,22 @@ test('API keeps public reads open while blocking unverified customer mutations',
       body: JSON.stringify({ email: 'admin@example.test', password: 'AdminCanvas2026!' }),
     });
     assert.equal(login.status, 200);
-    const adminCookieHeader = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
+    let adminCookieHeader = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
     const adminCsrf = decodeURIComponent(adminCookieHeader.match(/atelier_csrf=([^;]+)/)?.[1] || '');
+    const lockedResponse = await fetch(`${baseUrl}/api/admin/system-status`, { headers: { Cookie: adminCookieHeader } });
+    assert.equal(lockedResponse.status, 403);
+    assert.equal((await lockedResponse.json()).code, 'admin_unlock_required');
+
+    const unlockResponse = await fetch(`${baseUrl}/api/admin/unlock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: adminCookieHeader, 'X-CSRF-Token': adminCsrf },
+      body: JSON.stringify({ password: 'AdminCanvas2026!' }),
+    });
+    assert.equal(unlockResponse.status, 200);
+    adminCookieHeader = [
+      ...adminCookieHeader.split('; ').filter(value => !value.startsWith('atelier_admin_access=')),
+      ...unlockResponse.headers.getSetCookie().map(value => value.split(';')[0]),
+    ].join('; ');
     const securedHeaders = { 'Content-Type': 'application/json', Cookie: adminCookieHeader, 'X-CSRF-Token': adminCsrf };
     const productResponse = await fetch(`${baseUrl}/api/entities/ShopProduct`, {
       method: 'POST',

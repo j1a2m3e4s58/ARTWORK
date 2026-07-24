@@ -25,7 +25,7 @@
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const message = data.error || 'Request failed.';
-    window.dispatchEvent(new CustomEvent('atelier:api-error', { detail: { status: response.status, message, url } }));
+    window.dispatchEvent(new CustomEvent('atelier:api-error', { detail: { status: response.status, message, code: data.code, url } }));
     throw new Error(message);
   }
   return data;
@@ -75,6 +75,15 @@ const entities = Object.fromEntries(entityNames.map(name => [name, createEntity(
 export const studioClient = {
   entities,
   admin: {
+    access() {
+      return request('/api/admin/access');
+    },
+    unlock(password) {
+      return request('/api/admin/unlock', { method: 'POST', body: JSON.stringify({ password }) });
+    },
+    lock() {
+      return request('/api/admin/lock', { method: 'POST' });
+    },
     createUser(data) {
       return request('/api/admin/users', { method: 'POST', body: JSON.stringify(data) });
     },
