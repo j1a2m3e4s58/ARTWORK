@@ -94,6 +94,15 @@
   ::-webkit-scrollbar-thumb:hover {
     background: #C9A96E;
   }
+
+  .admin-access-input:-webkit-autofill,
+  .admin-access-input:-webkit-autofill:hover,
+  .admin-access-input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #F9F6F0;
+    caret-color: #C9A96E;
+    box-shadow: 0 0 0 1000px rgba(10, 10, 11, 0.88) inset;
+    transition: background-color 9999s ease-out;
+  }
 }
 
 @layer utilities {
