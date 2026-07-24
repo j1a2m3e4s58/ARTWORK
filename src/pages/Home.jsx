@@ -200,6 +200,56 @@ export default function Home() {
           </motion.div>
 
           {slides.length > 1 && (
+            <div className="mt-6 hidden w-fit max-w-full items-center gap-3 border border-ivory/15 bg-obsidian/70 p-2 shadow-2xl backdrop-blur-xl md:flex">
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setHeroIndex(index => (index - 1 + slides.length) % slides.length)}
+                  className="flex h-11 w-11 items-center justify-center border border-ivory/15 text-ivory/75 transition-colors hover:border-brass/50 hover:text-brass focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
+                  aria-label="Previous banner"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHeroPaused(value => !value)}
+                  className="flex h-11 w-11 items-center justify-center border border-brass/35 bg-brass/10 text-brass transition-colors hover:bg-brass/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
+                  aria-label={heroPaused ? 'Resume automatic banner rotation' : 'Pause automatic banner rotation'}
+                >
+                  {heroPaused ? <Play size={17} /> : <Pause size={17} />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHeroIndex(index => (index + 1) % slides.length)}
+                  className="flex h-11 w-11 items-center justify-center border border-ivory/15 text-ivory/75 transition-colors hover:border-brass/50 hover:text-brass focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
+                  aria-label="Next banner"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+
+              <span className="shrink-0 whitespace-nowrap border-l border-ivory/15 pl-3 font-tight text-[10px] tracking-[0.22em] text-ivory/55" aria-live="polite">
+                {String((heroIndex % slides.length) + 1).padStart(2, '0')} / {String(slides.length).padStart(2, '0')}
+              </span>
+
+              <div className="flex min-w-0 items-center gap-1.5 border-l border-ivory/15 pl-3" aria-label="Choose a banner">
+                {slides.map((slide, i) => (
+                  <button
+                    key={slide.id || i}
+                    type="button"
+                    onClick={() => setHeroIndex(i)}
+                    aria-label={`Show banner ${i + 1}: ${slide.title}`}
+                    aria-current={i === heroIndex % slides.length ? 'true' : undefined}
+                    className="flex h-11 items-center px-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
+                  >
+                    <span className={`block h-0.5 transition-all duration-300 ${i === heroIndex % slides.length ? 'w-10 bg-brass' : 'w-5 bg-ivory/20 hover:bg-ivory/40'}`} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {slides.length > 1 && (
             <div className="mt-6 w-full border border-ivory/15 bg-obsidian/70 p-2.5 shadow-2xl backdrop-blur-xl md:hidden">
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1.5">
@@ -249,48 +299,6 @@ export default function Home() {
             </div>
           )}
         </motion.div>
-
-        {/* Hero dots */}
-        <div className="absolute bottom-10 left-1/2 z-10 hidden -translate-x-1/2 gap-2 md:flex">
-          {slides.map((slide, i) => (
-            <button key={slide.id || i} onClick={() => setHeroIndex(i)}
-              aria-label={`Show banner ${i + 1}: ${slide.title}`}
-              className={`min-h-11 px-1 transition-all duration-500 before:block before:h-1 ${i === heroIndex % slides.length ? 'before:w-12 before:bg-brass' : 'before:w-6 before:bg-ivory/25 hover:before:bg-ivory/50'}`}
-            />
-          ))}
-        </div>
-
-        {slides.length > 1 && (
-          <div className="absolute bottom-8 left-6 z-20 hidden items-center gap-2 md:flex lg:left-12">
-            <button
-              type="button"
-              onClick={() => setHeroIndex(index => (index - 1 + slides.length) % slides.length)}
-              className="w-11 h-11 border border-ivory/20 bg-obsidian/30 backdrop-blur-sm text-ivory/70 hover:text-brass hover:border-brass/50 transition-colors flex items-center justify-center"
-              aria-label="Previous banner"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setHeroIndex(index => (index + 1) % slides.length)}
-              className="w-11 h-11 border border-ivory/20 bg-obsidian/30 backdrop-blur-sm text-ivory/70 hover:text-brass hover:border-brass/50 transition-colors flex items-center justify-center"
-              aria-label="Next banner"
-            >
-              <ChevronRight size={18} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setHeroPaused(value => !value)}
-              className="flex h-11 w-11 items-center justify-center border border-ivory/20 bg-obsidian/30 text-ivory/70 backdrop-blur-sm transition-colors hover:border-brass/50 hover:text-brass"
-              aria-label={heroPaused ? 'Resume automatic banner rotation' : 'Pause automatic banner rotation'}
-            >
-              {heroPaused ? <Play size={17} /> : <Pause size={17} />}
-            </button>
-            <span className="ml-2 font-tight text-[10px] tracking-[0.25em] text-ivory/45">
-              {String((heroIndex % slides.length) + 1).padStart(2, '0')} / {String(slides.length).padStart(2, '0')}
-            </span>
-          </div>
-        )}
 
         {/* Scroll indicator */}
         <motion.div
