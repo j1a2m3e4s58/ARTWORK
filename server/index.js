@@ -12,12 +12,15 @@ import multer from 'multer';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { fileTypeFromBuffer } from 'file-type';
-import { db, save, newId, now, backupDatabase, databaseKind, closeDatabase } from './db.js';
-import { sendEmail } from './email.js';
+import { db, save, newId, now, backupDatabase, databaseKind, closeDatabase, checkDatabase } from './db.js';
+import { sendEmail, checkEmail } from './email.js';
 import { validateEntity } from './validation.js';
-import { storageProvider, storeFile } from './storage.js';
+import { storageProvider, storeFile, checkStorage } from './storage.js';
 import { authenticator } from 'otplib';
 import QRCode from 'qrcode';
+import { initializePayment, paymentStatus, verifyPayment } from './payments.js';
+import { canUseProtectedFeature, passwordProblem, requiresProductionMfa } from './security.js';
+import { reportOperationalError } from './operations.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -32,7 +35,7 @@ if (!jwtSecret || jwtSecret.length < 32) {
 }
 
 const app = express();
-app.set('trust proxy', 1);
+app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   strictTransportSecurity: process.env.NODE_ENV === 'production' ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
@@ -53,6 +56,7 @@ app.use(helmet({
   },
 }));
 const allowedOrigins = (process.env.APP_ORIGIN || 'http://127.0.0.1:43127').split(',').map(origin => origin.trim());
+const publicOrigin = String(process.env.SITE_URL || allowedOrigins[0]).replace(/\/+$/, '');
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
@@ -89,7 +93,7 @@ const upload = multer({
 const publicRead = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
 const authenticatedCreate = new Set(['CommissionRequest', 'Message', 'Order']);
 const staffRoles = new Set(['admin', 'editor', 'support']);
-const contentEntities = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
+const contentEntities = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'Media', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
 const supportEntities = new Set(['CommissionRequest', 'Message', 'Order']);
 const hiddenUserFields = ({ passwordHash, mfaSecret, pendingMfaSecret, ...user }) => user;
 const hashToken = token => createHash('sha256').update(token).digest('hex');
@@ -131,6 +135,52 @@ async function audit(user, action, entity, entityId, details = {}) {
   });
 }
 
+async function deliverEmail(message, { queueOnFailure = true } = {}) {
+  const delivery = await sendEmail(message);
+  if (!delivery.delivered && queueOnFailure) {
+    db.data.Outbox.push({
+      id: newId(),
+      ...message,
+      status: 'pending',
+      attempts: 1,
+      lastError: delivery.reason || delivery.error,
+      nextAttemptAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      created_date: now(),
+    });
+    await save();
+  }
+  return delivery;
+}
+
+let outboxProcessing = false;
+async function processEmailOutbox() {
+  if (outboxProcessing || !process.env.SMTP_HOST) return;
+  outboxProcessing = true;
+  try {
+    const due = db.data.Outbox
+      .filter(item => item.status === 'pending' && new Date(item.nextAttemptAt || 0).getTime() <= Date.now())
+      .slice(0, 10);
+    for (const item of due) {
+      const delivery = await sendEmail({ to: item.to, subject: item.subject, text: item.text, html: item.html });
+      item.attempts = (item.attempts || 0) + 1;
+      item.lastAttemptAt = now();
+      if (delivery.delivered) {
+        item.status = 'delivered';
+        item.messageId = delivery.messageId;
+      } else if (item.attempts >= 5) {
+        item.status = 'failed';
+        item.lastError = delivery.reason || delivery.error;
+      } else {
+        item.lastError = delivery.reason || delivery.error;
+        item.nextAttemptAt = new Date(Date.now() + Math.min(60, item.attempts * 10) * 60 * 1000).toISOString();
+      }
+    }
+    if (due.length) await save();
+  } finally {
+    outboxProcessing = false;
+  }
+}
+
 function sign(user) {
   return jwt.sign({ id: user.id, version: user.sessionVersion || 0 }, jwtSecret, { expiresIn: '7d' });
 }
@@ -167,7 +217,25 @@ function requireUser(req, res, next) {
   next();
 }
 
+function requireVerifiedUser(req, res, next) {
+  req.user = readUser(req);
+  if (!req.user) return res.status(401).json({ error: 'Please log in to continue.' });
+  if (!canUseProtectedFeature(req.user)) {
+    return res.status(403).json({ error: 'Verify your email address before using this feature.', code: 'email_verification_required' });
+  }
+  next();
+}
+
 function requireAdmin(req, res, next) {
+  req.user = readUser(req);
+  if (!req.user || req.user.role !== 'admin') return res.status(403).json({ error: 'Administrator access required.' });
+  if (requiresProductionMfa(req.user)) {
+    return res.status(403).json({ error: 'Multi-factor authentication is required for production administrators.', code: 'mfa_required' });
+  }
+  next();
+}
+
+function requireAdminIdentity(req, res, next) {
   req.user = readUser(req);
   if (!req.user || req.user.role !== 'admin') return res.status(403).json({ error: 'Administrator access required.' });
   next();
@@ -176,6 +244,9 @@ function requireAdmin(req, res, next) {
 function requireStaff(req, res, next) {
   req.user = readUser(req);
   if (!req.user || !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'Staff access required.' });
+  if (requiresProductionMfa(req.user)) {
+    return res.status(403).json({ error: 'Multi-factor authentication is required for production administrators.', code: 'mfa_required' });
+  }
   next();
 }
 
@@ -198,6 +269,10 @@ async function ensureSeeds() {
       passwordHash: await bcrypt.hash(adminPassword, 12), role: 'admin',
       status: 'active', emailVerified: true, sessionVersion: 0, created_date: now(),
     });
+  }
+  if (process.env.NODE_ENV === 'production' && process.env.SEED_DEMO_CONTENT !== 'true') {
+    await save();
+    return;
   }
   if (!db.data.Quote.length) {
     const quotes = [
@@ -499,22 +574,59 @@ async function ensureSeeds() {
   await save();
 }
 await ensureSeeds();
+const outboxTimer = setInterval(() => processEmailOutbox().catch(error => {
+  reportOperationalError('email_outbox_failed', error);
+}), 60_000);
+outboxTimer.unref();
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, database: databaseKind, email: Boolean(process.env.SMTP_HOST) }));
-app.get('/api/ready', (_req, res) => res.json({
-  ok: true,
-  database: databaseKind,
-  email: Boolean(process.env.SMTP_HOST),
-  storage: storageProvider,
-  environment: process.env.NODE_ENV || 'development',
-}));
+app.get('/api/health', (_req, res) => res.json({ ok: true, database: databaseKind }));
+app.get('/api/ready', async (_req, res) => {
+  const [database, email] = await Promise.all([
+    checkDatabase().catch(error => ({ ok: false, reason: error.message })),
+    checkEmail(),
+  ]);
+  const storage = checkStorage();
+  const production = process.env.NODE_ENV === 'production';
+  const required = production
+    ? [database.ok, email.ok, storage.ok, Boolean(process.env.APP_ORIGIN), Boolean(process.env.SITE_URL)]
+    : [database.ok];
+  const payload = {
+    ok: required.every(Boolean),
+    services: { database, email, storage },
+    payment: paymentStatus,
+    environment: process.env.NODE_ENV || 'development',
+  };
+  res.status(payload.ok ? 200 : 503).json(payload);
+});
+
+app.get('/api/admin/system-status', requireAdmin, async (_req, res) => {
+  const [database, email] = await Promise.all([
+    checkDatabase().catch(error => ({ ok: false, reason: error.message })),
+    checkEmail(),
+  ]);
+  const storage = checkStorage();
+  res.json({
+    ok: database.ok && (process.env.NODE_ENV !== 'production' || (email.ok && storage.ok)),
+    services: { database, email, storage, payment: paymentStatus },
+    counts: {
+      pendingMessages: db.data.Message.filter(item => !['replied', 'archived', 'spam'].includes(item.status) && !item.deleted_at).length,
+      pendingCommissions: db.data.CommissionRequest.filter(item => item.status === 'pending' && !item.deleted_at).length,
+      pendingOrders: db.data.Order.filter(item => item.status === 'pending' && !item.deleted_at).length,
+      failedEmails: db.data.Outbox.filter(item => item.status === 'failed').length,
+      queuedEmails: db.data.Outbox.filter(item => item.status === 'pending').length,
+    },
+    environment: process.env.NODE_ENV || 'development',
+    checkedAt: now(),
+  });
+});
 
 app.post('/api/auth/register', authLimiter, async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
   const fullName = String(req.body.full_name || '').trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
-  if (password.length < 10) return res.status(400).json({ error: 'Password must contain at least 10 characters.' });
+  const passwordError = passwordProblem(password);
+  if (passwordError) return res.status(400).json({ error: passwordError });
   if (db.data.User.some(user => user.email === email)) return res.status(409).json({ error: 'An account with this email already exists.' });
   const user = {
     id: newId(), email, full_name: fullName || email.split('@')[0],
@@ -529,8 +641,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   });
   await audit(user, 'account.registered', 'User', user.id);
   await save();
-  const verificationUrl = `${process.env.APP_ORIGIN || 'http://127.0.0.1:43127'}/verify-email?token=${encodeURIComponent(verificationToken)}`;
-  await sendEmail({ to: user.email, subject: 'Verify your Reigns Atelier email', text: `Verify your email address: ${verificationUrl}` });
+  const verificationUrl = `${publicOrigin}/verify-email?token=${encodeURIComponent(verificationToken)}`;
+  await deliverEmail({ to: user.email, subject: 'Verify your Reigns Atelier email', text: `Verify your email address: ${verificationUrl}` });
   setSession(res, user);
   res.status(201).json(hiddenUserFields(user));
 });
@@ -593,8 +705,8 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
       expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), created_date: now(),
     });
     await save();
-    const url = `${process.env.APP_ORIGIN || 'http://127.0.0.1:43127'}/reset-password?token=${encodeURIComponent(rawToken)}`;
-    await sendEmail({ to: user.email, subject: 'Reset your Reigns Atelier password', text: `Reset your password: ${url}` });
+    const url = `${publicOrigin}/reset-password?token=${encodeURIComponent(rawToken)}`;
+    await deliverEmail({ to: user.email, subject: 'Reset your Reigns Atelier password', text: `Reset your password: ${url}` });
   }
   res.json({ success: true });
 });
@@ -602,7 +714,8 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
 app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
   const rawToken = String(req.body.token || '');
   const password = String(req.body.password || '');
-  if (password.length < 10) return res.status(400).json({ error: 'Password must contain at least 10 characters.' });
+  const passwordError = passwordProblem(password);
+  if (passwordError) return res.status(400).json({ error: passwordError });
   const tokenRecord = db.data.passwordResetTokens.find(item =>
     safeEqual(item.tokenHash, hashToken(rawToken)) && new Date(item.expiresAt).getTime() > Date.now()
   );
@@ -635,8 +748,8 @@ app.post('/api/admin/users', requireAdmin, async (req, res) => {
   });
   await audit(req.user, 'user.invited', 'User', user.id, { email, role: user.role });
   await save();
-  const invitationUrl = `${process.env.APP_ORIGIN || 'http://127.0.0.1:43127'}/accept-invite?token=${encodeURIComponent(rawToken)}`;
-  const delivery = await sendEmail({
+  const invitationUrl = `${publicOrigin}/accept-invite?token=${encodeURIComponent(rawToken)}`;
+  const delivery = await deliverEmail({
     to: email,
     subject: 'You are invited to Reigns Atelier',
     text: `Accept your invitation and create your password: ${invitationUrl}`,
@@ -653,8 +766,8 @@ app.post('/api/admin/users/:id/resend-invite', requireAdmin, async (req, res) =>
     id: newId(), userId: user.id, tokenHash: hashToken(rawToken),
     expiresAt: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(), created_date: now(),
   });
-  const invitationUrl = `${process.env.APP_ORIGIN || 'http://127.0.0.1:43127'}/accept-invite?token=${encodeURIComponent(rawToken)}`;
-  const delivery = await sendEmail({ to: user.email, subject: 'Your Reigns Atelier invitation', text: `Accept your invitation: ${invitationUrl}` });
+  const invitationUrl = `${publicOrigin}/accept-invite?token=${encodeURIComponent(rawToken)}`;
+  const delivery = await deliverEmail({ to: user.email, subject: 'Your Reigns Atelier invitation', text: `Accept your invitation: ${invitationUrl}` });
   await audit(req.user, 'user.invitation_resent', 'User', user.id);
   await save();
   res.json({ success: true, delivery });
@@ -663,7 +776,8 @@ app.post('/api/admin/users/:id/resend-invite', requireAdmin, async (req, res) =>
 app.post('/api/auth/accept-invite', authLimiter, async (req, res) => {
   const rawToken = String(req.body.token || '');
   const password = String(req.body.password || '');
-  if (password.length < 10) return res.status(400).json({ error: 'Password must contain at least 10 characters.' });
+  const passwordError = passwordProblem(password);
+  if (passwordError) return res.status(400).json({ error: passwordError });
   const invite = db.data.inviteTokens.find(item =>
     safeEqual(item.tokenHash, hashToken(rawToken)) && new Date(item.expiresAt).getTime() > Date.now()
   );
@@ -702,13 +816,13 @@ app.post('/api/auth/resend-verification', requireUser, authLimiter, async (req, 
     id: newId(), userId: req.user.id, tokenHash: hashToken(rawToken),
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), created_date: now(),
   });
-  const verificationUrl = `${process.env.APP_ORIGIN || 'http://127.0.0.1:43127'}/verify-email?token=${encodeURIComponent(rawToken)}`;
-  const delivery = await sendEmail({ to: req.user.email, subject: 'Verify your Reigns Atelier email', text: `Verify your email address: ${verificationUrl}` });
+  const verificationUrl = `${publicOrigin}/verify-email?token=${encodeURIComponent(rawToken)}`;
+  const delivery = await deliverEmail({ to: req.user.email, subject: 'Verify your Reigns Atelier email', text: `Verify your email address: ${verificationUrl}` });
   await save();
   res.json({ success: true, delivery });
 });
 
-app.post('/api/admin/mfa/setup', requireAdmin, authLimiter, async (req, res) => {
+app.post('/api/admin/mfa/setup', requireAdminIdentity, authLimiter, async (req, res) => {
   const secret = authenticator.generateSecret();
   req.user.pendingMfaSecret = encrypt(secret);
   await save();
@@ -718,7 +832,7 @@ app.post('/api/admin/mfa/setup', requireAdmin, authLimiter, async (req, res) => 
   res.json({ qrDataUrl: await QRCode.toDataURL(otpauth), manualKey: secret });
 });
 
-app.post('/api/admin/mfa/enable', requireAdmin, authLimiter, async (req, res) => {
+app.post('/api/admin/mfa/enable', requireAdminIdentity, authLimiter, async (req, res) => {
   if (!req.user.pendingMfaSecret) return res.status(400).json({ error: 'Start MFA setup first.' });
   const secret = decrypt(req.user.pendingMfaSecret);
   if (!authenticator.check(String(req.body.code || ''), secret)) return res.status(400).json({ error: 'Invalid authentication code.' });
@@ -746,6 +860,9 @@ app.get('/api/entities/:name', (req, res) => {
   const { name } = req.params;
   if (!Array.isArray(db.data[name])) return res.status(404).json({ error: 'Unknown entity.' });
   const user = readUser(req);
+  if (requiresProductionMfa(user)) {
+    return res.status(403).json({ error: 'Enable multi-factor authentication before accessing studio records.', code: 'mfa_required' });
+  }
   const ownData = ['CommissionRequest', 'Message', 'Notification', 'Order'].includes(name);
   if (!publicRead.has(name) && !canManage(user, name) && !(user && ownData)) {
     return res.status(403).json({ error: 'You do not have access to these records.' });
@@ -779,6 +896,9 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, async (req, r
     return res.status(403).json({ error: 'You do not have permission to create this record.' });
   }
   if (authenticatedCreate.has(name) && !user) return res.status(401).json({ error: 'Please log in to continue.' });
+  if (authenticatedCreate.has(name) && !user.emailVerified) {
+    return res.status(403).json({ error: 'Verify your email address before sending messages, commissions, or orders.', code: 'email_verification_required' });
+  }
   let clean;
   try {
     clean = validateEntity(name, req.body);
@@ -819,11 +939,12 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, async (req, r
   }
   if (name === 'Order') {
     record.status = 'pending';
+    record.paymentStatus = 'unpaid';
     record.statusHistory = [{ status: 'pending', at: now(), actorId: user.id }];
   }
   db.data[name].push(record);
   if (name === 'CommissionRequest') {
-    record.confirmationDelivery = await sendEmail({
+    record.confirmationDelivery = await deliverEmail({
       to: record.email,
       subject: 'Your commission request — Reigns Atelier',
       text: `Hi ${record.name},\n\nYour commission request has been received. The studio will review it and respond with next steps.\n\nArtwork type: ${record.artworkType}\nBudget: ${record.budget}\n\nReigns Atelier`,
@@ -834,12 +955,68 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, async (req, r
   res.status(201).json(record);
 });
 
-app.post('/api/email/send', requireUser, async (req, res) => {
+app.get('/api/payments/config', (_req, res) => {
+  res.json({
+    provider: paymentStatus.provider,
+    configured: paymentStatus.configured,
+    currency: paymentStatus.currency,
+  });
+});
+
+app.post('/api/payments/initialize', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const order = db.data.Order.find(item => item.id === req.body.orderId && item.userId === req.user.id && !item.deleted_at);
+  if (!order) return res.status(404).json({ error: 'Order not found.' });
+  if (order.paymentStatus === 'paid') return res.status(409).json({ error: 'This order is already paid.' });
+  if (!paymentStatus.configured) return res.status(503).json({ error: 'Online payment is not configured. Choose WhatsApp ordering instead.' });
+  try {
+    const reference = `atelier-${order.id}-${Date.now()}`;
+    const callbackUrl = `${publicOrigin}/account?payment_reference=${encodeURIComponent(reference)}`;
+    const initialized = await initializePayment({
+      email: req.user.email,
+      amount: order.total,
+      reference,
+      callbackUrl,
+      metadata: { orderId: order.id, userId: req.user.id },
+    });
+    order.channel = paymentStatus.provider;
+    order.paymentReference = reference;
+    order.paymentStatus = 'initialized';
+    await audit(req.user, 'order.payment_initialized', 'Order', order.id, { provider: paymentStatus.provider });
+    await save();
+    res.json({ authorizationUrl: initialized.authorization_url, reference });
+  } catch (error) {
+    res.status(502).json({ error: error.message });
+  }
+});
+
+app.get('/api/payments/verify/:reference', requireVerifiedUser, async (req, res) => {
+  const order = db.data.Order.find(item => item.paymentReference === req.params.reference && item.userId === req.user.id);
+  if (!order) return res.status(404).json({ error: 'Payment record not found.' });
+  if (order.paymentStatus === 'paid') return res.json({ paid: true, order });
+  try {
+    const payment = await verifyPayment(req.params.reference);
+    const expectedAmount = Math.round(Number(order.total) * 100);
+    const paid = payment.status === 'success'
+      && Number(payment.amount) === expectedAmount
+      && payment.currency === paymentStatus.currency;
+    order.paymentStatus = paid ? 'paid' : payment.status || 'failed';
+    if (paid) {
+      order.status = 'confirmed';
+      order.paidAt = payment.paid_at || now();
+      order.statusHistory.push({ status: 'confirmed', at: now(), actorId: req.user.id });
+    }
+    await audit(req.user, paid ? 'order.payment_confirmed' : 'order.payment_failed', 'Order', order.id);
+    await save();
+    res.json({ paid, order });
+  } catch (error) {
+    res.status(502).json({ error: error.message });
+  }
+});
+
+app.post('/api/email/send', requireVerifiedUser, async (req, res) => {
   const subject = String(req.body.subject || 'Reigns Atelier').slice(0, 160);
   const text = String(req.body.text || req.body.body || '').slice(0, 10000);
-  const delivery = await sendEmail({ to: req.user.email, subject, text });
-  db.data.Outbox.push({ id: newId(), to: req.user.email, subject, text, delivery, created_date: now() });
-  await save();
+  const delivery = await deliverEmail({ to: req.user.email, subject, text });
   res.json(delivery);
 });
 
@@ -905,7 +1082,7 @@ app.post('/api/messages/:id/reply', requireStaff, mutationLimiter, async (req, r
   if (!message) return res.status(404).json({ error: 'Message not found.' });
   const text = String(req.body.text || '').trim();
   if (!text) return res.status(400).json({ error: 'Reply cannot be empty.' });
-  const delivery = await sendEmail({ to: message.email, subject: `Re: ${message.subject || 'Your message to Reigns Atelier'}`, text });
+  const delivery = await deliverEmail({ to: message.email, subject: `Re: ${message.subject || 'Your message to Reigns Atelier'}`, text });
   const reply = { id: newId(), text, sentAt: now(), delivery, actorId: req.user.id };
   message.replies ||= message.reply ? [{ id: newId(), ...message.reply }] : [];
   message.replies.push(reply);
@@ -940,16 +1117,30 @@ app.post('/api/artworks/:id/like', requireUser, mutationLimiter, async (req, res
   res.json({ liked: !existing, likes: artwork.likes });
 });
 
-app.post('/api/upload', requireUser, mutationLimiter, upload.single('file'), async (req, res) => {
+app.post('/api/upload', requireVerifiedUser, mutationLimiter, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Choose a supported image or video.' });
   const detected = await fileTypeFromBuffer(req.file.buffer);
   const allowed = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'video/mp4', 'video/webm']);
   if (!detected || !allowed.has(detected.mime)) return res.status(400).json({ error: 'Only JPG, PNG, WebP, AVIF, MP4 and WebM files are accepted.' });
   const fileId = newId();
   const fileUrl = await storeFile({ buffer: req.file.buffer, mime: detected.mime, extension: detected.ext, uploadDir, id: fileId });
+  const media = {
+    id: fileId,
+    url: fileUrl,
+    filename: String(req.file.originalname || `${fileId}.${detected.ext}`).slice(0, 240),
+    mime: detected.mime,
+    bytes: req.file.size,
+    provider: storageProvider,
+    userId: req.user.id,
+    purpose: staffRoles.has(req.user.role) ? 'content-library' : 'customer-reference',
+    altText: '',
+    sourceName: staffRoles.has(req.user.role) ? 'Studio upload' : 'Customer upload',
+    created_date: now(),
+  };
+  db.data.Media.push(media);
   await audit(req.user, 'file.uploaded', 'Upload', fileId, { mime: detected.mime, bytes: req.file.size, provider: storageProvider });
   await save();
-  res.status(201).json({ file_url: fileUrl });
+  res.status(201).json({ file_url: fileUrl, media });
 });
 
 app.patch('/api/account/profile', requireUser, mutationLimiter, async (req, res) => {
@@ -966,12 +1157,22 @@ app.post('/api/account/change-password', requireUser, authLimiter, async (req, r
   const currentPassword = String(req.body.currentPassword || '');
   const newPassword = String(req.body.newPassword || '');
   if (!(await bcrypt.compare(currentPassword, req.user.passwordHash))) return res.status(400).json({ error: 'Current password is incorrect.' });
-  if (newPassword.length < 10) return res.status(400).json({ error: 'New password must contain at least 10 characters.' });
+  const passwordError = passwordProblem(newPassword);
+  if (passwordError) return res.status(400).json({ error: passwordError });
   req.user.passwordHash = await bcrypt.hash(newPassword, 12);
   req.user.sessionVersion = (req.user.sessionVersion || 0) + 1;
   await audit(req.user, 'account.password_changed', 'User', req.user.id);
   await save();
   setSession(res, req.user);
+  res.json({ success: true });
+});
+
+app.post('/api/account/logout-all', requireUser, authLimiter, async (req, res) => {
+  req.user.sessionVersion = (req.user.sessionVersion || 0) + 1;
+  await audit(req.user, 'account.sessions_revoked', 'User', req.user.id);
+  await save();
+  res.clearCookie('atelier_session');
+  res.clearCookie('atelier_csrf');
   res.json({ success: true });
 });
 
@@ -1002,7 +1203,7 @@ app.get('/api/newsletter/unsubscribe', async (req, res) => {
     subscriber.unsubscribedAt = now();
     await save();
   }
-  res.redirect(`${process.env.APP_ORIGIN || 'http://127.0.0.1:43127'}/?unsubscribed=1`);
+  res.redirect(`${publicOrigin}/?unsubscribed=1`);
 });
 
 app.post('/api/admin/backup', requireAdmin, async (req, res) => {
@@ -1010,6 +1211,16 @@ app.post('/api/admin/backup', requireAdmin, async (req, res) => {
   await audit(req.user, 'system.backup_created', 'System', null);
   await save();
   res.json({ success: Boolean(result), createdAt: now() });
+});
+
+app.post('/api/admin/outbox/retry', requireAdmin, async (req, res) => {
+  for (const item of db.data.Outbox.filter(entry => entry.status === 'failed')) {
+    item.status = 'pending';
+    item.nextAttemptAt = now();
+  }
+  await save();
+  await processEmailOutbox();
+  res.json({ success: true });
 });
 
 if (process.env.NODE_ENV === 'production') {
@@ -1021,7 +1232,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 app.use((error, _req, res, _next) => {
-  console.error(JSON.stringify({ level: 'error', event: 'unhandled_error', message: error.message, stack: error.stack }));
+  reportOperationalError('unhandled_error', error, { requestId: _req.requestId, path: _req.path, method: _req.method });
   res.status(error.status || 500).json({ error: error.status ? error.message : 'The server could not complete this request.' });
 });
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
-import { ArrowRight, Star, ArrowDown, ChevronLeft, ChevronRight, Play } from 'lucide-react';
+import { motion, useScroll, useTransform, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { ArrowRight, Star, ArrowDown, ChevronLeft, ChevronRight, Play, Pause } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
@@ -43,7 +43,9 @@ export default function Home() {
   const [featuredArtworks, setFeaturedArtworks] = useState(() => FEATURED_ARTWORKS_FALLBACK.filter(() => false));
   const [quotes, setQuotes] = useState(DEFAULT_QUOTES);
   const [quoteIndex, setQuoteIndex] = useState(0);
+  const [heroPaused, setHeroPaused] = useState(false);
   const heroRef = useRef(null);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     studioClient.entities.Testimonial.filter({ isFeatured: true }).then(data => {
@@ -68,9 +70,10 @@ export default function Home() {
 
   useEffect(() => {
     const seconds = Math.max(4, Number(settings.quote_interval_seconds) || 8);
+    if (reduceMotion || !quotes.length) return undefined;
     const timer = setInterval(() => setQuoteIndex(index => (index + 1) % quotes.length), seconds * 1000);
     return () => clearInterval(timer);
-  }, [quotes.length, settings.quote_interval_seconds]);
+  }, [quotes.length, settings.quote_interval_seconds, reduceMotion]);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
   const heroY = useTransform(scrollYProgress, [0, 1], ['0%', '30%']);
   const heroOpacity = useTransform(scrollYProgress, [0, 0.8], [1, 0]);
@@ -92,28 +95,29 @@ export default function Home() {
 
   useEffect(() => {
     const seconds = Math.max(4, Number(settings.hero_slide_seconds) || 7);
+    if (reduceMotion || heroPaused || slides.length < 2) return undefined;
     const t = setInterval(() => setHeroIndex(i => (i + 1) % slides.length), seconds * 1000);
     return () => clearInterval(t);
-  }, [slides.length, settings.hero_slide_seconds]);
+  }, [slides.length, settings.hero_slide_seconds, reduceMotion, heroPaused]);
 
   return (
     <PageTransition>
       {/* -- HERO -- */}
-      <section ref={heroRef} className="relative h-screen min-h-[700px] flex items-center overflow-hidden">
+      <section ref={heroRef} className="relative flex min-h-[100svh] items-center overflow-hidden pb-24 pt-20 md:min-h-[720px] md:pb-0">
         {/* Background images */}
         <AnimatePresence mode="wait">
           <motion.div
             key={activeSlide.id || heroIndex}
             className="absolute inset-0"
-            initial={{ opacity: 0, scale: 1.06 }}
+            initial={reduceMotion ? { opacity: 1 } : { opacity: 0, scale: 1.06 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 1.5, ease: [0.16, 1, 0.3, 1] }}
-            style={{ y: heroY }}
+            transition={{ duration: reduceMotion ? 0 : 1.5, ease: [0.16, 1, 0.3, 1] }}
+            style={{ y: reduceMotion ? 0 : heroY }}
           >
             <img
               src={activeSlide.imageUrl}
-              alt={activeSlide.title}
+              alt={activeSlide.altText || `${activeSlide.title} ${activeSlide.accentTitle || ''}`.trim()}
               className="w-full h-full object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-r from-obsidian via-obsidian/70 to-obsidian/20" />
@@ -146,7 +150,7 @@ export default function Home() {
           <div className="overflow-hidden mb-2">
             <motion.h1
               key={`${activeSlide.id}-title`}
-              className="font-display text-6xl md:text-8xl lg:text-[112px] leading-[0.9] text-ivory"
+              className="font-display text-[clamp(3.25rem,15vw,7rem)] leading-[0.9] text-ivory"
               initial={{ y: 120, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.5, duration: 1, ease: [0.16, 1, 0.3, 1] }}
@@ -157,7 +161,7 @@ export default function Home() {
           <div className="overflow-hidden mb-8">
             <motion.h1
               key={`${activeSlide.id}-accent`}
-              className="font-display text-6xl md:text-8xl lg:text-[112px] leading-[0.9] italic text-brass"
+              className="font-display text-[clamp(3.25rem,15vw,7rem)] leading-[0.9] italic text-brass"
               initial={{ y: 120, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.65, duration: 1, ease: [0.16, 1, 0.3, 1] }}
@@ -197,17 +201,17 @@ export default function Home() {
         </motion.div>
 
         {/* Hero dots */}
-        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex gap-2 z-10">
+        <div className="absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 gap-2 md:bottom-10">
           {slides.map((slide, i) => (
             <button key={slide.id || i} onClick={() => setHeroIndex(i)}
               aria-label={`Show banner ${i + 1}: ${slide.title}`}
-              className={`h-1 transition-all duration-500 ${i === heroIndex % slides.length ? 'w-12 bg-brass' : 'w-6 bg-ivory/25 hover:bg-ivory/50'}`}
+              className={`min-h-11 px-1 transition-all duration-500 before:block before:h-1 ${i === heroIndex % slides.length ? 'before:w-12 before:bg-brass' : 'before:w-6 before:bg-ivory/25 hover:before:bg-ivory/50'}`}
             />
           ))}
         </div>
 
         {slides.length > 1 && (
-          <div className="absolute bottom-8 left-6 lg:left-12 z-20 flex items-center gap-2">
+          <div className="absolute bottom-36 left-6 z-20 flex items-center gap-2 md:bottom-8 lg:left-12">
             <button
               type="button"
               onClick={() => setHeroIndex(index => (index - 1 + slides.length) % slides.length)}
@@ -223,6 +227,14 @@ export default function Home() {
               aria-label="Next banner"
             >
               <ChevronRight size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setHeroPaused(value => !value)}
+              className="flex h-11 w-11 items-center justify-center border border-ivory/20 bg-obsidian/30 text-ivory/70 backdrop-blur-sm transition-colors hover:border-brass/50 hover:text-brass"
+              aria-label={heroPaused ? 'Resume automatic banner rotation' : 'Pause automatic banner rotation'}
+            >
+              {heroPaused ? <Play size={17} /> : <Pause size={17} />}
             </button>
             <span className="ml-2 font-tight text-[10px] tracking-[0.25em] text-ivory/45">
               {String((heroIndex % slides.length) + 1).padStart(2, '0')} / {String(slides.length).padStart(2, '0')}

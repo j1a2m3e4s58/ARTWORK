@@ -1,10 +1,10 @@
 ﻿import { useState } from 'react';
 import { MessageCircle, X, Send, Loader2, Sparkles } from 'lucide-react';
-import { studioClient } from '@/api/studioClient';
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '@/lib/AuthContext';
+import { guidedReply } from '@/lib/guidedHelpers';
 
-export default function CommissionAgentChat() {
+export default function CommissionGuideChat() {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [conversation, setConversation] = useState(null);
@@ -15,24 +15,25 @@ export default function CommissionAgentChat() {
   const startConversation = async () => {
     if (conversation) return;
     try {
-      const conv = await studioClient.agents.createConversation({
-        agent_name: 'commission_assistant',
-        metadata: { name: 'Commission Chat' },
-      });
+      const conv = { id: crypto.randomUUID() };
       setConversation(conv);
       // Subscribe to updates
       setMessages([{
         role: 'assistant',
-        content: 'Welcome to the commission studio. Tell me what you would like to create, and I’ll help shape the idea, budget, and timeline.',
+        content: 'Welcome to the commission guide. Tell me what you would like to create and I’ll point you to the relevant package information.',
       }]);
     } catch (e) {
-      setMessages([{ role: 'assistant', content: 'The studio assistant is temporarily unavailable. Please use the contact form and the artist will help you directly.' }]);
+      setMessages([{ role: 'assistant', content: 'The commission guide is temporarily unavailable. Please use the contact form and the artist will help you directly.' }]);
     }
   };
 
   const handleOpen = () => {
     if (!user) {
       window.location.assign('/login?redirect=/commission');
+      return;
+    }
+    if (!user.emailVerified) {
+      window.location.assign('/account?verify=required');
       return;
     }
     setOpen(true);
@@ -46,10 +47,10 @@ export default function CommissionAgentChat() {
     setLoading(true);
     try {
       setMessages(current => [...current, { role: 'user', content: text }]);
-      const reply = await studioClient.agents.addMessage(conversation, { role: 'user', content: text });
+      const reply = { role: 'assistant', content: guidedReply(text) };
       setMessages(current => [...current, reply]);
-    } catch (e) {
-      // ignore
+    } catch (error) {
+      setMessages(current => [...current, { role: 'assistant', content: 'I could not process that. Please add the detail directly to your commission request.' }]);
     }
     setLoading(false);
   };
@@ -60,7 +61,7 @@ export default function CommissionAgentChat() {
       <button
         onClick={handleOpen}
         className="fixed bottom-24 right-[4.75rem] z-30 flex h-12 w-12 items-center justify-center rounded-full bg-brass text-obsidian shadow-lg shadow-brass/20 transition-all hover:scale-105 hover:bg-brass-light md:bottom-40 md:right-8 md:h-12 md:w-12"
-        aria-label="Commission Assistant"
+        aria-label="Open commission guide"
       >
         <MessageCircle size={20} />
       </button>
@@ -75,8 +76,8 @@ export default function CommissionAgentChat() {
                 <Sparkles size={16} className="text-brass" />
               </div>
               <div>
-                <p className="font-display text-sm text-ivory">Commission Assistant</p>
-                <p className="text-ivory/40 text-[10px] font-tight">Guided support ? Always here</p>
+                <p className="font-display text-sm text-ivory">Commission Guide</p>
+                <p className="text-ivory/40 text-[10px] font-tight">Published studio guidance • Always available</p>
               </div>
             </div>
             <button onClick={() => setOpen(false)} className="text-ivory/30 hover:text-brass transition-colors">

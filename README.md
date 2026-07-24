@@ -27,11 +27,12 @@ This runs linting, JavaScript project checks, backend validation tests, the prod
 
 Production should configure:
 
-- `DATABASE_URL` for PostgreSQL
-- `STORAGE_PROVIDER=cloudinary` with Cloudinary configuration
+- `DATABASE_URL` for the relational PostgreSQL entity tables
+- `STORAGE_PROVIDER=cloudinary` with signed Cloudinary API credentials
 - SMTP credentials for invitations, resets and customer replies
+- `PAYMENT_PROVIDER=paystack` and Paystack credentials when online checkout is enabled
 - `APP_ORIGIN` and `SITE_URL` using the final HTTPS domain
-- long, unique administrator and JWT secrets
+- long, unique administrator and JWT secrets, plus administrator MFA
 
 Without `DATABASE_URL`, the API intentionally uses a local JSON development store. Without cloud storage, uploads use the local filesystem. Neither local fallback should be used for a multi-instance production deployment.
 
@@ -53,11 +54,14 @@ Terminate TLS through a trusted reverse proxy or managed hosting provider. The a
 - Password-reset and invitation tokens are time-limited, hashed and single-use.
 - Suspended accounts lose existing sessions.
 - Administrator, editor and support permissions are enforced by the API.
+- Protected customer actions require a verified email address.
+- Production administrators must use authenticator-based MFA.
 - Payloads are validated and bounded.
 - Public forms, authentication and uploads are rate-limited.
 - Upload contents are inspected and restricted to safe image/video formats.
 - Important changes create administrator audit records.
 - Business records use recoverable soft deletion.
+- Failed transactional email is queued and retried with bounded backoff.
 
 ## Backups and recovery
 
@@ -70,9 +74,9 @@ Invitations never contain passwords. Invitees receive a time-limited link and cr
 ## Deployment checklist
 
 1. Replace or publish only genuine artwork, videos, products, articles and testimonials.
-2. Configure PostgreSQL, cloud uploads and SMTP.
+2. Configure PostgreSQL, signed cloud uploads, SMTP and the optional payment provider.
 3. Set the final HTTPS origin and domain.
 4. Run `npm run check`.
 5. Verify database backups and a restore.
 6. Verify password reset, invitation, contact, commission and order flows.
-7. Monitor `/api/health`, application logs and email delivery.
+7. Monitor `/api/health` for liveness, `/api/ready` for dependencies, the admin System dashboard, application logs and the configured error alert webhook.

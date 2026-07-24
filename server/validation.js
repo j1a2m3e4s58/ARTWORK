@@ -46,7 +46,7 @@ export const schemas = {
       qty: z.coerce.number().int().min(1).max(100),
     })).min(1).max(50),
     total: z.coerce.number().nonnegative().max(10000000),
-    channel: z.enum(['whatsapp', 'manual']).default('whatsapp'),
+    channel: z.enum(['whatsapp', 'manual', 'paystack']).default('whatsapp'),
   }),
   Artwork: z.object({
     title: text(200), category: optionalText(100), imageUrl: safeUrl,

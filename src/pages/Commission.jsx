@@ -7,8 +7,8 @@ import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import { useSettings } from '@/hooks/useSettings';
 import { usePageContent } from '@/hooks/usePageContent';
-import CommissionAIAssistant from '@/components/CommissionAIAssistant';
-import CommissionAgentChat from '@/components/CommissionAgentChat';
+import CommissionBriefBuilder from '@/components/CommissionBriefBuilder';
+import CommissionGuideChat from '@/components/CommissionGuideChat';
 import { useAuth } from '@/lib/AuthContext';
 
 const DEFAULT_PACKAGES = [
@@ -250,7 +250,7 @@ export default function Commission() {
                 {step === 3 && (
                   <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
                     <p className="text-ivory/50 text-sm mb-6">Step 3 of 3 — Your vision</p>
-                    <CommissionAIAssistant form={form} set={set} settings={settings} />
+                    <CommissionBriefBuilder form={form} set={set} />
                     <textarea
                       placeholder="Describe your vision in detail. What emotions should the artwork evoke? Any specific elements, colors, or references? *"
                       value={form.description}
@@ -322,7 +322,7 @@ export default function Commission() {
             ))}
           </div>
         </div>
-        <CommissionAgentChat />
+        <CommissionGuideChat />
       </div>
     </PageTransition>
   );

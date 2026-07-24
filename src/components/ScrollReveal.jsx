@@ -1,23 +1,24 @@
-import { motion, useInView } from 'framer-motion';
+import { motion, useInView, useReducedMotion } from 'framer-motion';
 import { useRef } from 'react';
 
 export default function ScrollReveal({ children, delay = 0, direction = 'up', className = '' }) {
   const ref = useRef(null);
   const inView = useInView(ref, { once: true, margin: '-80px' });
+  const reduceMotion = useReducedMotion();
 
   const variants = {
     hidden: {
-      opacity: 0,
-      y: direction === 'up' ? 40 : direction === 'down' ? -40 : 0,
-      x: direction === 'left' ? 40 : direction === 'right' ? -40 : 0,
+      opacity: reduceMotion ? 1 : 0,
+      y: reduceMotion ? 0 : direction === 'up' ? 40 : direction === 'down' ? -40 : 0,
+      x: reduceMotion ? 0 : direction === 'left' ? 40 : direction === 'right' ? -40 : 0,
     },
     visible: {
       opacity: 1,
       y: 0,
       x: 0,
       transition: {
-        duration: 0.8,
-        delay,
+        duration: reduceMotion ? 0 : 0.8,
+        delay: reduceMotion ? 0 : delay,
         ease: [0.16, 1, 0.3, 1],
       },
     },

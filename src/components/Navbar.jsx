@@ -1,8 +1,7 @@
 ﻿import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, ShoppingBag, ArrowUpRight, UserRound } from 'lucide-react';
-import AdminGate from './AdminGate';
+import { Menu, X, ArrowUpRight, UserRound, ShieldCheck } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
 import InstallAppButton from './InstallAppButton';
 import { useAuth } from '@/lib/AuthContext';
@@ -28,16 +27,8 @@ export default function Navbar() {
   });
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [adminGateOpen, setAdminGateOpen] = useState(false);
   const location = useLocation();
-  const longPressTimer = useRef(null);
-
-  const handleLogoPointerDown = () => {
-    longPressTimer.current = setTimeout(() => setAdminGateOpen(true), 1200);
-  };
-  const handleLogoPointerUp = () => {
-    clearTimeout(longPressTimer.current);
-  };
+  const menuButtonRef = useRef(null);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 60);
@@ -46,6 +37,20 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => setMenuOpen(false), [location]);
+  useEffect(() => {
+    document.body.style.overflow = menuOpen ? 'hidden' : '';
+    const closeOnEscape = event => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = '';
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [menuOpen]);
 
   return (
     <>
@@ -58,14 +63,7 @@ export default function Navbar() {
         transition={{ duration: 0.8, delay: 0.2 }}
       >
         <div className="max-w-7xl mx-auto px-6 lg:px-12 flex items-center justify-between h-20">
-          {/* Logo — long-press to open admin gate */}
-          <div
-            className="flex flex-col leading-none group cursor-pointer select-none"
-            onPointerDown={handleLogoPointerDown}
-            onPointerUp={handleLogoPointerUp}
-            onPointerLeave={handleLogoPointerUp}
-            onContextMenu={e => e.preventDefault()}
-          >
+          <div className="flex flex-col leading-none group select-none">
             <Link to="/" onClick={e => e.stopPropagation()} className="flex items-center gap-3">
               <img src="/brand/reigns-app-icon-192.png" alt="" className="h-11 w-11 rounded-full border border-brass/20 object-cover" />
               <span>
@@ -76,7 +74,7 @@ export default function Navbar() {
           </div>
 
           {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-8">
+          <div className="hidden lg:flex items-center gap-5 xl:gap-7">
             {visibleLinks.map((link) => (
               <Link
                 key={link.path}
@@ -96,29 +94,31 @@ export default function Navbar() {
           {/* Right actions */}
           <div className="flex items-center gap-4">
             {!user ? (
-              <div className="hidden md:flex items-center gap-3">
+              <div className="hidden lg:flex items-center gap-3">
                 <Link to="/login" className="font-tight text-xs text-ivory/55 hover:text-brass">Log in</Link>
                 <Link to="/register" className="font-tight text-xs border border-brass/30 px-3 py-2 text-brass hover:bg-brass/10">Sign up</Link>
               </div>
             ) : (
-              <div className="hidden items-center gap-3 md:flex">
-                <Link to={user.role === 'admin' ? '/admin' : '/account'} className="flex items-center gap-1.5 font-tight text-xs text-ivory/55 hover:text-brass"><UserRound size={15} /> Account</Link>
+              <div className="hidden items-center gap-3 lg:flex">
+                {['admin', 'editor', 'support'].includes(user.role) && <Link to="/admin" className="flex items-center gap-1.5 font-tight text-xs text-brass/80 hover:text-brass"><ShieldCheck size={15} /> Admin</Link>}
+                <Link to="/account" className="flex items-center gap-1.5 font-tight text-xs text-ivory/55 hover:text-brass"><UserRound size={15} /> Account</Link>
                 <button onClick={() => logout()} className="font-tight text-xs text-ivory/45 hover:text-brass">Sign out</button>
               </div>
             )}
-            <Link to="/shop" className="hidden md:flex items-center gap-2 text-ivory/60 hover:text-brass transition-colors duration-300">
-              <ShoppingBag size={18} />
-            </Link>
             <Link
               to="/commission"
-              className="hidden md:block font-tight text-sm px-5 py-2 border border-brass/40 text-brass hover:bg-brass hover:text-obsidian transition-all duration-300 tracking-wide"
+              className="hidden xl:block font-tight text-sm px-5 py-2 border border-brass/40 text-brass hover:bg-brass hover:text-obsidian transition-all duration-300 tracking-wide"
             >
               Commission
             </Link>
             {/* Hamburger */}
             <button
-              className="md:hidden text-ivory/70 hover:text-brass transition-colors"
+              ref={menuButtonRef}
+              className="flex h-11 w-11 items-center justify-center text-ivory/70 hover:text-brass transition-colors lg:hidden"
               onClick={() => setMenuOpen(!menuOpen)}
+              aria-expanded={menuOpen}
+              aria-controls="mobile-site-menu"
+              aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
             >
               {menuOpen ? <X size={22} /> : <Menu size={22} />}
             </button>
@@ -126,14 +126,12 @@ export default function Navbar() {
         </div>
       </motion.nav>
 
-      {/* Admin Gate */}
-      <AdminGate open={adminGateOpen} onClose={() => setAdminGateOpen(false)} />
-
       {/* Mobile menu */}
       <AnimatePresence>
         {menuOpen && (
           <motion.div
-            className="fixed inset-0 z-40 bg-black/55 px-4 pt-24 backdrop-blur-sm md:hidden"
+            id="mobile-site-menu"
+            className="fixed inset-0 z-[60] overflow-y-auto bg-black/55 px-4 pb-24 pt-24 backdrop-blur-sm lg:hidden"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -141,7 +139,10 @@ export default function Navbar() {
             onClick={() => setMenuOpen(false)}
           >
             <motion.div
-              className="relative mx-auto max-w-md overflow-hidden rounded-2xl border border-brass/15 bg-carbon/95 p-5 shadow-2xl shadow-black/60"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Site navigation"
+              className="relative mx-auto max-h-[calc(100dvh-7rem)] max-w-md overflow-y-auto rounded-2xl border border-brass/15 bg-carbon/95 p-5 shadow-2xl shadow-black/60"
               initial={{ opacity: 0, y: -18, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -12, scale: 0.98 }}
@@ -201,7 +202,7 @@ export default function Navbar() {
                   </>
                 ) : (
                   <>
-                    <Link to={user.role === 'admin' ? '/admin' : '/account'} className="rounded-xl border border-brass/20 px-3 py-2 text-center text-xs text-brass">My account</Link>
+                    <Link to="/account" className="rounded-xl border border-brass/20 px-3 py-2 text-center text-xs text-brass">My account</Link>
                     <button onClick={() => logout()} className="rounded-xl border border-ivory/10 px-3 py-2 text-xs text-ivory/60">Sign out</button>
                   </>
                 )}

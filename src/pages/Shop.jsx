@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingBag, Heart, X, Plus, Minus, MessageCircle } from 'lucide-react';
+import { ShoppingBag, Heart, X, Plus, Minus, MessageCircle, CreditCard } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import { usePageContent } from '@/hooks/usePageContent';
@@ -24,11 +24,15 @@ export default function Shop() {
   const [cartOpen, setCartOpen] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [ordering, setOrdering] = useState(false);
+  const [payment, setPayment] = useState({ configured: false, provider: 'manual', currency: settings.currency || 'USD' });
 
   useEffect(() => {
     studioClient.entities.ShopProduct.list('-created_date', 100).then(data => {
       setProducts(data);
     }).catch(() => {});
+  }, []);
+  useEffect(() => {
+    studioClient.payments.config().then(setPayment).catch(() => {});
   }, []);
 
   const filtered = filter === 'All' ? products : products.filter(p => p.type === filter);
@@ -46,6 +50,16 @@ export default function Shop() {
   const toggleWishlist = (id) => setWishlist(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const cartTotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
+  const formatMoney = value => new Intl.NumberFormat(settings.locale || 'en-GH', {
+    style: 'currency',
+    currency: payment.configured ? payment.currency : (settings.currency || 'USD'),
+    maximumFractionDigits: 2,
+  }).format(Number(value) || 0);
+  const createOrder = channel => studioClient.entities.Order.create({
+    items: cart.map(item => ({ productId: item.id, title: item.title, price: item.price, qty: item.qty })),
+    total: cartTotal,
+    channel,
+  });
   const orderViaWhatsApp = async () => {
     if (!user) {
       window.location.assign('/login?redirect=/shop');
@@ -58,18 +72,30 @@ export default function Shop() {
     setOrdering(true);
     setOrderError('');
     try {
-      await studioClient.entities.Order.create({
-        items: cart.map(item => ({ productId: item.id, title: item.title, price: item.price, qty: item.qty })),
-        total: cartTotal,
-        channel: 'whatsapp',
-      });
-      const message = `Hello! I'd like to order:\n\n${cart.map(item => `• ${item.title} (x${item.qty}) — $${(item.price * item.qty).toFixed(2)}`).join('\n')}\n\nTotal: $${cartTotal.toFixed(2)}`;
+      await createOrder('whatsapp');
+      const message = `Hello! I'd like to order:\n\n${cart.map(item => `• ${item.title} (x${item.qty}) — ${formatMoney(item.price * item.qty)}`).join('\n')}\n\nTotal: ${formatMoney(cartTotal)}`;
       window.open(`https://wa.me/${settings.whatsapp_number.replace(/[^\d]/g, '')}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
       setCart([]);
       setCartOpen(false);
     } catch (submitError) {
       setOrderError(submitError.message);
     } finally {
+      setOrdering(false);
+    }
+  };
+  const paySecurely = async () => {
+    if (!user) {
+      window.location.assign('/login?redirect=/shop');
+      return;
+    }
+    setOrdering(true);
+    setOrderError('');
+    try {
+      const order = await createOrder('paystack');
+      const checkout = await studioClient.payments.initialize(order.id);
+      window.location.assign(checkout.authorizationUrl);
+    } catch (submitError) {
+      setOrderError(submitError.message);
       setOrdering(false);
     }
   };
@@ -135,7 +161,7 @@ export default function Shop() {
                         {product.dimensions && <p className="text-ivory/40 text-xs font-tight mb-1">{product.dimensions}</p>}
                         <p className="text-ivory/50 text-sm leading-relaxed mb-5 line-clamp-2">{product.description}</p>
                         <div className="flex items-center justify-between">
-                          <span className="font-display text-2xl text-brass">${product.price}</span>
+                          <span className="font-display text-2xl text-brass">{formatMoney(product.price)}</span>
                           <button onClick={() => addToCart(product)}
                             className="flex items-center gap-2 bg-brass text-obsidian px-5 py-2.5 font-tight text-xs tracking-widest uppercase hover:bg-brass-light transition-all duration-300">
                             Add to Cart <ShoppingBag size={13} />
@@ -173,7 +199,7 @@ export default function Shop() {
                     {item.imageUrl && <img src={item.imageUrl} alt={item.title} className="w-16 h-16 object-cover flex-shrink-0" />}
                     <div className="flex-1 min-w-0">
                       <p className="text-ivory/80 text-sm font-tight leading-tight">{item.title}</p>
-                      <p className="text-brass text-sm font-display mt-1">${item.price}</p>
+                      <p className="text-brass text-sm font-display mt-1">{formatMoney(item.price)}</p>
                       <div className="flex items-center gap-2 mt-2">
                         <button onClick={() => item.qty > 1 ? setCart(c => c.map(i => i.id === item.id ? { ...i, qty: i.qty - 1 } : i)) : removeFromCart(item.id)} className="w-6 h-6 border border-brass/20 flex items-center justify-center text-ivory/60 hover:border-brass/40 transition-colors"><Minus size={10} /></button>
                         <span className="text-ivory/70 text-xs w-4 text-center">{item.qty}</span>
@@ -188,10 +214,16 @@ export default function Shop() {
                 <div className="p-6 border-t border-brass/10">
                   <div className="flex justify-between mb-4">
                     <span className="text-ivory/50 font-tight text-sm">Total</span>
-                    <span className="font-display text-2xl text-brass">${cartTotal.toFixed(2)}</span>
+                    <span className="font-display text-2xl text-brass">{formatMoney(cartTotal)}</span>
                   </div>
+                  {payment.configured && (
+                    <button onClick={paySecurely} disabled={ordering}
+                      className="mb-3 flex min-h-12 w-full items-center justify-center gap-2 bg-brass py-3 font-tight text-sm uppercase tracking-widest text-obsidian transition-all hover:bg-brass-light disabled:opacity-50">
+                      <CreditCard size={16} /> {ordering ? 'Preparing secure checkout…' : 'Pay securely'}
+                    </button>
+                  )}
                   <button onClick={orderViaWhatsApp} disabled={ordering}
-                    className="w-full flex items-center justify-center gap-2 bg-[#25D366] text-white py-4 font-tight text-sm tracking-widest uppercase hover:bg-[#20BA5A] transition-all disabled:opacity-50">
+                    className="w-full flex min-h-12 items-center justify-center gap-2 bg-[#25D366] text-white py-3 font-tight text-sm tracking-widest uppercase hover:bg-[#20BA5A] transition-all disabled:opacity-50">
                     <MessageCircle size={16} /> {ordering ? 'Creating order…' : 'Order via WhatsApp'}
                   </button>
                   {orderError && <p role="alert" className="mt-3 text-sm text-red-300">{orderError}</p>}

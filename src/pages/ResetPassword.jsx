@@ -23,6 +23,10 @@ export default function ResetPassword() {
       setError("Passwords do not match");
       return;
     }
+    if (newPassword.length < 12) {
+      setError("Use at least 12 characters with uppercase, lowercase, and a number.");
+      return;
+    }
     setLoading(true);
     try {
       await studioClient.auth.resetPassword({ resetToken, newPassword });
@@ -79,6 +83,7 @@ export default function ResetPassword() {
               onChange={(e) => setNewPassword(e.target.value)}
               className="pl-10 h-12"
               required
+              minLength={12}
             />
           </div>
         </div>
@@ -95,9 +100,11 @@ export default function ResetPassword() {
               onChange={(e) => setConfirmPassword(e.target.value)}
               className="pl-10 h-12"
               required
+              minLength={12}
             />
           </div>
         </div>
+        <p className="text-xs text-muted-foreground">Use 12+ characters with uppercase, lowercase, and a number.</p>
         <Button type="submit" className="w-full h-12 font-medium" disabled={loading}>
           {loading ? (
             <>

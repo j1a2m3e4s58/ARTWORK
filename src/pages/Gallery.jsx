@@ -5,7 +5,7 @@ import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
-import GalleryAISearch from '@/components/GalleryAISearch';
+import GalleryGuidedSearch from '@/components/GalleryGuidedSearch';
 import { usePageContent } from '@/hooks/usePageContent';
 import { useAuth } from '@/lib/AuthContext';
 
@@ -34,13 +34,13 @@ export default function Gallery() {
   }, [user]);
 
   useEffect(() => {
-    // If AI results are active, they're set directly via handleAIResults
+    // Guided results are set directly by the search control.
     if (aiResults !== null) return;
     const result = artworks.filter(a => activeCategory === 'All' || a.category === activeCategory);
     setFiltered(result);
   }, [activeCategory, artworks, aiResults]);
 
-  const handleAIResults = (results) => {
+  const handleGuidedResults = (results) => {
     if (results === null) {
       setAiResults(null);
     } else {
@@ -74,9 +74,9 @@ export default function Gallery() {
                 {page.gallery_title || 'Gallery Portfolio'}
               </h1>
             </ScrollReveal>
-            {/* AI + Text Search */}
+            {/* Guided catalogue search */}
             <ScrollReveal delay={0.2} direction="left">
-              <GalleryAISearch artworks={artworks} onResults={handleAIResults} activeCategory={activeCategory} />
+              <GalleryGuidedSearch artworks={artworks} onResults={handleGuidedResults} />
             </ScrollReveal>
           </div>
         </div>

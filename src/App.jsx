@@ -1,7 +1,6 @@
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
-import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import { lazy, Suspense, useState } from 'react';
 import LoadingScreen from '@/components/LoadingScreen';
 import CustomCursor from '@/components/CustomCursor';
@@ -11,6 +10,8 @@ import AdminRoute from '@/components/AdminRoute';
 import AccountRoute from '@/components/AccountRoute';
 import PWAUpdateBanner from '@/components/PWAUpdateBanner';
 import AppErrorBoundary from '@/components/AppErrorBoundary';
+import AdminLayout from '@/components/AdminLayout';
+import AccountLayout from '@/components/AccountLayout';
 
 const Home = lazy(() => import('@/pages/Home'));
 const Gallery = lazy(() => import('@/pages/Gallery'));
@@ -33,7 +34,7 @@ const AcceptInvite = lazy(() => import('@/pages/AcceptInvite'));
 const VerifyEmail = lazy(() => import('@/pages/VerifyEmail'));
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+  const { isLoadingAuth, isLoadingPublicSettings } = useAuth();
 
   if (isLoadingPublicSettings || isLoadingAuth) {
     return (
@@ -41,11 +42,6 @@ const AuthenticatedApp = () => {
         <div className="w-8 h-8 border-2 border-brass/20 border-t-brass rounded-full animate-spin" />
       </div>
     );
-  }
-
-  if (authError) {
-    if (authError.type === 'user_not_registered') return <UserNotRegisteredError />;
-    if (authError.type === 'auth_required') { navigateToLogin(); return null; }
   }
 
   return (
@@ -62,17 +58,21 @@ const AuthenticatedApp = () => {
         <Route path="/videos" element={<Videos />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/testimonials" element={<Testimonials />} />
-        <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
-        <Route path="/account" element={<AccountRoute><Account /></AccountRoute>} />
+        <Route path="/privacy" element={<LegalPage type="privacy" />} />
+        <Route path="/terms" element={<LegalPage type="terms" />} />
+      </Route>
+      <Route element={<AdminRoute><AdminLayout /></AdminRoute>}>
+        <Route path="/admin" element={<Admin />} />
+      </Route>
+      <Route element={<AccountRoute><AccountLayout /></AccountRoute>}>
+        <Route path="/account" element={<Account />} />
+      </Route>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/accept-invite" element={<AcceptInvite />} />
       <Route path="/verify-email" element={<VerifyEmail />} />
-      <Route path="/privacy" element={<LegalPage type="privacy" />} />
-      <Route path="/terms" element={<LegalPage type="terms" />} />
-      </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>
     </Suspense>

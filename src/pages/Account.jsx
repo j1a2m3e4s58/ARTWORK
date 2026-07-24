@@ -29,6 +29,20 @@ export default function Account() {
       setData({ messages, commissions, orders, notifications });
     }).catch(loadError => setError(loadError.message));
   }, []);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('verify') === 'required') {
+      setNotice('Verify your email address before using protected studio features.');
+      window.history.replaceState({}, '', '/account');
+    }
+  }, []);
+  useEffect(() => {
+    const reference = new URLSearchParams(window.location.search).get('payment_reference');
+    if (!reference) return;
+    studioClient.payments.verify(reference)
+      .then(result => setNotice(result.paid ? 'Payment confirmed. Your order is now being prepared.' : 'Payment has not been confirmed yet.'))
+      .catch(paymentError => setError(paymentError.message))
+      .finally(() => window.history.replaceState({}, '', '/account'));
+  }, []);
 
   const updateProfile = async event => {
     event.preventDefault();
@@ -70,6 +84,10 @@ export default function Account() {
     if (!window.confirm('Permanently close your account? Your business records will be retained only where legally required.')) return;
     await studioClient.account.remove();
     await logout();
+  };
+  const logoutAll = async () => {
+    await studioClient.account.logoutAll();
+    window.location.assign('/login');
   };
 
   const cards = [
@@ -156,9 +174,11 @@ export default function Account() {
                 <h2 className="font-display text-2xl">Security</h2>
                 <input type="password" autoComplete="current-password" placeholder="Current password" value={passwords.currentPassword}
                   onChange={event => setPasswords({ ...passwords, currentPassword: event.target.value })} className="mt-4 w-full border border-brass/15 bg-obsidian px-3 py-2 text-sm" required />
-                <input type="password" autoComplete="new-password" placeholder="New password (10+ characters)" value={passwords.newPassword}
-                  onChange={event => setPasswords({ ...passwords, newPassword: event.target.value })} className="mt-3 w-full border border-brass/15 bg-obsidian px-3 py-2 text-sm" required minLength={10} />
+                <input type="password" autoComplete="new-password" placeholder="New password (12+ characters)" value={passwords.newPassword}
+                  onChange={event => setPasswords({ ...passwords, newPassword: event.target.value })} className="mt-3 w-full border border-brass/15 bg-obsidian px-3 py-2 text-sm" required minLength={12} />
+                <p className="mt-2 text-xs text-ivory/35">Include uppercase, lowercase, and a number.</p>
                 <button className="mt-4 flex items-center gap-2 border border-brass/25 px-4 py-2 text-sm text-brass"><Lock size={15} /> Change password</button>
+                <button type="button" onClick={logoutAll} className="mt-3 flex min-h-11 w-full items-center justify-center border border-ivory/10 px-4 py-2 text-sm text-ivory/60">Sign out on every device</button>
               </form>
 
               <div className="border border-brass/10 bg-carbon p-5">

@@ -13,7 +13,7 @@ export default function Register() {
     event.preventDefault();
     setError('');
     if (form.password !== form.confirm) return setError('Passwords do not match.');
-    if (form.password.length < 10) return setError('Use at least 10 characters for your password.');
+    if (form.password.length < 12) return setError('Use at least 12 characters with uppercase, lowercase, and a number.');
     setLoading(true);
     try {
       await studioClient.auth.register({ full_name: form.full_name, email: form.email, password: form.password });
@@ -27,7 +27,7 @@ export default function Register() {
   };
 
   return (
-    <AuthLayout icon={UserPlus} title="Join the atelier" subtitle="Create an account to message, commission, and use the studio assistant."
+    <AuthLayout icon={UserPlus} title="Join the atelier" subtitle="Create an account to message the studio, request commissions, and track orders."
       footer={<>Already registered? <Link to="/login" className="text-brass hover:underline">Log in</Link></>}>
       {error && <div className="mb-4 border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
       <form onSubmit={submit} className="space-y-4">
@@ -41,11 +41,12 @@ export default function Register() {
             <span className="mb-1.5 block text-xs uppercase tracking-widest text-ivory/45">{label}</span>
             <span className="relative block">
               <Icon className="absolute left-3 top-1/2 -translate-y-1/2 text-brass/50" size={16} />
-              <input {...props} required value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })}
+              <input {...props} minLength={props.type === 'password' ? 12 : undefined} required value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })}
                 className="w-full border border-brass/15 bg-obsidian py-3 pl-10 pr-3 text-sm text-ivory outline-none focus:border-brass/50" />
             </span>
           </label>
         ))}
+        <p className="text-xs text-ivory/40">Passwords require at least 12 characters, uppercase and lowercase letters, and a number.</p>
         <button disabled={loading} className="flex w-full items-center justify-center gap-2 bg-brass py-3.5 text-sm uppercase tracking-wider text-obsidian disabled:opacity-50">
           {loading && <Loader2 className="animate-spin" size={16} />} Create account
         </button>

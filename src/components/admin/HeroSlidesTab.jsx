@@ -9,6 +9,8 @@ const EMPTY_SLIDE = {
   accentTitle: '',
   subtitle: '',
   imageUrl: '',
+  altText: '',
+  sourceName: '',
   primaryLabel: 'Explore Gallery',
   primaryLink: '/gallery',
   secondaryLabel: 'Request Commission',
@@ -40,6 +42,16 @@ function SlideForm({ initialValue, onSave, onCancel, saving }) {
         accept="image/*"
         placeholder="Upload a wide image or paste its URL"
       />
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="space-y-2">
+          <span className="font-tight text-[10px] uppercase tracking-widest text-ivory/40">Accessible image description *</span>
+          <input value={form.altText || ''} onChange={event => set('altText', event.target.value)} placeholder="Describe the artwork or studio scene" className="w-full border border-brass/20 bg-obsidian px-4 py-3 text-sm text-ivory/80 focus:border-brass/50 focus:outline-none" />
+        </label>
+        <label className="space-y-2">
+          <span className="font-tight text-[10px] uppercase tracking-widest text-ivory/40">Image source / licence</span>
+          <input value={form.sourceName || ''} onChange={event => set('sourceName', event.target.value)} placeholder="Original work, Pexels, licensed…" className="w-full border border-brass/20 bg-obsidian px-4 py-3 text-sm text-ivory/80 focus:border-brass/50 focus:outline-none" />
+        </label>
+      </div>
 
       <div className="grid md:grid-cols-2 gap-4">
         {[
@@ -100,7 +112,7 @@ function SlideForm({ initialValue, onSave, onCancel, saving }) {
 
       <button
         type="button"
-        disabled={saving || !form.title.trim() || !form.imageUrl.trim()}
+        disabled={saving || !form.title.trim() || !form.imageUrl.trim() || !form.altText?.trim()}
         onClick={() => onSave(form)}
         className="w-full bg-brass text-obsidian py-3 font-tight text-xs uppercase tracking-[0.2em] disabled:opacity-40 flex items-center justify-center gap-2"
       >
@@ -195,7 +207,7 @@ export default function HeroSlidesTab() {
         {[...slides].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)).map((slide, index) => (
           <article key={slide.id} className="bg-carbon border border-brass/10 overflow-hidden group">
             <div className="relative aspect-[16/8] overflow-hidden">
-              <img src={slide.imageUrl} alt="" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
+              <img src={slide.imageUrl} alt={slide.altText || slide.title} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
               <div className="absolute inset-0 bg-gradient-to-t from-obsidian via-obsidian/25 to-transparent" />
               <div className="absolute top-3 left-3 bg-obsidian/80 border border-brass/20 px-2 py-1 text-[10px] uppercase tracking-widest text-brass">
                 Slide {index + 1}

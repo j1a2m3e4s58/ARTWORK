@@ -14,15 +14,22 @@ import { studioClient } from '@/api/studioClient';
 export default function FileUploadField({ label, value, onChange, accept = 'image/*', placeholder = 'Paste URL or upload file...' }) {
   const [uploading, setUploading] = useState(false);
   const [mode, setMode] = useState('url'); // 'url' | 'file'
+  const [error, setError] = useState('');
   const inputRef = useRef(null);
 
   const handleFile = async (file) => {
     if (!file) return;
     setUploading(true);
-    const { file_url } = await studioClient.integrations.Core.UploadFile({ file });
-    onChange(file_url);
-    setUploading(false);
-    setMode('url');
+    setError('');
+    try {
+      const { file_url } = await studioClient.integrations.Core.UploadFile({ file });
+      onChange(file_url);
+      setMode('url');
+    } catch (uploadError) {
+      setError(uploadError.message);
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -86,6 +93,7 @@ export default function FileUploadField({ label, value, onChange, accept = 'imag
       {value && (accept.includes('image') || !accept.includes('video')) && (
         <img src={value} alt="" className="mt-2 h-20 w-auto object-cover border border-brass/10 opacity-70" onError={e => e.target.style.display = 'none'} />
       )}
+      {error && <p role="alert" className="mt-2 text-xs text-red-300">{error}</p>}
     </div>
   );
 }

@@ -14,7 +14,7 @@ export default function AcceptInvite() {
 
   const submit = async event => {
     event.preventDefault();
-    if (password.length < 10) return setError('Use at least 10 characters for your password.');
+    if (password.length < 12) return setError('Use at least 12 characters with uppercase, lowercase, and a number.');
     if (password !== confirm) return setError('Passwords do not match.');
     setLoading(true);
     setError('');
@@ -39,13 +39,14 @@ export default function AcceptInvite() {
           <label className="block text-xs uppercase tracking-widest text-ivory/45">
             Password
             <input type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)}
-              className="mt-2 w-full border border-brass/20 bg-obsidian px-4 py-3 text-ivory" required />
+              className="mt-2 w-full border border-brass/20 bg-obsidian px-4 py-3 text-ivory" required minLength={12} />
           </label>
           <label className="block text-xs uppercase tracking-widest text-ivory/45">
             Confirm password
             <input type="password" autoComplete="new-password" value={confirm} onChange={event => setConfirm(event.target.value)}
-              className="mt-2 w-full border border-brass/20 bg-obsidian px-4 py-3 text-ivory" required />
+              className="mt-2 w-full border border-brass/20 bg-obsidian px-4 py-3 text-ivory" required minLength={12} />
           </label>
+          <p className="text-xs normal-case tracking-normal text-ivory/40">Use 12+ characters with uppercase, lowercase, and a number.</p>
           <button disabled={loading} className="flex w-full items-center justify-center gap-2 bg-brass py-3 text-sm font-semibold text-obsidian disabled:opacity-50">
             {loading && <Loader2 size={16} className="animate-spin" />} Create account
           </button>

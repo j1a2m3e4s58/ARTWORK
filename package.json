@@ -14,7 +14,7 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
-    "test": "node --test server/tests/validation.test.js",
+    "test": "node --test server/tests",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build && npm audit --omit=dev"
   },
   "dependencies": {

@@ -48,34 +48,11 @@ const createEntity = name => ({
 });
 
 const entityNames = [
-  'Artwork', 'AuditLog', 'BlogPost', 'CommissionRequest', 'HeroSlide', 'Message', 'NewsletterSubscriber',
+  'Artwork', 'AuditLog', 'BlogPost', 'CommissionRequest', 'HeroSlide', 'Media', 'Message', 'NewsletterSubscriber',
   'Notification', 'Order', 'Outbox', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'User', 'Video',
 ];
 
 const entities = Object.fromEntries(entityNames.map(name => [name, createEntity(name)]));
-
-const assistantReply = message => {
-  const text = message.toLowerCase();
-  if (text.includes('price') || text.includes('cost') || text.includes('budget')) {
-    return 'Commission pricing starts at $80 for a study, $200 for a fine portrait, and $450 for a masterwork. Share the medium and size for a more focused recommendation.';
-  }
-  if (text.includes('time') || text.includes('deadline')) {
-    return 'Typical delivery ranges from 5 days for studies to 3–5 weeks for detailed masterworks. Complexity and your deadline shape the final schedule.';
-  }
-  return 'Share the subject, preferred style, size, mood, colors, and deadline, and I’ll help refine your creative brief.';
-};
-
-const schemaSample = (schema, prompt = '') => {
-  if (!schema) return assistantReply(prompt);
-  if (schema.type === 'array') return [];
-  if (schema.type === 'number') return 0;
-  if (schema.type === 'boolean') return false;
-  if (schema.type === 'string') return '';
-  if (schema.type === 'object') {
-    return Object.fromEntries(Object.entries(schema.properties || {}).map(([key, value]) => [key, schemaSample(value, prompt)]));
-  }
-  return null;
-};
 
 export const studioClient = {
   entities,
@@ -112,23 +89,6 @@ export const studioClient = {
       },
       SendEmail(message) {
         return request('/api/email/send', { method: 'POST', body: JSON.stringify(message) });
-      },
-      async InvokeLLM({ prompt, response_json_schema }) {
-        if (!response_json_schema) return assistantReply(prompt || '');
-        const result = schemaSample(response_json_schema, prompt);
-        if ('visionSummary' in result) {
-          return {
-            ...result,
-            artworkType: 'Portrait',
-            suggestedPackage: 'Fine Portrait',
-            estimatedPrice: '$180–$250',
-            estimatedTimeline: '10–14 days',
-            moodTags: ['expressive', 'personal', 'refined'],
-            clarifyingQuestions: ['What mood should the piece convey?', 'Which colors or details matter most?'],
-            visionSummary: 'A personal artwork shaped around your subject, mood, and preferred finish.',
-          };
-        }
-        return result;
       },
     },
   },
@@ -168,6 +128,9 @@ export const studioClient = {
     changePassword(data) {
       return request('/api/account/change-password', { method: 'POST', body: JSON.stringify(data) });
     },
+    logoutAll() {
+      return request('/api/account/logout-all', { method: 'POST' });
+    },
     remove() {
       return request('/api/account', { method: 'DELETE' });
     },
@@ -179,17 +142,21 @@ export const studioClient = {
     ready() {
       return request('/api/ready');
     },
+    status() {
+      return request('/api/admin/system-status');
+    },
+    retryOutbox() {
+      return request('/api/admin/outbox/retry', { method: 'POST' });
+    },
+  },
+  payments: {
+    config: () => request('/api/payments/config'),
+    initialize: orderId => request('/api/payments/initialize', { method: 'POST', body: JSON.stringify({ orderId }) }),
+    verify: reference => request(`/api/payments/verify/${encodeURIComponent(reference)}`),
   },
   mfa: {
     setup: () => request('/api/admin/mfa/setup', { method: 'POST' }),
     enable: code => request('/api/admin/mfa/enable', { method: 'POST', body: JSON.stringify({ code }) }),
     disable: (password, code) => request('/api/admin/mfa/disable', { method: 'POST', body: JSON.stringify({ password, code }) }),
-  },
-  agents: {
-    async createConversation() { return { id: crypto.randomUUID() }; },
-    subscribeToConversation() { return () => {}; },
-    async addMessage(_conversation, message) {
-      return { role: 'assistant', content: assistantReply(message.content) };
-    },
   },
 };

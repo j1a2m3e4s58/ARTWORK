@@ -1,17 +1,41 @@
 import path from 'node:path';
 import { writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 
 export const storageProvider = process.env.STORAGE_PROVIDER === 'cloudinary' ? 'cloudinary' : 'local';
+const signedCloudinary = Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET);
+const unsignedCloudinary = Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_UPLOAD_PRESET);
+export const storageConfigured = storageProvider === 'local' || signedCloudinary || unsignedCloudinary;
+
+export function checkStorage() {
+  if (!storageConfigured) return { ok: false, provider: storageProvider, reason: 'storage_not_configured' };
+  if (process.env.NODE_ENV === 'production' && storageProvider === 'local') {
+    return { ok: false, provider: storageProvider, reason: 'local_storage_is_not_durable' };
+  }
+  if (process.env.NODE_ENV === 'production' && storageProvider === 'cloudinary' && !signedCloudinary) {
+    return { ok: false, provider: storageProvider, reason: 'signed_cloud_storage_credentials_required' };
+  }
+  return { ok: true, provider: storageProvider };
+}
 
 export async function storeFile({ buffer, mime, extension, uploadDir, id }) {
   if (storageProvider === 'cloudinary') {
     const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-    const preset = process.env.CLOUDINARY_UPLOAD_PRESET;
-    if (!cloudName || !preset) throw new Error('Cloud storage is selected but not fully configured.');
+    if (!cloudName || (!signedCloudinary && !unsignedCloudinary)) throw new Error('Cloud storage is selected but not fully configured.');
     const resourceType = mime.startsWith('video/') ? 'video' : 'image';
     const form = new FormData();
-    form.append('upload_preset', preset);
     form.append('folder', 'reigns-atelier');
+    if (signedCloudinary) {
+      const timestamp = Math.floor(Date.now() / 1000);
+      const signature = createHash('sha1')
+        .update(`folder=reigns-atelier&timestamp=${timestamp}${process.env.CLOUDINARY_API_SECRET}`)
+        .digest('hex');
+      form.append('timestamp', String(timestamp));
+      form.append('api_key', process.env.CLOUDINARY_API_KEY);
+      form.append('signature', signature);
+    } else {
+      form.append('upload_preset', process.env.CLOUDINARY_UPLOAD_PRESET);
+    }
     form.append('file', new Blob([buffer], { type: mime }), `${id}.${extension}`);
     const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, { method: 'POST', body: form });
     const result = await response.json();

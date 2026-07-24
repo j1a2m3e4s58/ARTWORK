@@ -1,8 +1,10 @@
 ﻿import { useState } from 'react';
-import { Sparkles, Loader2, X, Lightbulb, DollarSign, Clock } from 'lucide-react';
-import { analyzeCommissionVision, suggestPrice } from '@/lib/aiHelpers';
+import { ListChecks, Loader2, X, Lightbulb, DollarSign, Clock } from 'lucide-react';
+import { buildCommissionBrief, calculateGuidePrice } from '@/lib/guidedHelpers';
+import { useAuth } from '@/lib/AuthContext';
 
-export default function CommissionAIAssistant({ form, set, settings }) {
+export default function CommissionBriefBuilder({ form, set }) {
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [vision, setVision] = useState(null);
@@ -14,7 +16,7 @@ export default function CommissionAIAssistant({ form, set, settings }) {
     setLoading(true);
     setVision(null);
     try {
-      const res = await analyzeCommissionVision(form.description, form.referenceImageUrl);
+      const res = await buildCommissionBrief(form.description);
       setVision(res);
     } catch (e) {
       setVision({ error: 'Analysis failed. Try again.' });
@@ -33,9 +35,10 @@ export default function CommissionAIAssistant({ form, set, settings }) {
     setPricingLoading(true);
     setPricing(null);
     try {
-      const res = await suggestPrice({
+      const res = await calculateGuidePrice({
         artworkType: form.artworkType || vision?.artworkType || 'Portrait',
         complexity: 3,
+        packageName: form.package || vision?.suggestedPackage,
       });
       setPricing(res);
     } catch (e) {
@@ -47,10 +50,14 @@ export default function CommissionAIAssistant({ form, set, settings }) {
   return (
     <>
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          if (!user) return window.location.assign('/login?redirect=/commission');
+          if (!user.emailVerified) return window.location.assign('/account?verify=required');
+          setOpen(true);
+        }}
         className="w-full flex items-center justify-center gap-2 border border-brass/30 bg-violet/10 text-brass py-3 font-tight text-sm tracking-wide hover:bg-violet/20 hover:border-brass/50 transition-all"
       >
-        <Sparkles size={16} /> Vision Assistant
+        <ListChecks size={16} /> Guided Brief Builder
       </button>
 
       {open && (
@@ -60,12 +67,12 @@ export default function CommissionAIAssistant({ form, set, settings }) {
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="text-brass" size={20} />
-                  <h3 className="font-display text-2xl text-ivory">Vision Assistant</h3>
+                  <ListChecks className="text-brass" size={20} />
+                  <h3 className="font-display text-2xl text-ivory">Guided Brief Builder</h3>
                 </div>
                 <button onClick={() => setOpen(false)} className="text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>
               </div>
-              <p className="text-ivory/40 text-sm mb-5">Describe your vision and receive a guided artwork type, package, and pricing suggestion.</p>
+              <p className="text-ivory/40 text-sm mb-5">Use the studio’s published package rules to prepare a clearer request. This is a planning guide; the artist confirms every quote.</p>
 
               <textarea
                 placeholder="Describe what you envision... e.g. 'A moody charcoal portrait of my grandmother, soft lighting, nostalgic feeling'"
@@ -77,7 +84,7 @@ export default function CommissionAIAssistant({ form, set, settings }) {
 
               <button onClick={handleAnalyze} disabled={!form.description || loading}
                 className="w-full flex items-center justify-center gap-2 bg-brass text-obsidian py-3 font-tight text-sm tracking-widest uppercase hover:bg-brass-light transition-all disabled:opacity-30 mb-4">
-                {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />} Analyze My Vision
+                {loading ? <Loader2 size={16} className="animate-spin" /> : <ListChecks size={16} />} Build My Brief
               </button>
 
               {vision && !vision.error && (
@@ -124,7 +131,7 @@ export default function CommissionAIAssistant({ form, set, settings }) {
                     </button>
                     <button onClick={handlePricing} disabled={pricingLoading}
                       className="w-full flex items-center justify-center gap-1 border border-brass/30 text-brass py-2.5 font-tight text-xs tracking-wide hover:bg-brass/10 transition-all disabled:opacity-30">
-                      {pricingLoading ? <Loader2 size={12} className="animate-spin" /> : <DollarSign size={12} />} Get Detailed Price Estimate
+                      {pricingLoading ? <Loader2 size={12} className="animate-spin" /> : <DollarSign size={12} />} Calculate Planning Estimate
                     </button>
                   </div>
                   {pricing && !pricing.error && (
