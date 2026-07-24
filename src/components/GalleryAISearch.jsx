@@ -1,13 +1,19 @@
 import { useState } from 'react';
 import { Sparkles, Loader2, Search, X } from 'lucide-react';
 import { semanticSearch } from '@/lib/aiHelpers';
+import { useAuth } from '@/lib/AuthContext';
 
 export default function GalleryAISearch({ artworks, onResults, activeCategory }) {
+  const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState(false);
 
   const handleSearch = async () => {
+    if (!user) {
+      window.location.assign('/login?redirect=/gallery');
+      return;
+    }
     if (!query.trim()) return;
     setLoading(true);
     setActive(true);
@@ -47,7 +53,7 @@ export default function GalleryAISearch({ artworks, onResults, activeCategory })
       </div>
       <button onClick={handleSearch} disabled={!query.trim() || loading}
         className="flex items-center gap-1.5 bg-brass/10 border border-brass/30 text-brass px-4 py-2.5 font-tight text-xs tracking-wide hover:bg-brass/20 transition-all disabled:opacity-30 whitespace-nowrap">
-        {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} AI Search
+        {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} Smart Search
       </button>
     </div>
   );

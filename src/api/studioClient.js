@@ -1,128 +1,100 @@
-const STORAGE_PREFIX = 'reigns-atelier:';
-
-const read = (name) => {
-  try {
-    return JSON.parse(localStorage.getItem(`${STORAGE_PREFIX}${name}`) || '[]');
-  } catch {
-    return [];
-  }
+const request = async (url, options = {}) => {
+  const isForm = options.body instanceof FormData;
+  const response = await fetch(url, {
+    credentials: 'include',
+    ...options,
+    headers: isForm ? options.headers : {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Request failed.');
+  return data;
 };
 
-const write = (name, records) => {
-  localStorage.setItem(`${STORAGE_PREFIX}${name}`, JSON.stringify(records));
-  return records;
-};
-
-const createEntity = (name) => ({
-  async list(sortBy, limit) {
-    let records = [...read(name)];
-    if (sortBy) {
-      const descending = sortBy.startsWith('-');
-      const key = descending ? sortBy.slice(1) : sortBy;
-      records.sort((a, b) => {
-        const result = String(a[key] ?? '').localeCompare(String(b[key] ?? ''));
-        return descending ? -result : result;
-      });
-    }
-    return limit ? records.slice(0, limit) : records;
+const createEntity = name => ({
+  list(sort, limit) {
+    const params = new URLSearchParams();
+    if (sort) params.set('sort', sort);
+    if (limit) params.set('limit', limit);
+    return request(`/api/entities/${name}?${params}`);
   },
-  async filter(query = {}, sortBy, limit) {
-    const records = (await this.list(sortBy)).filter(record =>
-      Object.entries(query).every(([key, value]) => record[key] === value)
-    );
-    return limit ? records.slice(0, limit) : records;
+  filter(query = {}, sort, limit) {
+    const params = new URLSearchParams(Object.entries(query).map(([key, value]) => [key, String(value)]));
+    if (sort) params.set('sort', sort);
+    if (limit) params.set('limit', limit);
+    return request(`/api/entities/${name}?${params}`);
   },
-  async create(data) {
-    const records = read(name);
-    const record = {
-      ...data,
-      id: crypto.randomUUID(),
-      created_date: new Date().toISOString(),
-    };
-    write(name, [...records, record]);
-    return record;
+  create(data) {
+    return request(`/api/entities/${name}`, { method: 'POST', body: JSON.stringify(data) });
   },
-  async update(id, data) {
-    let updated;
-    const records = read(name).map(record => {
-      if (record.id !== id) return record;
-      updated = { ...record, ...data, updated_date: new Date().toISOString() };
-      return updated;
-    });
-    write(name, records);
-    return updated;
+  update(id, data) {
+    return request(`/api/entities/${name}/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
   },
-  async delete(id) {
-    write(name, read(name).filter(record => record.id !== id));
-    return true;
+  delete(id) {
+    return request(`/api/entities/${name}/${id}`, { method: 'DELETE' });
   },
-  async bulkCreate(items) {
+  bulkCreate(items) {
     return Promise.all(items.map(item => this.create(item)));
   },
 });
 
 const entityNames = [
-  'Artwork',
-  'BlogPost',
-  'CommissionRequest',
-  'NewsletterSubscriber',
-  'Outbox',
-  'Message',
-  'Quote',
-  'ShopProduct',
-  'SiteContent',
-  'Testimonial',
-  'User',
-  'Video',
+  'Artwork', 'BlogPost', 'CommissionRequest', 'Message', 'NewsletterSubscriber',
+  'Outbox', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'User', 'Video',
 ];
 
 const entities = Object.fromEntries(entityNames.map(name => [name, createEntity(name)]));
 
-const fileToDataUrl = file => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve(reader.result);
-  reader.onerror = reject;
-  reader.readAsDataURL(file);
-});
-
-const buildAssistantReply = message => {
+const assistantReply = message => {
   const text = message.toLowerCase();
   if (text.includes('price') || text.includes('cost') || text.includes('budget')) {
-    return 'Commission pricing starts at $80 for a sketch study, $200 for a fine portrait, and $450 for a masterwork. Tell me your preferred medium and size for a more focused recommendation.';
+    return 'Commission pricing starts at $80 for a study, $200 for a fine portrait, and $450 for a masterwork. Share the medium and size for a more focused recommendation.';
   }
-  if (text.includes('time') || text.includes('long') || text.includes('deadline')) {
-    return 'Typical delivery ranges from 5 days for studies to 3–5 weeks for detailed masterworks. Your deadline and complexity will shape the final schedule.';
+  if (text.includes('time') || text.includes('deadline')) {
+    return 'Typical delivery ranges from 5 days for studies to 3–5 weeks for detailed masterworks. Complexity and your deadline shape the final schedule.';
   }
-  return 'I can help refine your commission idea. Share the subject, preferred style, size, mood, colors, and deadline, and I’ll suggest the best package and a clearer creative brief.';
+  return 'Share the subject, preferred style, size, mood, colors, and deadline, and I’ll help refine your creative brief.';
 };
 
-const sampleFromSchema = (schema, prompt = '') => {
-  if (!schema) return buildAssistantReply(prompt);
+const schemaSample = (schema, prompt = '') => {
+  if (!schema) return assistantReply(prompt);
   if (schema.type === 'array') return [];
   if (schema.type === 'number') return 0;
   if (schema.type === 'boolean') return false;
   if (schema.type === 'string') return '';
   if (schema.type === 'object') {
-    return Object.fromEntries(
-      Object.entries(schema.properties || {}).map(([key, value]) => [key, sampleFromSchema(value, prompt)])
-    );
+    return Object.fromEntries(Object.entries(schema.properties || {}).map(([key, value]) => [key, schemaSample(value, prompt)]));
   }
   return null;
 };
 
 export const studioClient = {
   entities,
+  admin: {
+    createUser(data) {
+      return request('/api/admin/users', { method: 'POST', body: JSON.stringify(data) });
+    },
+  },
+  messages: {
+    reply(id, text) {
+      return request(`/api/messages/${id}/reply`, { method: 'POST', body: JSON.stringify({ text }) });
+    },
+  },
   integrations: {
     Core: {
       async UploadFile({ file }) {
-        return { file_url: await fileToDataUrl(file) };
+        const body = new FormData();
+        body.append('file', file);
+        return request('/api/upload', { method: 'POST', body });
       },
-      async SendEmail(message) {
-        return entities.Outbox?.create?.(message) || { delivered: false, saved: true };
+      SendEmail(message) {
+        return request('/api/email/send', { method: 'POST', body: JSON.stringify(message) });
       },
       async InvokeLLM({ prompt, response_json_schema }) {
-        if (!response_json_schema) return buildAssistantReply(prompt || '');
-        const result = sampleFromSchema(response_json_schema, prompt);
+        if (!response_json_schema) return assistantReply(prompt || '');
+        const result = schemaSample(response_json_schema, prompt);
         if ('visionSummary' in result) {
           return {
             ...result,
@@ -131,10 +103,7 @@ export const studioClient = {
             estimatedPrice: '$180–$250',
             estimatedTimeline: '10–14 days',
             moodTags: ['expressive', 'personal', 'refined'],
-            clarifyingQuestions: [
-              'What mood should the finished piece convey?',
-              'Which colors or details matter most to you?',
-            ],
+            clarifyingQuestions: ['What mood should the piece convey?', 'Which colors or details matter most?'],
             visionSummary: 'A personal artwork shaped around your subject, mood, and preferred finish.',
           };
         }
@@ -143,64 +112,29 @@ export const studioClient = {
     },
   },
   auth: {
-    async me() {
-      return JSON.parse(localStorage.getItem(`${STORAGE_PREFIX}session`) || 'null');
-    },
-    async loginViaEmailPassword(email, password) {
-      const users = read('User');
-      let user = users.find(item => item.email.toLowerCase() === email.toLowerCase());
-      if (user && user.password !== password) throw new Error('Invalid email or password.');
-      if (!user) {
-        user = await entities.User.create({ email, password, role: 'customer', status: 'active' });
-      }
-      localStorage.setItem(`${STORAGE_PREFIX}session`, JSON.stringify(user));
-      return user;
-    },
-    async register({ email, password, full_name }) {
-      const existing = (await entities.User.filter({ email }))[0];
-      if (existing) throw new Error('An account with this email already exists.');
-      const user = await entities.User.create({
-        email,
-        password,
-        full_name: full_name || email.split('@')[0],
-        role: 'customer',
-        status: 'active',
-      });
-      localStorage.setItem(`${STORAGE_PREFIX}session`, JSON.stringify(user));
-      return user;
-    },
-    async loginWithProvider() {
-      throw new Error('Social sign-in is not configured.');
-    },
-    async logout() {
-      localStorage.removeItem(`${STORAGE_PREFIX}session`);
-    },
-    async resetPasswordRequest() {
-      return { success: true };
-    },
-    async resetPassword() {
-      return { success: true };
-    },
-    async resendOtp() {
-      return { success: true };
-    },
-    async verifyOtp() {
-      return { success: true };
-    },
+    me: () => request('/api/auth/me'),
+    loginViaEmailPassword: (email, password) => request('/api/auth/login', {
+      method: 'POST', body: JSON.stringify({ email, password }),
+    }),
+    register: data => request('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+    logout: () => request('/api/auth/logout', { method: 'POST' }),
+    resetPasswordRequest: email => request('/api/auth/forgot-password', {
+      method: 'POST', body: JSON.stringify({ email }),
+    }),
+    resetPassword: ({ resetToken, newPassword }) => request('/api/auth/reset-password', {
+      method: 'POST', body: JSON.stringify({ token: resetToken, password: newPassword }),
+    }),
+    loginWithProvider: async () => { throw new Error('Social sign-in is not configured yet.'); },
+    resendOtp: async () => ({ success: true }),
+    verifyOtp: async () => ({ success: true }),
     setToken() {},
-    redirectToLogin() {
-      window.location.assign('/login');
-    },
+    redirectToLogin() { window.location.assign('/login'); },
   },
   agents: {
-    async createConversation() {
-      return { id: crypto.randomUUID() };
-    },
-    subscribeToConversation() {
-      return () => {};
-    },
+    async createConversation() { return { id: crypto.randomUUID() }; },
+    subscribeToConversation() { return () => {}; },
     async addMessage(_conversation, message) {
-      return { role: 'assistant', content: buildAssistantReply(message.content) };
+      return { role: 'assistant', content: assistantReply(message.content) };
     },
   },
 };

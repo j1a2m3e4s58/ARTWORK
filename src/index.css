@@ -41,7 +41,6 @@
 
   html {
     scroll-behavior: smooth;
-    cursor: none;
     max-width: 100%;
     overflow-x: clip;
   }
@@ -65,6 +64,11 @@
   ::selection {
     background-color: #C9A96E40;
     color: #F9F6F0;
+  }
+
+  :focus-visible {
+    outline: 2px solid #C9A96E;
+    outline-offset: 3px;
   }
 
   ::-webkit-scrollbar {
@@ -249,5 +253,20 @@
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+}
+
+@media (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  html, a, button, input, textarea, select {
+    cursor: none;
+  }
+}
+
+@media (pointer: coarse), (prefers-reduced-motion: reduce) {
+  .cursor-dot, .cursor-ring {
+    display: none;
+  }
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
   }
 }

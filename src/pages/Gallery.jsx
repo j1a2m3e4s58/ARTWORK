@@ -6,6 +6,7 @@ import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import GalleryAISearch from '@/components/GalleryAISearch';
+import { usePageContent } from '@/hooks/usePageContent';
 
 const CATEGORIES = ['All', 'Portraits', 'Sketches', 'Digital Art', 'Pencil Drawings', 'Anime Art', 'Realism'];
 
@@ -25,6 +26,7 @@ const DEMO_ARTWORKS = [
 ];
 
 export default function Gallery() {
+  const page = usePageContent('Gallery');
   const [activeCategory, setActiveCategory] = useState('All');
   const [artworks, setArtworks] = useState(DEMO_ARTWORKS);
   const [filtered, setFiltered] = useState(DEMO_ARTWORKS);
@@ -74,11 +76,11 @@ export default function Gallery() {
 
         {/* Header */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12 mb-16">
-          <ScrollReveal><SectionLabel>The Vault</SectionLabel></ScrollReveal>
+          <ScrollReveal><SectionLabel>{page.gallery_label || 'The Vault'}</SectionLabel></ScrollReveal>
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mt-2">
             <ScrollReveal delay={0.1}>
               <h1 className="font-display text-5xl md:text-7xl text-ivory">
-                Gallery<br /><em className="text-brass">Portfolio</em>
+                {page.gallery_title || 'Gallery Portfolio'}
               </h1>
             </ScrollReveal>
             {/* AI + Text Search */}

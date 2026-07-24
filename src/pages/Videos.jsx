@@ -5,6 +5,7 @@ import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
+import { usePageContent } from '@/hooks/usePageContent';
 
 const CATEGORIES = ['All', 'Process', 'Time-lapse', 'Tutorial', 'Behind the Scenes', 'Commission Reveal'];
 
@@ -59,6 +60,7 @@ function formatViews(n) {
 }
 
 export default function Videos() {
+  const page = usePageContent('Videos');
   const [dbVideos, setDbVideos] = useState([]);
   const [activeCategory, setActiveCategory] = useState('All');
   const [playing, setPlaying] = useState(null);
@@ -78,15 +80,15 @@ export default function Videos() {
 
         {/* Header */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12 mb-16">
-          <ScrollReveal><SectionLabel>Video Portal</SectionLabel></ScrollReveal>
+          <ScrollReveal><SectionLabel>{page.videos_label || 'Video Portal'}</SectionLabel></ScrollReveal>
           <ScrollReveal delay={0.1}>
             <h1 className="font-display text-5xl md:text-7xl text-ivory mt-2">
-              Art in <em className="text-brass">Motion</em>
+              {page.videos_title || 'Art in Motion'}
             </h1>
           </ScrollReveal>
           <ScrollReveal delay={0.2}>
             <p className="text-ivory/40 text-lg mt-4 max-w-xl">
-              Process videos, time-lapses, tutorials, and behind-the-scenes glimpses into the atelier.
+              {page.videos_subtitle || 'Process videos, time-lapses, tutorials, and behind-the-scenes glimpses into the atelier.'}
             </p>
           </ScrollReveal>
         </div>

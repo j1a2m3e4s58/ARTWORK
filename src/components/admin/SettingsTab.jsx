@@ -6,6 +6,19 @@ const SETTING_DEFAULTS = [
   { key: 'site_name', label: 'Company / Studio Name', value: 'Reigns Atelier', group: 'Branding', icon: 'globe' },
   { key: 'site_logo_primary', label: 'Logo Primary Word', value: 'Reigns', group: 'Branding', icon: 'globe' },
   { key: 'site_logo_secondary', label: 'Logo Secondary Word', value: 'Atelier', group: 'Branding', icon: 'globe' },
+  { key: 'seo_title', label: 'Browser & SEO Title', value: 'Reigns Atelier — Fine Art Studio', group: 'SEO & App', icon: 'globe' },
+  { key: 'seo_description', label: 'SEO Description', value: 'Bespoke fine art portraits, digital masterpieces, and commissioned artwork crafted with devotion.', group: 'SEO & App', icon: 'globe' },
+  { key: 'business_hours', label: 'Business Hours', value: 'Monday–Friday, 9:00–17:00', group: 'Business', icon: 'globe' },
+  { key: 'response_time', label: 'Typical Response Time', value: 'Within 24–48 hours', group: 'Business', icon: 'globe' },
+  { key: 'currency', label: 'Default Currency', value: 'USD', group: 'Business', icon: 'globe' },
+  { key: 'locale', label: 'Default Locale', value: 'en', group: 'Business', icon: 'globe' },
+  { key: 'commission_open', label: 'Commission Availability', value: 'Open for commissions', group: 'Business', icon: 'message' },
+  { key: 'quote_interval_seconds', label: 'Quote Rotation (seconds)', value: '8', group: 'SEO & App', icon: 'globe' },
+  { key: 'show_gallery', label: 'Show Gallery Navigation', value: 'true', group: 'Navigation', icon: 'globe' },
+  { key: 'show_shop', label: 'Show Shop Navigation', value: 'true', group: 'Navigation', icon: 'globe' },
+  { key: 'show_videos', label: 'Show Videos Navigation', value: 'true', group: 'Navigation', icon: 'globe' },
+  { key: 'show_blog', label: 'Show Blog Navigation', value: 'true', group: 'Navigation', icon: 'globe' },
+  { key: 'show_contact', label: 'Show Contact Navigation', value: 'true', group: 'Navigation', icon: 'globe' },
   { key: 'whatsapp_number', label: 'WhatsApp Number', value: '+1234567890', group: 'Contact', icon: 'phone', hint: 'Include country code e.g. +1234567890' },
   { key: 'contact_email', label: 'Contact Email', value: 'hello@reignsatelier.com', group: 'Contact', icon: 'mail' },
   { key: 'whatsapp_message', label: 'WhatsApp Default Message', value: "Hello, I'm interested in a commission from Reigns Atelier", group: 'Contact', icon: 'message' },
@@ -33,7 +46,7 @@ const SETTING_DEFAULTS = [
 
 const ICON_MAP = { phone: Phone, mail: Mail, instagram: Instagram, twitter: Twitter, youtube: Youtube, globe: Globe, message: MessageCircle };
 
-const GROUP_ORDER = ['Contact', 'Social', 'Branding', 'Stats', 'Hero Images', 'Newsletter & Offers'];
+const GROUP_ORDER = ['Contact', 'Social', 'Branding', 'Navigation', 'Business', 'SEO & App', 'Stats', 'Hero Images', 'Newsletter & Offers'];
 
 function SettingRow({ setting, onSave }) {
   const [val, setVal] = useState(setting.value);
@@ -109,6 +122,7 @@ export default function SettingsTab() {
       const rec = await studioClient.entities.SiteContent.create({ key, label: def?.label || key, value, page: 'Settings' });
       setSettings(prev => ({ ...prev, [key]: rec }));
     }
+    window.dispatchEvent(new Event('atelier:content-updated'));
   };
 
   const allInitialized = SETTING_DEFAULTS.every(d => settings[d.key]);

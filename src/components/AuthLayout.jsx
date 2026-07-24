@@ -2,20 +2,23 @@ import React from "react";
 
 export default function AuthLayout({ icon: Icon, title, subtitle, footer, children }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-obsidian px-4 py-28 relative overflow-hidden">
+      <div className="absolute inset-0 gradient-radial-violet opacity-40" />
+      <div className="noise-overlay absolute inset-0" />
+      <div className="w-full max-w-md relative">
         <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary mb-4">
-            <Icon className="w-7 h-7 text-primary-foreground" aria-hidden="true" />
+          <img src="/brand/reigns-app-icon-192.png" alt="Reigns Atelier" className="mx-auto mb-5 h-20 w-20 rounded-full border border-brass/25 object-cover" />
+          <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-brass/10 mb-4">
+            <Icon className="w-5 h-5 text-brass" aria-hidden="true" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">{title}</h1>
-          {subtitle && <p className="text-muted-foreground mt-2">{subtitle}</p>}
+          <h1 className="font-display text-4xl text-ivory">{title}</h1>
+          {subtitle && <p className="text-ivory/45 mt-2 text-sm">{subtitle}</p>}
         </div>
-        <div className="bg-card rounded-2xl shadow-sm border border-border p-8">
+        <div className="glass-panel border border-brass/15 p-8 shadow-2xl">
           {children}
         </div>
         {footer && (
-          <p className="text-center text-sm text-muted-foreground mt-6">{footer}</p>
+          <p className="text-center text-sm text-ivory/40 mt-6">{footer}</p>
         )}
       </div>
     </div>

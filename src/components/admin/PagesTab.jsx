@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Check, Plus, Globe, MessageCircle, User, BookOpen } from 'lucide-react';
+import { Check, Plus, Globe, MessageCircle, User } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 
 const PAGE_CONTENT_DEFAULTS = [
@@ -42,6 +42,21 @@ const PAGE_CONTENT_DEFAULTS = [
   { key: 'contact_success_body', label: 'Success Message Body', value: 'Thank you for reaching out. I will respond within 24–48 hours.', group: 'Contact Page', page: 'Contact' },
   { key: 'contact_studio_location', label: 'Studio Location Text', value: 'Nairobi, Kenya (Remote worldwide)', group: 'Contact Page', page: 'Contact' },
   { key: 'contact_instagram_handle', label: 'Instagram Display Handle', value: '@reignsatelier', group: 'Contact Page', page: 'Contact' },
+  { key: 'gallery_label', label: 'Section Label', value: 'The Vault', group: 'Gallery Page', page: 'Gallery' },
+  { key: 'gallery_title', label: 'Page Title', value: 'Gallery Portfolio', group: 'Gallery Page', page: 'Gallery' },
+  { key: 'shop_label', label: 'Section Label', value: 'The Boutique', group: 'Shop Page', page: 'Shop' },
+  { key: 'shop_title', label: 'Page Title', value: 'Art Shop', group: 'Shop Page', page: 'Shop' },
+  { key: 'videos_label', label: 'Section Label', value: 'Video Portal', group: 'Videos Page', page: 'Videos' },
+  { key: 'videos_title', label: 'Page Title', value: 'Art in Motion', group: 'Videos Page', page: 'Videos' },
+  { key: 'videos_subtitle', label: 'Page Subtitle', value: 'Process videos, time-lapses, tutorials, and behind-the-scenes glimpses into the atelier.', group: 'Videos Page', page: 'Videos' },
+  { key: 'blog_label', label: 'Section Label', value: 'Art Journal', group: 'Blog Page', page: 'Blog' },
+  { key: 'blog_title', label: 'Page Title', value: 'Stories & Process', group: 'Blog Page', page: 'Blog' },
+  { key: 'testimonials_label', label: 'Section Label', value: 'Client Words', group: 'Testimonials Page', page: 'Testimonials' },
+  { key: 'testimonials_title', label: 'Page Title', value: 'Voices of Trust', group: 'Testimonials Page', page: 'Testimonials' },
+  { key: 'privacy_title', label: 'Privacy Page Title', value: 'Privacy Policy', group: 'Legal Pages', page: 'Legal' },
+  { key: 'privacy_body', label: 'Privacy Policy Text', value: 'We collect account, message, and commission information only to provide studio services. We do not sell personal information.', group: 'Legal Pages', page: 'Legal' },
+  { key: 'terms_title', label: 'Terms Page Title', value: 'Terms of Service', group: 'Legal Pages', page: 'Legal' },
+  { key: 'terms_body', label: 'Terms of Service Text', value: 'By using Reigns Atelier, you agree to provide accurate information and respect the artist’s intellectual property and commission terms.', group: 'Legal Pages', page: 'Legal' },
   // Home page
   { key: 'hero_title', label: 'Hero Title', value: 'Reigns Atelier', group: 'Home Page', page: 'Home' },
   { key: 'hero_subtitle', label: 'Hero Subtitle', value: 'Where imagination bleeds onto canvas. Fine art portraits, digital masterpieces, and bespoke commissions crafted with devotion.', group: 'Home Page', page: 'Home' },
@@ -51,8 +66,8 @@ const PAGE_CONTENT_DEFAULTS = [
   { key: 'stat_awards', label: 'Stat: Awards Won', value: '12', group: 'Home Page', page: 'Home' },
 ];
 
-const GROUP_ORDER = ['Home Page', 'Commission Page', 'Commission Packages', 'Commission FAQs', 'About Page', 'Contact Page'];
-const GROUP_ICONS = { 'Home Page': Globe, 'Commission Page': MessageCircle, 'Commission Packages': MessageCircle, 'Commission FAQs': MessageCircle, 'About Page': User, 'Contact Page': Globe };
+const GROUP_ORDER = ['Home Page', 'Gallery Page', 'Shop Page', 'Videos Page', 'Blog Page', 'Testimonials Page', 'Commission Page', 'Commission Packages', 'Commission FAQs', 'About Page', 'Contact Page', 'Legal Pages'];
+const GROUP_ICONS = { 'Home Page': Globe, 'Gallery Page': Globe, 'Shop Page': Globe, 'Videos Page': Globe, 'Blog Page': Globe, 'Testimonials Page': Globe, 'Commission Page': MessageCircle, 'Commission Packages': MessageCircle, 'Commission FAQs': MessageCircle, 'About Page': User, 'Contact Page': Globe, 'Legal Pages': Globe };
 
 function FieldRow({ def, record, onSave }) {
   const [val, setVal] = useState(record?.value ?? def.value);
@@ -97,7 +112,7 @@ export default function PagesTab() {
   const [loading, setLoading] = useState(true);
   const [initializing, setInitializing] = useState(false);
 
-  const pages = ['Home', 'Commission', 'About', 'Contact'];
+  const pages = ['Home', 'Gallery', 'Shop', 'Videos', 'Blog', 'Testimonials', 'Commission', 'About', 'Contact', 'Legal'];
 
   useEffect(() => {
     Promise.all(pages.map(p => studioClient.entities.SiteContent.filter({ page: p }))).then(results => {
@@ -132,6 +147,7 @@ export default function PagesTab() {
       const rec = await studioClient.entities.SiteContent.create({ key, label: def?.label || key, value, page: def?.page || 'Home' });
       setRecords(prev => ({ ...prev, [key]: rec }));
     }
+    window.dispatchEvent(new Event('atelier:content-updated'));
   };
 
   if (loading) return (

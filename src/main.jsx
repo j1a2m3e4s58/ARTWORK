@@ -5,7 +5,17 @@ import '@/index.css'
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/sw.js').then(registration => {
+      if (registration.waiting) window.dispatchEvent(new CustomEvent('atelier:update-ready', { detail: registration }));
+      registration.addEventListener('updatefound', () => {
+        const worker = registration.installing;
+        worker?.addEventListener('statechange', () => {
+          if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+            window.dispatchEvent(new CustomEvent('atelier:update-ready', { detail: registration }));
+          }
+        });
+      });
+    }).catch(() => {});
   });
 }
 

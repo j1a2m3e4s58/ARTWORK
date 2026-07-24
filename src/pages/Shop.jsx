@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingBag, Heart, X, Plus, Minus, ArrowRight, MessageCircle } from 'lucide-react';
+import { ShoppingBag, Heart, X, Plus, Minus, MessageCircle } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
+import { usePageContent } from '@/hooks/usePageContent';
+import { useAuth } from '@/lib/AuthContext';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import { useSettings } from '@/hooks/useSettings';
@@ -20,6 +22,8 @@ const DEMO_PRODUCTS = [
 ];
 
 export default function Shop() {
+  const page = usePageContent('Shop');
+  const { user } = useAuth();
   const settings = useSettings();
   const [products, setProducts] = useState(DEMO_PRODUCTS);
   const [filter, setFilter] = useState('All');
@@ -58,9 +62,9 @@ export default function Shop() {
         <div className="max-w-7xl mx-auto px-6 lg:px-12 mb-16">
           <div className="flex items-end justify-between">
             <div>
-              <ScrollReveal><SectionLabel>The Boutique</SectionLabel></ScrollReveal>
+              <ScrollReveal><SectionLabel>{page.shop_label || 'The Boutique'}</SectionLabel></ScrollReveal>
               <ScrollReveal delay={0.1}>
-                <h1 className="font-display text-5xl md:text-7xl text-ivory mt-2">Art <em className="text-brass">Shop</em></h1>
+                <h1 className="font-display text-5xl md:text-7xl text-ivory mt-2">{page.shop_title || 'Art Shop'}</h1>
               </ScrollReveal>
             </div>
             <ScrollReveal delay={0.2} direction="left">
@@ -168,6 +172,12 @@ export default function Shop() {
                   <a
                     href={`https://wa.me/${(settings.whatsapp_number || '1234567890').replace(/[^+\d]/g, '')}?text=${encodeURIComponent('Hello! I\'d like to order:\n\n' + cart.map(i => `• ${i.title} (x${i.qty}) — $${(i.price * i.qty).toFixed(2)}`).join('\n') + `\n\nTotal: $${cartTotal.toFixed(2)}`)}`}
                     target="_blank" rel="noopener noreferrer"
+                    onClick={event => {
+                      if (!user) {
+                        event.preventDefault();
+                        window.location.assign('/login?redirect=/shop');
+                      }
+                    }}
                     className="w-full flex items-center justify-center gap-2 bg-[#25D366] text-white py-4 font-tight text-sm tracking-widest uppercase hover:bg-[#20BA5A] transition-all"
                   >
                     <MessageCircle size={16} /> Order via WhatsApp

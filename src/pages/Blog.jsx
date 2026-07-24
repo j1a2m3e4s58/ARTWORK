@@ -5,6 +5,7 @@ import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
+import { usePageContent } from '@/hooks/usePageContent';
 
 const DEMO_POSTS = [
   { id: 'd1', slug: 'the-art-of-chiaroscuro', title: 'The Art of Chiaroscuro: Drawing with Light and Shadow', excerpt: "Understanding the dramatic interplay between light and shadow is perhaps the most powerful tool in a portrait artist's arsenal.", coverImageUrl: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=800&q=85', tags: ['Technique', 'Charcoal', 'Portrait'], publishedDate: '2025-12-01', readTime: 8, author: 'Reigns' },
@@ -15,6 +16,7 @@ const DEMO_POSTS = [
 ];
 
 export default function Blog() {
+  const page = usePageContent('Blog');
   const [posts, setPosts] = useState(DEMO_POSTS);
 
   useEffect(() => {
@@ -43,9 +45,9 @@ export default function Blog() {
 
         {/* Header */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12 mb-16">
-          <ScrollReveal><SectionLabel>Art Journal</SectionLabel></ScrollReveal>
+          <ScrollReveal><SectionLabel>{page.blog_label || 'Art Journal'}</SectionLabel></ScrollReveal>
           <ScrollReveal delay={0.1}>
-            <h1 className="font-display text-5xl md:text-7xl text-ivory mt-2">Stories &<br /><em className="text-brass">Process</em></h1>
+            <h1 className="font-display text-5xl md:text-7xl text-ivory mt-2">{page.blog_title || 'Stories & Process'}</h1>
           </ScrollReveal>
           <ScrollReveal delay={0.2}>
             <p className="text-ivory/40 text-lg mt-4 max-w-xl">Behind the art: tutorials, process breakdowns, studio notes, and thoughts on the creative life.</p>

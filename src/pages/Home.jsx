@@ -82,9 +82,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const timer = setInterval(() => setQuoteIndex(index => (index + 1) % quotes.length), 8000);
+    const seconds = Math.max(4, Number(settings.quote_interval_seconds) || 8);
+    const timer = setInterval(() => setQuoteIndex(index => (index + 1) % quotes.length), seconds * 1000);
     return () => clearInterval(timer);
-  }, [quotes.length]);
+  }, [quotes.length, settings.quote_interval_seconds]);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
   const heroY = useTransform(scrollYProgress, [0, 1], ['0%', '30%']);
   const heroOpacity = useTransform(scrollYProgress, [0, 0.8], [1, 0]);

@@ -81,8 +81,9 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
           {/* Brand */}
           <div className="md:col-span-1">
-            <h3 className="font-display text-2xl text-ivory mb-2">Reigns</h3>
-            <p className="font-tight text-[10px] uppercase tracking-[0.4em] text-brass/60 mb-4">Atelier</p>
+            <img src="/brand/reigns-atelier-logo.jpg" alt="Reigns Atelier" className="mb-5 w-36 border border-brass/10 opacity-90" loading="lazy" />
+            <h3 className="font-display text-2xl text-ivory mb-2">{settings.site_logo_primary || 'Reigns'}</h3>
+            <p className="font-tight text-[10px] uppercase tracking-[0.4em] text-brass/60 mb-4">{settings.site_logo_secondary || 'Atelier'}</p>
             <p className="text-ivory/40 text-sm leading-relaxed">Where imagination meets the canvas. Premium fine art commissions and original works.</p>
             <div className="flex gap-4 mt-6">
               <a href={settings.instagram_url || 'https://instagram.com'} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Instagram size={18} /></a>
@@ -148,8 +149,8 @@ export default function Footer() {
             {settings.footer_copyright || '© 2026 Reigns Atelier. All artworks are the intellectual property of the artist. Unauthorized reproduction is prohibited.'}
           </p>
           <div className="flex gap-6">
-            <span className="text-ivory/25 text-xs font-tight tracking-wide">Privacy Policy</span>
-            <span className="text-ivory/25 text-xs font-tight tracking-wide">Terms of Service</span>
+            <Link to="/privacy" className="text-ivory/25 text-xs font-tight tracking-wide hover:text-brass">Privacy Policy</Link>
+            <Link to="/terms" className="text-ivory/25 text-xs font-tight tracking-wide hover:text-brass">Terms of Service</Link>
           </div>
         </div>
       </div>

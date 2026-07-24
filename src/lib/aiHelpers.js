@@ -164,31 +164,18 @@ Return JSON with:
  * Uses AI to match a natural language query against artwork descriptions.
  */
 export async function semanticSearch(query, artworks) {
-  if (!query.trim()) return artworks;
-  const simplified = artworks.map(a => ({
-    id: a.id,
-    title: a.title,
-    category: a.category,
-    description: a.description || '',
-    medium: a.medium || '',
-    tags: a.tags || [],
-  }));
-  const res = await studioClient.integrations.Core.InvokeLLM({
-    prompt: `You are an art curator helping a visitor find artwork.
-The visitor searched: "${query}"
-
-Here are the available artworks (JSON array):
-${JSON.stringify(simplified)}
-
-Return JSON with a "ids" array containing the IDs of artworks that match the query — by mood, color, feeling, subject, technique, or description — ranked by relevance. Only include strong matches. If none match, return an empty array.`,
-    response_json_schema: {
-      type: 'object',
-      properties: {
-        ids: { type: 'array', items: { type: 'string' } },
-      },
-    },
-  });
-  return res.ids || [];
+  const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (!terms.length) return artworks.map(artwork => artwork.id);
+  return artworks
+    .map(artwork => {
+      const searchable = [artwork.title, artwork.category, artwork.description, artwork.medium, ...(Array.isArray(artwork.tags) ? artwork.tags : [])]
+        .filter(Boolean).join(' ').toLowerCase();
+      const score = terms.reduce((total, term) => total + (searchable.includes(term) ? 1 : 0), 0);
+      return { id: artwork.id, score };
+    })
+    .filter(result => result.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map(result => result.id);
 }
 
 /**

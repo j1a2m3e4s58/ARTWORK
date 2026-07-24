@@ -50,7 +50,7 @@ export default function CommissionAIAssistant({ form, set, settings }) {
         onClick={() => setOpen(true)}
         className="w-full flex items-center justify-center gap-2 border border-brass/30 bg-violet/10 text-brass py-3 font-tight text-sm tracking-wide hover:bg-violet/20 hover:border-brass/50 transition-all"
       >
-        <Sparkles size={16} /> AI Vision Assistant
+        <Sparkles size={16} /> Vision Assistant
       </button>
 
       {open && (
@@ -61,11 +61,11 @@ export default function CommissionAIAssistant({ form, set, settings }) {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <Sparkles className="text-brass" size={20} />
-                  <h3 className="font-display text-2xl text-ivory">AI Vision Assistant</h3>
+                  <h3 className="font-display text-2xl text-ivory">Vision Assistant</h3>
                 </div>
                 <button onClick={() => setOpen(false)} className="text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>
               </div>
-              <p className="text-ivory/40 text-sm mb-5">Describe your vision and let AI suggest the right artwork type, package, and pricing.</p>
+              <p className="text-ivory/40 text-sm mb-5">Describe your vision and receive a guided artwork type, package, and pricing suggestion.</p>
 
               <textarea
                 placeholder="Describe what you envision... e.g. 'A moody charcoal portrait of my grandmother, soft lighting, nostalgic feeling'"

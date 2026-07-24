@@ -4,6 +4,7 @@ import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
+import { usePageContent } from '@/hooks/usePageContent';
 
 const DEMO_TESTIMONIALS = [
   { id: 'd1', clientName: 'Amara K.', location: 'Lagos, Nigeria', rating: 5, artworkType: 'Portrait Commission', review: 'The portrait was beyond anything I could have imagined. Reigns captured not just my likeness but something essential about who I am. Pure artistry.', artworkImageUrl: 'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=400&q=80' },
@@ -21,6 +22,7 @@ const STATS = [
 ];
 
 export default function Testimonials() {
+  const page = usePageContent('Testimonials');
   const [testimonials, setTestimonials] = useState(DEMO_TESTIMONIALS);
 
   useEffect(() => {
@@ -36,9 +38,9 @@ export default function Testimonials() {
 
         {/* Header */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12 mb-20 text-center">
-          <ScrollReveal><SectionLabel>Client Words</SectionLabel></ScrollReveal>
+          <ScrollReveal><SectionLabel>{page.testimonials_label || 'Client Words'}</SectionLabel></ScrollReveal>
           <ScrollReveal delay={0.1}>
-            <h1 className="font-display text-5xl md:text-7xl text-ivory mt-2">Voices of <em className="text-brass">Trust</em></h1>
+            <h1 className="font-display text-5xl md:text-7xl text-ivory mt-2">{page.testimonials_title || 'Voices of Trust'}</h1>
           </ScrollReveal>
           <ScrollReveal delay={0.2}>
             <p className="text-ivory/40 text-lg mt-4 max-w-xl mx-auto">Real words from real collectors and commissioners. Their trust is the foundation of everything I create.</p>

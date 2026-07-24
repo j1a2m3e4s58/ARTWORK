@@ -26,7 +26,7 @@ export default function CommissionAgentChat() {
         content: 'Welcome to the commission studio. Tell me what you would like to create, and I’ll help shape the idea, budget, and timeline.',
       }]);
     } catch (e) {
-      setMessages([{ role: 'assistant', content: '⚠️ The AI assistant requires a Builder+ plan to activate. Please upgrade to enable live AI commission help.' }]);
+      setMessages([{ role: 'assistant', content: 'The studio assistant is temporarily unavailable. Please use the contact form and the artist will help you directly.' }]);
     }
   };
 
@@ -60,7 +60,7 @@ export default function CommissionAgentChat() {
       <button
         onClick={handleOpen}
         className="fixed bottom-24 right-[4.75rem] z-30 flex h-12 w-12 items-center justify-center rounded-full bg-brass text-obsidian shadow-lg shadow-brass/20 transition-all hover:scale-105 hover:bg-brass-light md:bottom-40 md:right-8 md:h-12 md:w-12"
-        aria-label="AI Commission Assistant"
+        aria-label="Commission Assistant"
       >
         <MessageCircle size={20} />
       </button>
@@ -76,7 +76,7 @@ export default function CommissionAgentChat() {
               </div>
               <div>
                 <p className="font-display text-sm text-ivory">Commission Assistant</p>
-                <p className="text-ivory/40 text-[10px] font-tight">AI-powered · Always here</p>
+                <p className="text-ivory/40 text-[10px] font-tight">Guided support ? Always here</p>
               </div>
             </div>
             <button onClick={() => setOpen(false)} className="text-ivory/30 hover:text-brass transition-colors">

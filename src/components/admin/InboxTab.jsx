@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Mail, Send, Trash2 } from 'lucide-react';
+import { Send, Trash2 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 
 export default function InboxTab() {
@@ -11,8 +11,8 @@ export default function InboxTab() {
     const text = replies[message.id]?.trim();
     if (!text) return;
     const response = { text, sentAt: new Date().toISOString() };
-    await studioClient.entities.Message.update(message.id, { status: 'replied', reply: response });
-    setMessages(items => items.map(item => item.id === message.id ? { ...item, status: 'replied', reply: response } : item));
+    const updated = await studioClient.messages.reply(message.id, text);
+    setMessages(items => items.map(item => item.id === message.id ? updated : item));
     setReplies(current => ({ ...current, [message.id]: '' }));
   };
 

@@ -8,10 +8,16 @@ export const AuthProvider = ({ children }) => {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
 
   const checkUserAuth = async () => {
-    const currentUser = await studioClient.auth.me();
-    setUser(currentUser);
-    setIsLoadingAuth(false);
-    return currentUser;
+    try {
+      const currentUser = await studioClient.auth.me();
+      setUser(currentUser);
+      return currentUser;
+    } catch {
+      setUser(null);
+      return null;
+    } finally {
+      setIsLoadingAuth(false);
+    }
   };
 
   useEffect(() => {

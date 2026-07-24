@@ -21,6 +21,10 @@ const navLinks = [
 export default function Navbar() {
   const settings = useSettings();
   const { user, logout } = useAuth();
+  const visibleLinks = navLinks.filter(link => {
+    const key = `show_${link.label.toLowerCase()}`;
+    return settings[key] !== 'false';
+  });
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [adminGateOpen, setAdminGateOpen] = useState(false);
@@ -61,15 +65,18 @@ export default function Navbar() {
             onPointerLeave={handleLogoPointerUp}
             onContextMenu={e => e.preventDefault()}
           >
-            <Link to="/" onClick={e => e.stopPropagation()}>
-              <span className="font-display text-xl text-ivory tracking-wide group-hover:text-brass transition-colors duration-300 block">{settings.site_logo_primary || 'Reigns'}</span>
-              <span className="font-tight text-[10px] uppercase tracking-[0.35em] text-brass/70 block">{settings.site_logo_secondary || 'Atelier'}</span>
+            <Link to="/" onClick={e => e.stopPropagation()} className="flex items-center gap-3">
+              <img src="/brand/reigns-app-icon-192.png" alt="" className="h-11 w-11 rounded-full border border-brass/20 object-cover" />
+              <span>
+                <span className="font-display text-xl text-ivory tracking-wide group-hover:text-brass transition-colors duration-300 block">{settings.site_logo_primary || 'Reigns'}</span>
+                <span className="font-tight text-[10px] uppercase tracking-[0.35em] text-brass/70 block">{settings.site_logo_secondary || 'Atelier'}</span>
+              </span>
             </Link>
           </div>
 
           {/* Desktop nav */}
           <div className="hidden md:flex items-center gap-8">
-            {navLinks.map((link) => (
+            {visibleLinks.map((link) => (
               <Link
                 key={link.path}
                 to={link.path}
@@ -152,7 +159,7 @@ export default function Navbar() {
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                {navLinks.map((link, i) => (
+                {visibleLinks.map((link, i) => (
                   <motion.div
                     key={link.path}
                     initial={{ opacity: 0, y: 10 }}

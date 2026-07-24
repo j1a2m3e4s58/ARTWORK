@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Upload, Link, Loader2, X } from 'lucide-react';
+import { Upload, Loader2, X } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 
 /**

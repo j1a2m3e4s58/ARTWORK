@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Image, ShoppingBag, MessageSquare, BookOpen,
-  Users, Plus, Trash2, Pencil, Video, FileText, X, Check, Settings, Star, Download, Sparkles
+  Users, Plus, Trash2, Pencil, Video, FileText, X, Check, Settings, Star, Download, MoreHorizontal
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import PageTransition from '@/components/PageTransition';
@@ -13,16 +13,12 @@ import AddProductModal from '@/components/admin/AddProductModal';
 import AddBlogPostModal from '@/components/admin/AddBlogPostModal';
 import BulkImportModal from '@/components/admin/BulkImportModal';
 import PagesTab from '@/components/admin/PagesTab';
-import AIStudioTab from '@/components/admin/AIStudioTab';
-import AIInsightsCard from '@/components/admin/AIInsightsCard';
-import ArtworkAutoSuggest from '@/components/admin/ArtworkAutoSuggest';
 import QuotesTab from '@/components/admin/QuotesTab';
 import InboxTab from '@/components/admin/InboxTab';
 import UsersTab from '@/components/admin/UsersTab';
 
 const tabs = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { id: 'ai-studio', label: 'AI Studio', icon: Sparkles },
   { id: 'gallery', label: 'Gallery', icon: Image },
   { id: 'videos', label: 'Videos', icon: Video },
   { id: 'shop', label: 'Shop', icon: ShoppingBag },
@@ -130,11 +126,21 @@ export default function Admin() {
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [showAddBlog, setShowAddBlog] = useState(false);
   const [bulkImport, setBulkImport] = useState(null); // 'artwork' | 'product' | null
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [newVideo, setNewVideo] = useState({ title: '', videoUrl: '', thumbnailUrl: '', category: 'Process', description: '', duration: '', isFeatured: false });
   const [newArtwork, setNewArtwork] = useState({ title: '', category: 'Portraits', imageUrl: '', medium: '', description: '', price: '' });
 
   useEffect(() => {
     const loaders = {
+      overview: async () => {
+        const [gallery, videoItems, commissionItems, subscriberItems] = await Promise.all([
+          studioClient.entities.Artwork.list('-created_date', 100),
+          studioClient.entities.Video.list('-created_date', 100),
+          studioClient.entities.CommissionRequest.list('-created_date', 100),
+          studioClient.entities.NewsletterSubscriber.list('-created_date', 100),
+        ]);
+        setArtworks(gallery); setVideos(videoItems); setCommissions(commissionItems); setSubscribers(subscriberItems);
+      },
       gallery: () => studioClient.entities.Artwork.list('-created_date', 50).then(setArtworks),
       videos: () => studioClient.entities.Video.list('-created_date', 50).then(setVideos),
       shop: () => studioClient.entities.ShopProduct.list('-created_date', 50).then(setProducts),
@@ -211,14 +217,36 @@ export default function Admin() {
         </div>
 
         {/* Mobile bottom bar */}
-        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-carbon border-t border-brass/10 z-20 flex overflow-x-auto">
-          {tabs.map(({ id, icon: Icon }) => (
+        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-carbon/95 backdrop-blur-xl border-t border-brass/10 z-50 grid grid-cols-5 px-2 pb-[max(.4rem,env(safe-area-inset-bottom))]">
+          {tabs.filter(tab => ['overview', 'inbox', 'commissions', 'users'].includes(tab.id)).map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => setActiveTab(id)}
-              className={`flex-shrink-0 flex-1 min-w-[44px] py-3 flex items-center justify-center transition-colors ${activeTab === id ? 'text-brass' : 'text-ivory/30'}`}>
-              <Icon size={16} />
+              className={`min-w-0 py-2 flex flex-col gap-1 items-center justify-center transition-colors ${activeTab === id ? 'text-brass' : 'text-ivory/30'}`}>
+              <Icon size={17} /><span className="text-[9px] font-tight">{label}</span>
             </button>
           ))}
+          <button onClick={() => setMobileMenuOpen(true)} className="py-2 flex flex-col gap-1 items-center justify-center text-ivory/35">
+            <MoreHorizontal size={18} /><span className="text-[9px] font-tight">More</span>
+          </button>
         </div>
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <motion.div className="fixed inset-0 z-[9000] md:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <div className="absolute inset-0 bg-black/65 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} />
+              <motion.div className="absolute inset-x-3 bottom-3 max-h-[75vh] overflow-y-auto rounded-2xl border border-brass/15 bg-carbon p-4"
+                initial={{ y: 80 }} animate={{ y: 0 }} exit={{ y: 80 }}>
+                <div className="mb-3 flex items-center justify-between"><p className="font-display text-xl text-ivory">Admin tools</p><button onClick={() => setMobileMenuOpen(false)}><X size={18} /></button></div>
+                <div className="grid grid-cols-2 gap-2">
+                  {tabs.map(({ id, label, icon: Icon }) => (
+                    <button key={id} onClick={() => { setActiveTab(id); setMobileMenuOpen(false); }}
+                      className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-left text-sm ${activeTab === id ? 'border-brass/30 bg-brass/10 text-brass' : 'border-ivory/5 text-ivory/55'}`}>
+                      <Icon size={16} /> {label}
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Content */}
         <div className="flex-1 md:ml-60 p-5 lg:p-8 pb-24 md:pb-8">
@@ -241,28 +269,14 @@ export default function Admin() {
                   </div>
                 ))}
               </div>
-              <AIInsightsCard data={{
-                totalArtworks: artworks.length,
-                totalProducts: products.length,
-                totalVideos: videos.length,
-                commissionStats: commissions.reduce((acc, c) => { acc[c.status] = (acc[c.status] || 0) + 1; return acc; }, {}),
-                totalBlogPosts: blogPosts.length,
-                totalSubscribers: subscribers.length,
-                featuredArtworks: artworks.filter(a => a.isFeatured).length,
-                categoryBreakdown: artworks.reduce((acc, a) => { acc[a.category] = (acc[a.category] || 0) + 1; return acc; }, {}),
-                mostLiked: [...artworks].sort((a, b) => (b.likes || 0) - (a.likes || 0))[0]?.title,
-                recentCommissionTexts: commissions.slice(0, 5).map(c => c.description).filter(Boolean),
-              }} />
               <div className="bg-carbon border border-brass/10 p-6 text-ivory/50 text-sm leading-relaxed">
-                Welcome back. Use the sidebar to manage artworks, videos, commissions, shop products, testimonials, page texts, blog posts, newsletter subscribers, and site settings.
+                Welcome back. Use the admin navigation to manage artworks, videos, commissions, shop products, testimonials, quotes, messages, users, page content, subscribers, and site settings.
               </div>
             </div>
           )}
 
           {/* ── AI STUDIO ── */}
-          {activeTab === 'ai-studio' && <AIStudioTab />}
-
-          {/* ── GALLERY ── */}
+{/* ── GALLERY ── */}
           {activeTab === 'gallery' && (
             <div>
               <div className="flex items-center justify-between mb-6">
@@ -682,10 +696,6 @@ export default function Admin() {
                 ))}
                 <FileUploadField label="Artwork Image *" value={newArtwork.imageUrl}
                   onChange={url => setNewArtwork(p => ({ ...p, imageUrl: url }))} accept="image/*" placeholder="Paste URL or upload image" />
-                {newArtwork.imageUrl && (
-                  <ArtworkAutoSuggest imageUrl={newArtwork.imageUrl}
-                    onApply={s => setNewArtwork(p => ({ ...p, ...s }))} />
-                )}
                 <div>
                   <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">Category</label>
                   <select value={newArtwork.category} onChange={e => setNewArtwork(p => ({ ...p, category: e.target.value }))}

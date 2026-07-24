@@ -1,125 +1,50 @@
-import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Loader2, Lock, LogIn, Mail } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { LogIn, Mail, Lock, Loader2 } from "lucide-react";
-import AuthLayout from "@/components/AuthLayout";
-import GoogleIcon from "@/components/GoogleIcon";
+import AuthLayout from '@/components/AuthLayout';
 
 export default function Login() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
+  const submit = async event => {
+    event.preventDefault();
+    setError('');
     setLoading(true);
     try {
       await studioClient.auth.loginViaEmailPassword(email, password);
       const redirect = new URLSearchParams(window.location.search).get('redirect') || '/';
-      window.location.href = redirect.startsWith('/') ? redirect : '/';
+      window.location.assign(redirect.startsWith('/') ? redirect : '/');
     } catch (err) {
-      setError(err.message || "Invalid email or password");
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGoogle = () => {
-    studioClient.auth.loginWithProvider("google", "/");
-  };
-
   return (
-    <AuthLayout
-      icon={LogIn}
-      title="Welcome back"
-      subtitle="Log in to your account"
-      footer={
-        <>
-          Don't have an account?{" "}
-          <Link to="/register" className="text-primary font-medium hover:underline">
-            Create one
-          </Link>
-        </>
-      }
-    >
-      <Button
-        variant="outline"
-        className="w-full h-12 text-sm font-medium mb-6"
-        onClick={handleGoogle}
-      >
-        <GoogleIcon className="w-5 h-5 mr-2" />
-        Continue with Google
-      </Button>
-
-      <div className="relative mb-6">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-border" />
-        </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-card px-3 text-muted-foreground">or</span>
-        </div>
-      </div>
-
-      {error && (
-        <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
-          {error}
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
-            <Input
-              id="email"
-              type="email"
-              autoComplete="email"
-              autoFocus
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="pl-10 h-12"
-              required
-            />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="password">Password</Label>
-            <Link to="/forgot-password" className="text-xs text-primary hover:underline">
-              Forgot password?
-            </Link>
-          </div>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" aria-hidden="true" />
-            <Input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="pl-10 h-12"
-              required
-            />
-          </div>
-        </div>
-        <Button type="submit" className="w-full h-12 font-medium" disabled={loading}>
-          {loading ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Logging in...
-            </>
-          ) : (
-            "Log in"
-          )}
-        </Button>
+    <AuthLayout icon={LogIn} title="Welcome back" subtitle="Sign in to continue your studio experience."
+      footer={<>New to the atelier? <Link to="/register" className="text-brass hover:underline">Create an account</Link></>}>
+      {error && <div className="mb-4 border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
+      <form onSubmit={submit} className="space-y-4">
+        <label className="block">
+          <span className="mb-1.5 block text-xs uppercase tracking-widest text-ivory/45">Email address</span>
+          <span className="relative block"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-brass/50" size={16} />
+            <input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)}
+              className="w-full border border-brass/15 bg-obsidian py-3 pl-10 pr-3 text-sm text-ivory outline-none focus:border-brass/50" /></span>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 flex justify-between text-xs uppercase tracking-widest text-ivory/45">Password <Link to="/forgot-password" className="normal-case tracking-normal text-brass/70">Forgot?</Link></span>
+          <span className="relative block"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-brass/50" size={16} />
+            <input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}
+              className="w-full border border-brass/15 bg-obsidian py-3 pl-10 pr-3 text-sm text-ivory outline-none focus:border-brass/50" /></span>
+        </label>
+        <button disabled={loading} className="flex w-full items-center justify-center gap-2 bg-brass py-3.5 text-sm uppercase tracking-wider text-obsidian disabled:opacity-50">
+          {loading && <Loader2 className="animate-spin" size={16} />} Log in
+        </button>
       </form>
     </AuthLayout>
   );

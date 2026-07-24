@@ -1,5 +1,5 @@
-const CACHE = 'reigns-atelier-v1';
-const APP_SHELL = ['/', '/manifest.webmanifest', '/icons/atelier-palette-192.png', '/icons/atelier-palette-512.png'];
+const CACHE = 'reigns-atelier-v2';
+const APP_SHELL = ['/', '/manifest.webmanifest', '/brand/reigns-app-icon-192.png', '/brand/reigns-app-icon-512.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(APP_SHELL)));
@@ -15,11 +15,16 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
+self.addEventListener('message', event => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
     fetch(event.request)
       .then(response => {
+        if (!response.ok || new URL(event.request.url).pathname.startsWith('/api/')) return response;
         const copy = response.clone();
         caches.open(CACHE).then(cache => cache.put(event.request, copy));
         return response;
