@@ -1,0 +1,41 @@
+{
+  "name": "Testimonial",
+  "type": "object",
+  "properties": {
+    "clientName": {
+      "type": "string"
+    },
+    "rating": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "review": {
+      "type": "string"
+    },
+    "artworkImageUrl": {
+      "type": "string"
+    },
+    "beforeImageUrl": {
+      "type": "string"
+    },
+    "afterImageUrl": {
+      "type": "string"
+    },
+    "isFeatured": {
+      "type": "boolean",
+      "default": false
+    },
+    "artworkType": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "clientName",
+    "rating",
+    "review"
+  ]
+}

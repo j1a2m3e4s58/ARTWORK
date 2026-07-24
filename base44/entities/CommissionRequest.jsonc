@@ -1,0 +1,61 @@
+{
+  "name": "CommissionRequest",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "artworkType": {
+      "type": "string",
+      "enum": [
+        "Portrait",
+        "Digital Art",
+        "Sketch",
+        "Pencil Drawing",
+        "Anime Art",
+        "Realism",
+        "Other"
+      ]
+    },
+    "budget": {
+      "type": "string"
+    },
+    "deadline": {
+      "type": "string",
+      "format": "date"
+    },
+    "referenceImageUrl": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "reviewing",
+        "accepted",
+        "in_progress",
+        "completed",
+        "declined"
+      ],
+      "default": "pending"
+    },
+    "package": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "email",
+    "artworkType",
+    "description"
+  ]
+}

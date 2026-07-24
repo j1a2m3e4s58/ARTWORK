@@ -1,0 +1,42 @@
+{
+  "name": "BlogPost",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "slug": {
+      "type": "string"
+    },
+    "content": {
+      "type": "string"
+    },
+    "coverImageUrl": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "publishedDate": {
+      "type": "string",
+      "format": "date"
+    },
+    "author": {
+      "type": "string",
+      "default": "Reigns Atelier"
+    },
+    "excerpt": {
+      "type": "string"
+    },
+    "readTime": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "title",
+    "content"
+  ]
+}
