@@ -115,6 +115,7 @@ export default function Admin() {
   const [videos, setVideos] = useState([]);
   const [products, setProducts] = useState([]);
   const [commissions, setCommissions] = useState([]);
+  const [messages, setMessages] = useState([]);
   const [subscribers, setSubscribers] = useState([]);
   const [siteContent, setSiteContent] = useState([]);
   const [blogPosts, setBlogPosts] = useState([]);
@@ -129,6 +130,25 @@ export default function Admin() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [newVideo, setNewVideo] = useState({ title: '', videoUrl: '', thumbnailUrl: '', category: 'Process', description: '', duration: '', isFeatured: false });
   const [newArtwork, setNewArtwork] = useState({ title: '', category: 'Portraits', imageUrl: '', medium: '', description: '', price: '' });
+  const pendingMessageCount = messages.filter(message => message.status !== 'replied').length;
+
+  useEffect(() => {
+    let active = true;
+    const loadMessages = async () => {
+      try {
+        const items = await studioClient.entities.Message.list('-created_date', 100);
+        if (active) setMessages(items);
+      } catch (error) {
+        console.error('Unable to load admin messages:', error);
+      }
+    };
+    loadMessages();
+    const poller = window.setInterval(loadMessages, 30000);
+    return () => {
+      active = false;
+      window.clearInterval(poller);
+    };
+  }, []);
 
   useEffect(() => {
     const loaders = {
@@ -212,6 +232,11 @@ export default function Admin() {
               }`}>
               <Icon size={15} />
               <span className="font-tight text-sm">{label}</span>
+              {id === 'inbox' && pendingMessageCount > 0 && (
+                <span className="ml-auto min-w-5 rounded-full bg-brass px-1.5 py-0.5 text-center text-[10px] font-semibold text-obsidian">
+                  {pendingMessageCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -220,8 +245,13 @@ export default function Admin() {
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-carbon/95 backdrop-blur-xl border-t border-brass/10 z-50 grid grid-cols-5 px-2 pb-[max(.4rem,env(safe-area-inset-bottom))]">
           {tabs.filter(tab => ['overview', 'inbox', 'commissions', 'users'].includes(tab.id)).map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => setActiveTab(id)}
-              className={`min-w-0 py-2 flex flex-col gap-1 items-center justify-center transition-colors ${activeTab === id ? 'text-brass' : 'text-ivory/30'}`}>
+              className={`relative min-w-0 py-2 flex flex-col gap-1 items-center justify-center transition-colors ${activeTab === id ? 'text-brass' : 'text-ivory/30'}`}>
               <Icon size={17} /><span className="text-[9px] font-tight">{label}</span>
+              {id === 'inbox' && pendingMessageCount > 0 && (
+                <span className="absolute right-[24%] top-1 min-w-4 rounded-full bg-brass px-1 text-center text-[9px] font-semibold text-obsidian">
+                  {pendingMessageCount}
+                </span>
+              )}
             </button>
           ))}
           <button onClick={() => setMobileMenuOpen(true)} className="py-2 flex flex-col gap-1 items-center justify-center text-ivory/35">
@@ -240,6 +270,11 @@ export default function Admin() {
                     <button key={id} onClick={() => { setActiveTab(id); setMobileMenuOpen(false); }}
                       className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-left text-sm ${activeTab === id ? 'border-brass/30 bg-brass/10 text-brass' : 'border-ivory/5 text-ivory/55'}`}>
                       <Icon size={16} /> {label}
+                      {id === 'inbox' && pendingMessageCount > 0 && (
+                        <span className="ml-auto min-w-5 rounded-full bg-brass px-1.5 text-center text-[10px] font-semibold text-obsidian">
+                          {pendingMessageCount}
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -255,8 +290,9 @@ export default function Admin() {
           {activeTab === 'overview' && (
             <div>
               <h1 className="font-display text-4xl text-ivory mb-8">Dashboard</h1>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
                 {[
+                  { label: 'Messages needing reply', value: pendingMessageCount, color: pendingMessageCount ? 'text-brass' : 'text-ivory/35', tab: 'inbox' },
                   { label: 'Artworks', value: artworks.length || '—', color: 'text-brass', tab: 'gallery' },
                   { label: 'Videos', value: videos.length || '—', color: 'text-soft-pink', tab: 'videos' },
                   { label: 'Commissions', value: commissions.length || '—', color: 'text-art-orange', tab: 'commissions' },
@@ -482,7 +518,7 @@ export default function Admin() {
           {/* ── TESTIMONIALS ── */}
           {activeTab === 'testimonials' && <TestimonialsTab />}
           {activeTab === 'quotes' && <QuotesTab />}
-          {activeTab === 'inbox' && <InboxTab />}
+          {activeTab === 'inbox' && <InboxTab messages={messages} setMessages={setMessages} />}
           {activeTab === 'users' && <UsersTab />}
 
           {/* ── PAGE CONTENT ── */}

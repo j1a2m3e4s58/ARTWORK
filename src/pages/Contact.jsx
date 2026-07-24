@@ -25,6 +25,7 @@ export default function Contact() {
   const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' });
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -35,14 +36,20 @@ export default function Contact() {
       return;
     }
     setSending(true);
-    await studioClient.entities.Message.create({
-      ...form,
-      email: user.email,
-      userId: user.id,
-      status: 'unread',
-    });
-    setSending(false);
-    setSent(true);
+    setError('');
+    try {
+      await studioClient.entities.Message.create({
+        ...form,
+        email: user.email,
+        userId: user.id,
+        status: 'unread',
+      });
+      setSent(true);
+    } catch (submitError) {
+      setError(submitError.message || 'Your message could not be sent. Please try again.');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -84,6 +91,7 @@ export default function Contact() {
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <h2 className="font-display text-3xl text-ivory mb-8">{page.contact_form_title || 'Send a Message'}</h2>
+                  {error && <p role="alert" className="border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-300">{error}</p>}
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <input placeholder="Your name" value={form.name} onChange={e => set('name', e.target.value)}
                       className="min-w-0 w-full bg-carbon border border-brass/15 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/40 transition-colors text-sm" required />
