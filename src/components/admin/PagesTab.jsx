@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { Check, Plus, Globe, MessageCircle, User } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 
@@ -40,7 +40,7 @@ const PAGE_CONTENT_DEFAULTS = [
   { key: 'contact_social_title', label: 'Social Links Heading', value: 'Follow the Journey', group: 'Contact Page', page: 'Contact' },
   { key: 'contact_success_title', label: 'Success Message Title', value: 'Message Sent', group: 'Contact Page', page: 'Contact' },
   { key: 'contact_success_body', label: 'Success Message Body', value: 'Thank you for reaching out. I will respond within 24–48 hours.', group: 'Contact Page', page: 'Contact' },
-  { key: 'contact_studio_location', label: 'Studio Location Text', value: 'Nairobi, Kenya (Remote worldwide)', group: 'Contact Page', page: 'Contact' },
+  { key: 'contact_studio_location', label: 'Studio Location Text', value: '', group: 'Contact Page', page: 'Contact' },
   { key: 'contact_instagram_handle', label: 'Instagram Display Handle', value: '@reignsatelier', group: 'Contact Page', page: 'Contact' },
   { key: 'gallery_label', label: 'Section Label', value: 'The Vault', group: 'Gallery Page', page: 'Gallery' },
   { key: 'gallery_title', label: 'Page Title', value: 'Gallery Portfolio', group: 'Gallery Page', page: 'Gallery' },

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Mail, Phone, MapPin, Instagram, Twitter, Youtube, ArrowRight, Send, Loader2 } from 'lucide-react';
 import ScrollReveal from '@/components/ScrollReveal';
@@ -9,20 +9,13 @@ import { usePageContent } from '@/hooks/usePageContent';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
 
-const INSTAGRAM_PREVIEWS = [
-  'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=300&q=80',
-  'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=300&q=80',
-  'https://images.unsplash.com/photo-1561214115-f2f134cc4912?w=300&q=80',
-  'https://images.unsplash.com/photo-1519764622345-23439dd774f7?w=300&q=80',
-  'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=300&q=80',
-  'https://images.unsplash.com/photo-1460661419201-fd4cecdf8a8b?w=300&q=80',
-];
+const INSTAGRAM_PREVIEWS = [];
 
 export default function Contact() {
   const settings = useSettings();
   const { user } = useAuth();
   const page = usePageContent('Contact');
-  const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' });
+  const [form, setForm] = useState({ name: user?.full_name || '', email: user?.email || '', subject: '', message: '', website: '' });
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -83,7 +76,7 @@ export default function Contact() {
                   </div>
                   <h2 className="font-display text-3xl text-ivory">Message Sent</h2>
                   <p className="text-ivory/50">Thank you for reaching out. {page.contact_response_time || "I'll respond within 24–48 hours."}</p>
-                  <button onClick={() => { setSent(false); setForm({ name: '', email: '', subject: '', message: '' }); }}
+                  <button onClick={() => { setSent(false); setForm({ name: user?.full_name || '', email: user?.email || '', subject: '', message: '', website: '' }); }}
                     className="text-brass font-tight text-sm border-b border-brass/30 hover:border-brass transition-colors mt-4">
                     Send another message
                   </button>
@@ -95,9 +88,11 @@ export default function Contact() {
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <input placeholder="Your name" value={form.name} onChange={e => set('name', e.target.value)}
                       className="min-w-0 w-full bg-carbon border border-brass/15 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/40 transition-colors text-sm" required />
-                    <input type="email" placeholder="Email address" value={form.email} onChange={e => set('email', e.target.value)}
-                      className="min-w-0 w-full bg-carbon border border-brass/15 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/40 transition-colors text-sm" required />
+                    <input type="email" aria-label="Account email" value={form.email} readOnly
+                      className="min-w-0 w-full bg-carbon border border-brass/15 text-ivory/50 px-5 py-3.5 text-sm" required />
                   </div>
+                  <input tabIndex="-1" autoComplete="off" value={form.website} onChange={event => set('website', event.target.value)}
+                    className="absolute -left-[9999px] h-px w-px opacity-0" aria-hidden="true" />
                   <input placeholder="Subject" value={form.subject} onChange={e => set('subject', e.target.value)}
                     className="w-full bg-carbon border border-brass/15 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/40 transition-colors text-sm" />
                   <textarea placeholder="Your message..." value={form.message} onChange={e => set('message', e.target.value)} rows={6}
@@ -118,10 +113,10 @@ export default function Contact() {
                   <h2 className="font-display text-3xl text-ivory mb-8">{page.contact_details_title || 'Contact Details'}</h2>
                   <div className="space-y-6">
                     {[
-                      { icon: Mail, label: 'Email', value: settings.contact_email || 'hello@reignsatelier.com', href: `mailto:${settings.contact_email || 'hello@reignsatelier.com'}` },
-                      { icon: Phone, label: 'WhatsApp', value: settings.whatsapp_number || '+1 (234) 567-890', href: `https://wa.me/${(settings.whatsapp_number || '1234567890').replace(/[^+\d]/g, '')}` },
-                      { icon: MapPin, label: 'Studio', value: page.contact_studio_location || 'Nairobi, Kenya (Remote worldwide)', href: null },
-                    ].map(({ icon: Icon, label, value, href }) => (
+                      { icon: Mail, label: 'Email', value: settings.contact_email, href: settings.contact_email ? `mailto:${settings.contact_email}` : '' },
+                      { icon: Phone, label: 'WhatsApp', value: settings.whatsapp_number, href: settings.whatsapp_number ? `https://wa.me/${settings.whatsapp_number.replace(/[^\d]/g, '')}` : '' },
+                      { icon: MapPin, label: 'Studio', value: page.contact_studio_location, href: null },
+                    ].filter(item => item.value).map(({ icon: Icon, label, value, href }) => (
                       <div key={label} className="flex items-start gap-4">
                         <div className="w-10 h-10 border border-brass/20 flex items-center justify-center flex-shrink-0">
                           <Icon size={16} className="text-brass/70" />
@@ -142,10 +137,10 @@ export default function Contact() {
                   <h3 className="font-tight text-xs uppercase tracking-widest text-ivory/30 mb-5">{page.contact_social_title || 'Follow the Journey'}</h3>
                   <div className="flex flex-wrap gap-4">
                     {[
-                      { icon: Instagram, href: settings.instagram_url || 'https://instagram.com', label: 'Instagram' },
-                      { icon: Twitter, href: settings.twitter_url || 'https://twitter.com', label: 'Twitter' },
-                      { icon: Youtube, href: settings.youtube_url || 'https://youtube.com', label: 'YouTube' },
-                    ].map(({ icon: Icon, href, label }) => (
+                      { icon: Instagram, href: settings.instagram_url, label: 'Instagram' },
+                      { icon: Twitter, href: settings.twitter_url, label: 'Twitter' },
+                      { icon: Youtube, href: settings.youtube_url, label: 'YouTube' },
+                    ].filter(item => item.href).map(({ icon: Icon, href, label }) => (
                       <a key={label} href={href} target="_blank" rel="noopener noreferrer"
                         className="flex items-center gap-2 border border-brass/15 text-ivory/50 px-4 py-2.5 hover:border-brass/40 hover:text-brass transition-all text-sm font-tight">
                         <Icon size={16} /> {label}
@@ -156,7 +151,7 @@ export default function Contact() {
               </ScrollReveal>
 
               {/* Map placeholder */}
-              <ScrollReveal delay={0.3}>
+              {settings.show_contact_map === 'true' && <ScrollReveal delay={0.3}>
                 <div className="h-48 bg-carbon border border-brass/10 flex items-center justify-center relative overflow-hidden">
                   <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 50% 80%, #3D2B52 0%, transparent 60%)' }} />
                   <div className="text-center relative">
@@ -165,13 +160,13 @@ export default function Contact() {
                     <p className="text-ivory/20 text-xs mt-1">{page.contact_studio_map_sublabel || 'Remote commissions worldwide'}</p>
                   </div>
                 </div>
-              </ScrollReveal>
+              </ScrollReveal>}
             </div>
           </div>
         </div>
 
         {/* Instagram preview */}
-        <div className="max-w-7xl mx-auto px-6 lg:px-12">
+        {INSTAGRAM_PREVIEWS.length > 0 && <div className="max-w-7xl mx-auto px-6 lg:px-12">
           <ScrollReveal>
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
@@ -193,7 +188,7 @@ export default function Contact() {
               </ScrollReveal>
             ))}
           </div>
-        </div>
+        </div>}
       </div>
     </PageTransition>
   );

@@ -1,10 +1,13 @@
 import { useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 
 export default function CustomCursor() {
+  const location = useLocation();
   const dotRef = useRef(null);
   const ringRef = useRef(null);
 
   useEffect(() => {
+    if (location.pathname.startsWith('/admin')) return undefined;
     const dot = dotRef.current;
     const ring = ringRef.current;
     if (!dot || !ring) return;
@@ -66,7 +69,9 @@ export default function CustomCursor() {
       cancelAnimationFrame(animFrame);
       observer.disconnect();
     };
-  }, []);
+  }, [location.pathname]);
+
+  if (location.pathname.startsWith('/admin')) return null;
 
   return (
     <>

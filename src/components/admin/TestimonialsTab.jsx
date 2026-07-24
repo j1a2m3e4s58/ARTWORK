@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Trash2, Pencil, Star, X, Check } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
@@ -13,7 +13,7 @@ function ConfirmDelete({ onConfirm, onCancel }) {
   );
 }
 
-const BLANK = { clientName: '', rating: 5, review: '', artworkType: '', location: '', artworkImageUrl: '', isFeatured: false };
+const BLANK = { clientName: '', rating: 5, review: '', artworkType: '', location: '', artworkImageUrl: '', isFeatured: false, status: 'approved' };
 
 function TestimonialModal({ item, onSave, onClose, title }) {
   const [form, setForm] = useState({ ...BLANK, ...item });
@@ -50,6 +50,12 @@ function TestimonialModal({ item, onSave, onClose, title }) {
           </div>
           <FileUploadField label="Artwork Image" value={form.artworkImageUrl}
             onChange={url => setForm(p => ({ ...p, artworkImageUrl: url }))} accept="image/*" placeholder="Paste URL or upload image" />
+          <label className="block text-xs uppercase tracking-widest text-ivory/40">Publication status
+            <select value={form.status} onChange={event => setForm(current => ({ ...current, status: event.target.value }))}
+              className="mt-1 w-full border border-brass/20 bg-obsidian px-4 py-2.5 text-sm text-ivory">
+              <option value="pending">Pending review</option><option value="approved">Approved</option><option value="rejected">Rejected</option>
+            </select>
+          </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={!!form.isFeatured} onChange={e => setForm(p => ({ ...p, isFeatured: e.target.checked }))} className="accent-brass" />
             <span className="text-ivory/60 text-sm">Show as featured</span>
@@ -116,6 +122,7 @@ export default function TestimonialsTab() {
                   <div className="flex items-center gap-2 mb-1">
                     <p className="text-ivory/80 font-tight text-sm">{t.clientName}</p>
                     {t.isFeatured && <span className="text-[10px] text-brass border border-brass/30 px-1.5 py-0.5 font-tight uppercase tracking-widest">Featured</span>}
+                    <span className="text-[10px] text-ivory/40 border border-ivory/10 px-1.5 py-0.5 font-tight uppercase tracking-widest">{t.status || 'pending'}</span>
                   </div>
                   <div className="flex gap-0.5 mb-2">
                     {Array.from({ length: 5 }).map((_, i) => (

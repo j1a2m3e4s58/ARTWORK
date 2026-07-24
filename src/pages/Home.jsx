@@ -9,31 +9,21 @@ import PageTransition from '@/components/PageTransition';
 import { useSettings } from '@/hooks/useSettings';
 
 const HERO_IMAGES_DEFAULT = [
-  'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=1800&q=90',
-  'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=1800&q=90',
-  'https://images.unsplash.com/photo-1460661419201-fd4cecdf8a8b?w=1800&q=90',
+  '/brand/reigns-atelier-logo.jpg',
+  '/brand/reigns-atelier-logo.jpg',
+  '/brand/reigns-atelier-logo.jpg',
 ];
 
-const FEATURED_ARTWORKS_FALLBACK = [
-  { title: 'Ethereal Gaze', category: 'Portraits', imageUrl: 'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=600&q=85' },
-  { title: 'Shadow Forms', category: 'Sketches', imageUrl: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=600&q=85' },
-  { title: 'Digital Reverie', category: 'Digital Art', imageUrl: 'https://images.unsplash.com/photo-1561214115-f2f134cc4912?w=600&q=85' },
-  { title: 'Graphite Soul', category: 'Pencil Drawings', imageUrl: 'https://images.unsplash.com/photo-1519764622345-23439dd774f7?w=600&q=85' },
-  { title: 'Neon Dreams', category: 'Anime Art', imageUrl: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=600&q=85' },
-];
+const FEATURED_ARTWORKS_FALLBACK = [];
 
 const STATS_FALLBACK = [
-  { key: 'stat_artworks', value: '350+', label: 'Artworks Created' },
-  { key: 'stat_clients', value: '180+', label: 'Happy Clients' },
-  { key: 'stat_years', value: '8', label: 'Years of Practice' },
-  { key: 'stat_awards', value: '12', label: 'Awards Won' },
+  { key: 'stat_artworks', value: '—', label: 'Artworks Created' },
+  { key: 'stat_clients', value: '—', label: 'Happy Clients' },
+  { key: 'stat_years', value: '—', label: 'Years of Practice' },
+  { key: 'stat_awards', value: '—', label: 'Awards Won' },
 ];
 
-const TESTIMONIALS_PREVIEW = [
-  { name: 'Amara K.', rating: 5, text: 'The portrait was beyond anything I imagined. Pure magic — the detail, the emotion, everything was perfect.', type: 'Portrait Commission' },
-  { name: 'Liam R.', rating: 5, text: 'Commissioned a digital piece as a gift. Everyone who saw it thought it was a professional studio piece.', type: 'Digital Art' },
-  { name: 'Sofia M.', rating: 5, text: 'An artist who truly listens. My reference photo became a living masterpiece in charcoal.', type: 'Pencil Drawing' },
-];
+const TESTIMONIALS_PREVIEW = [];
 
 const DEFAULT_QUOTES = [
   { text: 'Art enables us to find ourselves and lose ourselves at the same time.', author: 'Thomas Merton' },
@@ -58,8 +48,8 @@ export default function Home() {
     settings.hero_image_3 || HERO_IMAGES_DEFAULT[2],
   ];
   const [heroIndex, setHeroIndex] = useState(0);
-  const [testimonials, setTestimonials] = useState(TESTIMONIALS_PREVIEW);
-  const [featuredArtworks, setFeaturedArtworks] = useState(FEATURED_ARTWORKS_FALLBACK);
+  const [testimonials, setTestimonials] = useState(() => TESTIMONIALS_PREVIEW.filter(() => false));
+  const [featuredArtworks, setFeaturedArtworks] = useState(() => FEATURED_ARTWORKS_FALLBACK.filter(() => false));
   const [quotes, setQuotes] = useState(DEFAULT_QUOTES);
   const [quoteIndex, setQuoteIndex] = useState(0);
   const heroRef = useRef(null);
@@ -97,7 +87,7 @@ export default function Home() {
 
   return (
     <PageTransition>
-      {/* ── HERO ── */}
+      {/* -- HERO -- */}
       <section ref={heroRef} className="relative h-screen min-h-[700px] flex items-center overflow-hidden">
         {/* Background images */}
         <AnimatePresence mode="wait">
@@ -212,7 +202,7 @@ export default function Home() {
         </motion.div>
       </section>
 
-      {/* ── FEATURED ARTWORKS ── */}
+      {/* -- FEATURED ARTWORKS -- */}
       <section className="py-32 relative overflow-hidden">
         <div className="max-w-7xl mx-auto px-6 lg:px-12">
           <div className="flex items-end justify-between mb-16">
@@ -254,7 +244,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── ARTIST QUOTE ── */}
+      {/* -- ARTIST QUOTE -- */}
       <section className="py-24 relative overflow-hidden">
         <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 50% 50%, #3D2B52 0%, transparent 60%)' }} />
         <div className="noise-overlay absolute inset-0" />
@@ -280,7 +270,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── STATS ── */}
+      {/* -- STATS -- */}
       <section className="py-24 border-y border-brass/10 relative">
         <div className="max-w-7xl mx-auto px-6 lg:px-12">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
@@ -294,7 +284,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── TESTIMONIALS PREVIEW ── */}
+      {/* -- TESTIMONIALS PREVIEW -- */}
       <section className="py-32 bg-carbon relative overflow-hidden">
         <div className="noise-overlay absolute inset-0" />
         <div className="max-w-7xl mx-auto px-6 lg:px-12 relative">
@@ -332,7 +322,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── CTA ── */}
+      {/* -- CTA -- */}
       <section className="py-32 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-obsidian via-violet/20 to-obsidian" />
         <div className="noise-overlay absolute inset-0" />

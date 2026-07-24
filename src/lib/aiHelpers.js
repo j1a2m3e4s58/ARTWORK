@@ -1,4 +1,4 @@
-import { studioClient } from '@/api/studioClient';
+﻿import { studioClient } from '@/api/studioClient';
 
 /**
  * Feature #3: Smart Artwork Onboarding

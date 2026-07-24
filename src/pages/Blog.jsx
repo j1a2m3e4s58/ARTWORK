@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Clock, Tag } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
@@ -7,21 +7,14 @@ import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import { usePageContent } from '@/hooks/usePageContent';
 
-const DEMO_POSTS = [
-  { id: 'd1', slug: 'the-art-of-chiaroscuro', title: 'The Art of Chiaroscuro: Drawing with Light and Shadow', excerpt: "Understanding the dramatic interplay between light and shadow is perhaps the most powerful tool in a portrait artist's arsenal.", coverImageUrl: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=800&q=85', tags: ['Technique', 'Charcoal', 'Portrait'], publishedDate: '2025-12-01', readTime: 8, author: 'Reigns' },
-  { id: 'd2', slug: 'my-digital-art-setup', title: 'My Digital Art Setup: The Tools Behind the Work', excerpt: 'From Wacom tablets to Procreate brushes — a full breakdown of the tools and workflow that power my digital illustration process.', coverImageUrl: 'https://images.unsplash.com/photo-1561214115-f2f134cc4912?w=800&q=85', tags: ['Digital Art', 'Tools', 'Workflow'], publishedDate: '2025-11-15', readTime: 6, author: 'Reigns' },
-  { id: 'd3', slug: 'from-sketch-to-masterpiece', title: 'From Sketch to Masterpiece: A Commission Breakdown', excerpt: "Follow the complete journey of a client's portrait commission — from the first reference photo to the final framed piece.", coverImageUrl: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=800&q=85', tags: ['Process', 'Commission', 'Portrait'], publishedDate: '2025-10-22', readTime: 12, author: 'Reigns' },
-  { id: 'd4', slug: 'pencil-drawing-fundamentals', title: "Pencil Drawing Fundamentals I Wish I'd Known Earlier", excerpt: 'After 8 years of drawing, these are the foundational skills and mindset shifts that would have accelerated my growth by years.', coverImageUrl: 'https://images.unsplash.com/photo-1519764622345-23439dd774f7?w=800&q=85', tags: ['Tutorial', 'Pencil', 'Fundamentals'], publishedDate: '2025-09-10', readTime: 10, author: 'Reigns' },
-  { id: 'd5', slug: 'anime-vs-realism', title: 'Anime vs Realism: Two Worlds, One Artist', excerpt: 'How do you balance mastery of hyperrealistic portraiture with the fluid, expressive language of anime illustration?', coverImageUrl: 'https://images.unsplash.com/photo-1460661419201-fd4cecdf8a8b?w=800&q=85', tags: ['Anime Art', 'Realism', 'Philosophy'], publishedDate: '2025-08-05', readTime: 7, author: 'Reigns' },
-];
 
 export default function Blog() {
   const page = usePageContent('Blog');
-  const [posts, setPosts] = useState(DEMO_POSTS);
+  const [posts, setPosts] = useState([]);
 
   useEffect(() => {
     studioClient.entities.BlogPost.list('-created_date', 50).then(data => {
-      if (data.length > 0) setPosts(data);
+      setPosts(data);
     }).catch(() => {});
   }, []);
 

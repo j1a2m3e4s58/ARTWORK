@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShoppingBag, Heart, X, Plus, Minus, MessageCircle } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
@@ -12,28 +12,22 @@ import { useSettings } from '@/hooks/useSettings';
 const TYPE_FILTERS = ['All', 'Print', 'Framed', 'Digital Download', 'Original'];
 const typeBadge = { Print: 'bg-brass/10 text-brass', Framed: 'bg-violet/30 text-soft-pink', 'Digital Download': 'bg-art-orange/10 text-art-orange', Original: 'bg-green-500/10 text-green-400' };
 
-const DEMO_PRODUCTS = [
-  { id: 'd1', title: 'Ethereal Gaze — Fine Print', type: 'Print', price: 45, imageUrl: 'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=600&q=85', dimensions: '30×42cm (A3)', description: 'Premium archival giclée print on 300gsm fine art paper.', isFeatured: true },
-  { id: 'd2', title: 'Shadow Forms — Framed Original', type: 'Framed', price: 380, imageUrl: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=600&q=85', dimensions: '50×70cm', description: 'Original charcoal on paper, museum-quality black frame.', isFeatured: true },
-  { id: 'd3', title: 'Digital Reverie — Download', type: 'Digital Download', price: 18, imageUrl: 'https://images.unsplash.com/photo-1561214115-f2f134cc4912?w=600&q=85', dimensions: '4K (3840×5760px)', description: 'High-resolution digital file for personal use and printing.', isFeatured: false },
-  { id: 'd4', title: 'Graphite Soul — Framed Print', type: 'Framed', price: 120, imageUrl: 'https://images.unsplash.com/photo-1519764622345-23439dd774f7?w=600&q=85', dimensions: '21×29cm (A4)', description: 'Archival print, hand-signed, in a premium wooden frame.', isFeatured: false },
-  { id: 'd5', title: 'Sakura Mind — Print', type: 'Print', price: 55, imageUrl: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=600&q=85', dimensions: '42×59cm (A2)', description: 'Vivid archival print, limited edition of 50.', isFeatured: true },
-  { id: 'd6', title: 'Noir Study — Digital Bundle', type: 'Digital Download', price: 28, imageUrl: 'https://images.unsplash.com/photo-1460661419201-fd4cecdf8a8b?w=600&q=85', dimensions: '5 files, 4K each', description: 'Bundle of 5 digital artworks for personal use.', isFeatured: false },
-];
 
 export default function Shop() {
   const page = usePageContent('Shop');
   const { user } = useAuth();
   const settings = useSettings();
-  const [products, setProducts] = useState(DEMO_PRODUCTS);
+  const [products, setProducts] = useState([]);
   const [filter, setFilter] = useState('All');
   const [cart, setCart] = useState([]);
   const [wishlist, setWishlist] = useState([]);
   const [cartOpen, setCartOpen] = useState(false);
+  const [orderError, setOrderError] = useState('');
+  const [ordering, setOrdering] = useState(false);
 
   useEffect(() => {
     studioClient.entities.ShopProduct.list('-created_date', 100).then(data => {
-      if (data.length > 0) setProducts(data);
+      setProducts(data);
     }).catch(() => {});
   }, []);
 
@@ -52,6 +46,33 @@ export default function Shop() {
   const toggleWishlist = (id) => setWishlist(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const cartTotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
+  const orderViaWhatsApp = async () => {
+    if (!user) {
+      window.location.assign('/login?redirect=/shop');
+      return;
+    }
+    if (!settings.whatsapp_number) {
+      setOrderError('WhatsApp ordering is not configured yet. Please use the contact page.');
+      return;
+    }
+    setOrdering(true);
+    setOrderError('');
+    try {
+      await studioClient.entities.Order.create({
+        items: cart.map(item => ({ productId: item.id, title: item.title, price: item.price, qty: item.qty })),
+        total: cartTotal,
+        channel: 'whatsapp',
+      });
+      const message = `Hello! I'd like to order:\n\n${cart.map(item => `• ${item.title} (x${item.qty}) — $${(item.price * item.qty).toFixed(2)}`).join('\n')}\n\nTotal: $${cartTotal.toFixed(2)}`;
+      window.open(`https://wa.me/${settings.whatsapp_number.replace(/[^\d]/g, '')}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+      setCart([]);
+      setCartOpen(false);
+    } catch (submitError) {
+      setOrderError(submitError.message);
+    } finally {
+      setOrdering(false);
+    }
+  };
 
   return (
     <PageTransition>
@@ -90,7 +111,7 @@ export default function Shop() {
         {/* Grid */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12">
           {filtered.length === 0 ? (
-            <div className="text-center py-24"><p className="text-ivory/30 font-tight">No products found.</p></div>
+            <div className="text-center py-24"><p className="text-ivory/30 font-tight">The collection is being prepared. Please check back soon.</p></div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <AnimatePresence>
@@ -169,19 +190,11 @@ export default function Shop() {
                     <span className="text-ivory/50 font-tight text-sm">Total</span>
                     <span className="font-display text-2xl text-brass">${cartTotal.toFixed(2)}</span>
                   </div>
-                  <a
-                    href={`https://wa.me/${(settings.whatsapp_number || '1234567890').replace(/[^+\d]/g, '')}?text=${encodeURIComponent('Hello! I\'d like to order:\n\n' + cart.map(i => `• ${i.title} (x${i.qty}) — $${(i.price * i.qty).toFixed(2)}`).join('\n') + `\n\nTotal: $${cartTotal.toFixed(2)}`)}`}
-                    target="_blank" rel="noopener noreferrer"
-                    onClick={event => {
-                      if (!user) {
-                        event.preventDefault();
-                        window.location.assign('/login?redirect=/shop');
-                      }
-                    }}
-                    className="w-full flex items-center justify-center gap-2 bg-[#25D366] text-white py-4 font-tight text-sm tracking-widest uppercase hover:bg-[#20BA5A] transition-all"
-                  >
-                    <MessageCircle size={16} /> Order via WhatsApp
-                  </a>
+                  <button onClick={orderViaWhatsApp} disabled={ordering}
+                    className="w-full flex items-center justify-center gap-2 bg-[#25D366] text-white py-4 font-tight text-sm tracking-widest uppercase hover:bg-[#20BA5A] transition-all disabled:opacity-50">
+                    <MessageCircle size={16} /> {ordering ? 'Creating order…' : 'Order via WhatsApp'}
+                  </button>
+                  {orderError && <p role="alert" className="mt-3 text-sm text-red-300">{orderError}</p>}
                 </div>
               )}
             </motion.div>

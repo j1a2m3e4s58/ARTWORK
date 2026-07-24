@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, X, Eye, Clock } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
@@ -9,50 +9,6 @@ import { usePageContent } from '@/hooks/usePageContent';
 
 const CATEGORIES = ['All', 'Process', 'Time-lapse', 'Tutorial', 'Behind the Scenes', 'Commission Reveal'];
 
-const DEMO_VIDEOS = [
-  {
-    id: 'd1', title: 'Portrait Commission — Full Process', category: 'Process',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=800&q=85',
-    videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    duration: '18:42', views: 12400, isFeatured: true,
-    description: 'Watch the complete journey of a charcoal portrait from blank page to finished masterpiece.',
-  },
-  {
-    id: 'd2', title: 'Digital Art Time-lapse — Neon Soul', category: 'Time-lapse',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1561214115-f2f134cc4912?w=800&q=85',
-    videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    duration: '4:10', views: 8900, isFeatured: true,
-    description: 'A 3-hour digital painting compressed into 4 minutes. Procreate time-lapse.',
-  },
-  {
-    id: 'd3', title: 'How I Draw Realistic Eyes', category: 'Tutorial',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=800&q=85',
-    videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    duration: '22:05', views: 31000, isFeatured: false,
-    description: 'Step-by-step tutorial on rendering hyper-realistic eyes in graphite pencil.',
-  },
-  {
-    id: 'd4', title: 'Studio Tour — The Atelier', category: 'Behind the Scenes',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1580894732444-8ecded7900cd?w=800&q=85',
-    videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    duration: '9:33', views: 5600, isFeatured: false,
-    description: 'A full walkthrough of my studio — tools, setup, and the creative environment.',
-  },
-  {
-    id: 'd5', title: 'Commission Reveal — Wedding Portrait', category: 'Commission Reveal',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1519764622345-23439dd774f7?w=800&q=85',
-    videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    duration: '6:18', views: 9800, isFeatured: false,
-    description: 'The emotional reveal of a custom wedding portrait commission.',
-  },
-  {
-    id: 'd6', title: 'Anime Illustration — Sakura Mind', category: 'Time-lapse',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=800&q=85',
-    videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-    duration: '5:55', views: 22000, isFeatured: false,
-    description: 'Anime character illustration process in full time-lapse.',
-  },
-];
 
 function formatViews(n) {
   if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
@@ -69,7 +25,7 @@ export default function Videos() {
     studioClient.entities.Video.list('-created_date', 50).then(setDbVideos);
   }, []);
 
-  const allVideos = dbVideos.length > 0 ? dbVideos : DEMO_VIDEOS;
+  const allVideos = dbVideos;
   const filtered = activeCategory === 'All' ? allVideos : allVideos.filter(v => v.category === activeCategory);
   const [featured, ...rest] = filtered;
 
@@ -106,6 +62,7 @@ export default function Videos() {
         </div>
 
         <div className="max-w-7xl mx-auto px-6 lg:px-12">
+          {!featured && <div className="border border-brass/10 py-20 text-center text-sm text-ivory/35">Studio films are being prepared. Please check back soon.</div>}
           {/* Featured */}
           {featured && (
             <ScrollReveal className="mb-10">

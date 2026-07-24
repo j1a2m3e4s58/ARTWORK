@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>http://127.0.0.1:43127/</loc></url>
+  <url><loc>http://127.0.0.1:43127/gallery</loc></url>
+  <url><loc>http://127.0.0.1:43127/commission</loc></url>
+  <url><loc>http://127.0.0.1:43127/shop</loc></url>
+  <url><loc>http://127.0.0.1:43127/about</loc></url>
+  <url><loc>http://127.0.0.1:43127/contact</loc></url>
+  <url><loc>http://127.0.0.1:43127/privacy</loc></url>
+  <url><loc>http://127.0.0.1:43127/terms</loc></url>
+</urlset>

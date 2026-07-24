@@ -1,11 +1,11 @@
 # Reigns Atelier
 
-A mobile-first fine-art portfolio, commission studio, shop, content manager, and installable web app.
+A responsive fine-art portfolio, commission studio, customer portal, shop catalogue, administration system and installable web app.
 
 ## Local development
 
 1. Copy `.env.example` to `.env`.
-2. Set a long random `JWT_SECRET`, administrator email, and administrator password.
+2. Set a long random `JWT_SECRET`, administrator email and administrator password.
 3. Install and run:
 
 ```bash
@@ -13,38 +13,66 @@ npm install
 npm run dev
 ```
 
-The web app runs at `http://127.0.0.1:43127` and the API at `http://127.0.0.1:43130`.
+The website runs at `http://127.0.0.1:43127`; its API runs at `http://127.0.0.1:43130`.
 
-## Security and persistence
+## Quality checks
 
-- Passwords are hashed with bcrypt.
-- Sessions use signed HTTP-only cookies.
-- Admin routes and mutations are authorized by the API.
-- Login endpoints are rate-limited.
-- Security headers are enabled.
-- Local data is stored server-side under `server/data/` and uploads under `server/uploads/`; both are excluded from Git.
-- For multi-instance production deployment, replace the JSON database adapter in `server/db.js` with PostgreSQL.
+```bash
+npm run check
+```
+
+This runs linting, JavaScript project checks, backend validation tests, the production build and a production dependency security audit. The same checks run on every GitHub push and pull request.
+
+## Production services
+
+Production should configure:
+
+- `DATABASE_URL` for PostgreSQL
+- `STORAGE_PROVIDER=cloudinary` with Cloudinary configuration
+- SMTP credentials for invitations, resets and customer replies
+- `APP_ORIGIN` and `SITE_URL` using the final HTTPS domain
+- long, unique administrator and JWT secrets
+
+Without `DATABASE_URL`, the API intentionally uses a local JSON development store. Without cloud storage, uploads use the local filesystem. Neither local fallback should be used for a multi-instance production deployment.
+
+## Container deployment
+
+`Dockerfile` builds the frontend and runs the hardened API. `docker-compose.yml` provides a PostgreSQL-backed production-like environment:
+
+```bash
+docker compose up --build
+```
+
+Terminate TLS through a trusted reverse proxy or managed hosting provider. The application exposes `/api/health` for liveness and `/api/ready` for operational readiness.
+
+## Security model
+
+- Passwords are hashed using bcrypt.
+- Signed sessions use HTTP-only, secure production cookies.
+- Mutations use same-site CSRF tokens.
+- Password-reset and invitation tokens are time-limited, hashed and single-use.
+- Suspended accounts lose existing sessions.
+- Administrator, editor and support permissions are enforced by the API.
+- Payloads are validated and bounded.
+- Public forms, authentication and uploads are rate-limited.
+- Upload contents are inspected and restricted to safe image/video formats.
+- Important changes create administrator audit records.
+- Business records use recoverable soft deletion.
+
+## Backups and recovery
+
+Local development creates rotating JSON backups in `server/data/backups`. PostgreSQL production backups must be enabled with the database provider and periodically restore-tested. The admin System page exposes readiness warnings, audit history and manual local backup controls.
 
 ## Email
 
-Password-reset links, user invitations, commission confirmations, and inbox replies use SMTP when configured:
+Invitations never contain passwords. Invitees receive a time-limited link and create their own password. When SMTP is unavailable, replies remain visible in the customer portal and display a pending-delivery warning in the admin Inbox.
 
-```env
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=
-SMTP_PASS=
-EMAIL_FROM=
-```
+## Deployment checklist
 
-Without SMTP, messages and replies remain recorded in the admin portal with delivery status `smtp_not_configured`.
-
-## Production
-
-```bash
-npm run build
-NODE_ENV=production npm start
-```
-
-Set `API_HOST=0.0.0.0`, `APP_ORIGIN` to the HTTPS site URL, and use secure production secrets. The server hosts the built frontend and API together.
+1. Replace or publish only genuine artwork, videos, products, articles and testimonials.
+2. Configure PostgreSQL, cloud uploads and SMTP.
+3. Set the final HTTPS origin and domain.
+4. Run `npm run check`.
+5. Verify database backups and a restore.
+6. Verify password reset, invitation, contact, commission and order flows.
+7. Monitor `/api/health`, application logs and email delivery.

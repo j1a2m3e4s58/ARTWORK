@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Sparkles, Loader2, X, Lightbulb, DollarSign, Clock } from 'lucide-react';
 import { analyzeCommissionVision, suggestPrice } from '@/lib/aiHelpers';
 

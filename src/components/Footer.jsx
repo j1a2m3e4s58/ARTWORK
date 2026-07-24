@@ -1,24 +1,17 @@
-import { Link } from 'react-router-dom';
+﻿import { Link } from 'react-router-dom';
 import { Instagram, Twitter, Youtube, Mail, ArrowUpRight, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { studioClient } from '@/api/studioClient';
 import { useSettings } from '@/hooks/useSettings';
-import { useAuth } from '@/lib/AuthContext';
 
-const FALLBACK_GALLERY = [
-  'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=200&q=80',
-  'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=200&q=80',
-  'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=200&q=80',
-  'https://images.unsplash.com/photo-1460661419201-fd4cecdf8a8b?w=200&q=80',
-  'https://images.unsplash.com/photo-1519764622345-23439dd774f7?w=200&q=80',
-  'https://images.unsplash.com/photo-1561214115-f2f134cc4912?w=200&q=80',
-];
+const FALLBACK_GALLERY = [];
 
 export default function Footer() {
   const settings = useSettings();
-  const { user } = useAuth();
   const [email, setEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
+  const [subscriptionError, setSubscriptionError] = useState('');
+  const [newsletterConsent, setNewsletterConsent] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [galleryPreviews, setGalleryPreviews] = useState(FALLBACK_GALLERY);
 
@@ -32,14 +25,15 @@ export default function Footer() {
 
   const handleSubscribe = async (e) => {
     e.preventDefault();
-    if (!user) {
-      window.location.assign('/login');
-      return;
+    if (!email || !newsletterConsent) return;
+    setSubscriptionError('');
+    try {
+      await studioClient.entities.NewsletterSubscriber.create({ email, consent: true });
+      setSubscribed(true);
+      setEmail('');
+    } catch (error) {
+      setSubscriptionError(error.message);
     }
-    if (!email) return;
-    await studioClient.entities.NewsletterSubscriber.create({ email, subscribedDate: new Date().toISOString().split('T')[0] });
-    setSubscribed(true);
-    setEmail('');
   };
 
   return (
@@ -86,9 +80,9 @@ export default function Footer() {
             <p className="font-tight text-[10px] uppercase tracking-[0.4em] text-brass/60 mb-4">{settings.site_logo_secondary || 'Atelier'}</p>
             <p className="text-ivory/40 text-sm leading-relaxed">Where imagination meets the canvas. Premium fine art commissions and original works.</p>
             <div className="flex gap-4 mt-6">
-              <a href={settings.instagram_url || 'https://instagram.com'} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Instagram size={18} /></a>
-              <a href={settings.twitter_url || 'https://twitter.com'} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Twitter size={18} /></a>
-              <a href={settings.youtube_url || 'https://youtube.com'} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Youtube size={18} /></a>
+              {settings.instagram_url && <a href={settings.instagram_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Instagram size={18} /></a>}
+              {settings.twitter_url && <a href={settings.twitter_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Twitter size={18} /></a>}
+              {settings.youtube_url && <a href={settings.youtube_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Youtube size={18} /></a>}
               <a href={`mailto:${settings.contact_email || 'hello@reignsatelier.com'}`} className="text-ivory/30 hover:text-brass transition-colors"><Mail size={18} /></a>
             </div>
           </div>
@@ -135,6 +129,11 @@ export default function Footer() {
                   placeholder="your@email.com"
                   className="bg-obsidian border border-brass/20 text-ivory/80 text-sm px-4 py-2.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/50 transition-colors"
                 />
+                <label className="flex items-start gap-2 text-[11px] leading-relaxed text-ivory/35">
+                  <input type="checkbox" checked={newsletterConsent} onChange={event => setNewsletterConsent(event.target.checked)} className="mt-0.5 accent-brass" required />
+                  I agree to receive studio news and understand I can unsubscribe at any time.
+                </label>
+                {subscriptionError && <p role="alert" className="text-xs text-red-300">{subscriptionError}</p>}
                 <button type="submit" className="bg-brass text-obsidian text-sm font-tight tracking-wide py-2.5 hover:bg-brass-light transition-colors">
                   {settings.newsletter_button || 'Subscribe'}
                 </button>

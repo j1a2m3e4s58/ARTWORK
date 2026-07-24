@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: reigns_atelier
+      POSTGRES_USER: reigns
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reigns -d reigns_atelier"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      DATABASE_URL: postgresql://reigns:${POSTGRES_PASSWORD}@postgres:5432/reigns_atelier
+      DATABASE_SSL: "false"
+    ports:
+      - "43130:43130"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:43130/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:

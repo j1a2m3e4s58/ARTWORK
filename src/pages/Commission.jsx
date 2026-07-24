@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+﻿import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowRight, Check, ChevronDown, Upload, Sparkles, Loader2 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
@@ -35,10 +35,12 @@ export default function Commission() {
   const faqs = (() => { try { return JSON.parse(page.commission_faqs); } catch { return DEFAULT_FAQS; } })();
 
   const [step, setStep] = useState(1);
-  const [form, setForm] = useState({ name: '', email: '', phone: '', artworkType: '', budget: '', deadline: '', description: '', package: '', referenceImageUrl: '' });
+  const [form, setForm] = useState({ name: user?.full_name || '', email: user?.email || '', phone: '', artworkType: '', budget: '', deadline: '', description: '', package: '', referenceImageUrl: '' });
   const [submitted, setSubmitted] = useState(false);
   const [openFaq, setOpenFaq] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
   const fileInputRef = useRef(null);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -47,9 +49,15 @@ export default function Commission() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    const { file_url } = await studioClient.integrations.Core.UploadFile({ file });
-    set('referenceImageUrl', file_url);
-    setUploading(false);
+    setError('');
+    try {
+      const { file_url } = await studioClient.integrations.Core.UploadFile({ file });
+      set('referenceImageUrl', file_url);
+    } catch (uploadError) {
+      setError(uploadError.message);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -57,16 +65,16 @@ export default function Commission() {
       window.location.assign('/login?redirect=/commission');
       return;
     }
-    await studioClient.entities.CommissionRequest.create({ ...form, userId: user.id, accountEmail: user.email });
-    // Auto-reply email to client
+    setSubmitting(true);
+    setError('');
     try {
-      await studioClient.integrations.Core.SendEmail({
-        to: form.email,
-        subject: '✨ Your Commission Request — Reigns Atelier',
-        body: `Hi ${form.name},\n\nThank you for your commission request! I've received your vision and will review it within 24 hours.\n\nHere's a summary of your request:\n- Artwork Type: ${form.artworkType}\n- Budget: ${form.budget}\n${form.package ? `- Package: ${form.package}\n` : ''}${form.deadline ? `- Deadline: ${form.deadline}\n` : ''}\nYour Vision: ${form.description}\n\nNext steps: I'll respond with a personalized quote and timeline. A 50% deposit secures your slot once we agree on details.\n\nWith anticipation,\nReigns Atelier`,
-      });
-    } catch (e) { /* email to unregistered users silently fails */ }
-    setSubmitted(true);
+      await studioClient.entities.CommissionRequest.create({ ...form });
+      setSubmitted(true);
+    } catch (submitError) {
+      setError(submitError.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (submitted) {
@@ -98,7 +106,7 @@ export default function Commission() {
               >
                 Follow up on WhatsApp
               </a>
-              <button onClick={() => { setSubmitted(false); setForm({ name: '', email: '', phone: '', artworkType: '', budget: '', deadline: '', description: '', package: '' }); setStep(1); }}
+              <button onClick={() => { setSubmitted(false); setForm({ name: user?.full_name || '', email: user?.email || '', phone: '', artworkType: '', budget: '', deadline: '', description: '', package: '', referenceImageUrl: '' }); setStep(1); }}
                 className="border border-brass/20 text-ivory/60 py-3 font-tight text-sm tracking-wide hover:border-brass/40 transition-colors"
               >
                 Submit another request
@@ -181,6 +189,7 @@ export default function Commission() {
             <div className="glass-panel p-10">
               <h2 className="font-display text-3xl text-ivory mb-2">{page.commission_form_title || 'Commission Request'}</h2>
               <p className="text-ivory/40 text-sm mb-8">{page.commission_form_subtitle || 'Fill in the details below to begin our collaboration.'}</p>
+              {error && <p role="alert" className="mb-5 border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-300">{error}</p>}
 
               <div className="flex gap-2 mb-10">
                 {[1, 2, 3].map(s => (
@@ -194,8 +203,8 @@ export default function Commission() {
                     <p className="text-ivory/50 text-sm mb-6">Step 1 of 3 — Your details</p>
                     <input placeholder="Your full name *" value={form.name} onChange={e => set('name', e.target.value)}
                       className="w-full bg-obsidian border border-brass/20 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/50 transition-colors text-sm" />
-                    <input type="email" placeholder="Email address *" value={form.email} onChange={e => set('email', e.target.value)}
-                      className="w-full bg-obsidian border border-brass/20 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/50 transition-colors text-sm" />
+                    <input type="email" aria-label="Account email" value={form.email} readOnly
+                      className="w-full bg-obsidian border border-brass/20 text-ivory/50 px-5 py-3.5 text-sm" />
                     <input type="tel" placeholder="Phone / WhatsApp (optional)" value={form.phone} onChange={e => set('phone', e.target.value)}
                       className="w-full bg-obsidian border border-brass/20 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/50 transition-colors text-sm" />
                     <button onClick={() => setStep(2)} disabled={!form.name || !form.email}
@@ -268,9 +277,9 @@ export default function Commission() {
                     </div>
                     <div className="flex gap-3 mt-4">
                       <button onClick={() => setStep(2)} className="flex-1 border border-brass/20 text-ivory/50 py-4 font-tight text-sm tracking-widest uppercase hover:border-brass/40 transition-all">Back</button>
-                      <button onClick={handleSubmit} disabled={!form.description}
+                      <button onClick={handleSubmit} disabled={!form.description || submitting}
                         className="flex-1 flex items-center justify-center gap-2 bg-brass text-obsidian py-4 font-tight text-sm tracking-widest uppercase hover:bg-brass-light transition-all disabled:opacity-30 disabled:cursor-not-allowed">
-                        Submit Request <Sparkles size={16} />
+                        {submitting ? 'Submitting…' : 'Submit Request'} <Sparkles size={16} />
                       </button>
                     </div>
                   </motion.div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { MessageCircle, X, Send, Loader2, Sparkles } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import ReactMarkdown from 'react-markdown';

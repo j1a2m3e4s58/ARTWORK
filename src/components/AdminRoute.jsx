@@ -5,7 +5,7 @@ export default function AdminRoute({ children }) {
   const { user, isLoadingAuth } = useAuth();
   const location = useLocation();
   if (isLoadingAuth) return <div className="min-h-screen bg-obsidian" />;
-  if (!user || user.role !== 'admin') {
+  if (!user || !['admin', 'editor', 'support'].includes(user.role)) {
     return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname)}`} replace />;
   }
   return children;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Heart, Share2, ZoomIn } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
@@ -7,39 +7,31 @@ import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import GalleryAISearch from '@/components/GalleryAISearch';
 import { usePageContent } from '@/hooks/usePageContent';
+import { useAuth } from '@/lib/AuthContext';
 
 const CATEGORIES = ['All', 'Portraits', 'Sketches', 'Digital Art', 'Pencil Drawings', 'Anime Art', 'Realism'];
 
-const DEMO_ARTWORKS = [
-  { id: '1', title: 'Whispers of Ivory', category: 'Portraits', imageUrl: 'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=800&q=85', medium: 'Charcoal on Paper', dimensions: '50×70cm', year: '2025', description: 'A study in light and shadow, capturing the quiet dignity of the human gaze.', likes: 234, span: '1x2' },
-  { id: '2', title: 'Urban Reverie', category: 'Sketches', imageUrl: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=600&q=85', medium: 'Graphite', dimensions: '30×40cm', year: '2025', description: 'The city breathes in strokes of graphite.', likes: 145, span: '1x1' },
-  { id: '3', title: 'Neon Soul', category: 'Digital Art', imageUrl: 'https://images.unsplash.com/photo-1561214115-f2f134cc4912?w=800&q=85', medium: 'Digital', dimensions: '4K Resolution', year: '2025', description: 'Digital illustration exploring identity in a neon-lit world.', likes: 389, span: '2x1' },
-  { id: '4', title: 'Graphite Dreams', category: 'Pencil Drawings', imageUrl: 'https://images.unsplash.com/photo-1519764622345-23439dd774f7?w=600&q=85', medium: 'Pencil', dimensions: '21×29cm', year: '2024', description: 'Dreams drawn in the quiet hour before dawn.', likes: 198, span: '1x1' },
-  { id: '5', title: 'Sakura Mind', category: 'Anime Art', imageUrl: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=800&q=85', medium: 'Digital & Ink', dimensions: '4K Resolution', year: '2025', description: 'Blossoms and shadows — an anime-inspired portrait study.', likes: 567, span: '1x2' },
-  { id: '6', title: 'Silent Symmetry', category: 'Realism', imageUrl: 'https://images.unsplash.com/photo-1460661419201-fd4cecdf8a8b?w=600&q=85', medium: 'Oil on Canvas', dimensions: '60×80cm', year: '2024', description: 'Hyperrealist exploration of everyday moments.', likes: 312, span: '1x1' },
-  { id: '7', title: 'The Wanderer', category: 'Portraits', imageUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&q=85', medium: 'Charcoal & Pastel', dimensions: '40×50cm', year: '2025', description: 'A soul caught between worlds.', likes: 421, span: '1x1' },
-  { id: '8', title: 'Ink & Smoke', category: 'Sketches', imageUrl: 'https://images.unsplash.com/photo-1580331451062-99ff652288d7?w=800&q=85', medium: 'India Ink', dimensions: '25×35cm', year: '2024', description: 'Ink flows like thought — unrestrained and free.', likes: 267, span: '2x1' },
-  { id: '9', title: 'Cyber Bloom', category: 'Digital Art', imageUrl: 'https://images.unsplash.com/photo-1516339901601-2e1b62dc0c45?w=600&q=85', medium: 'Digital', dimensions: '4K Resolution', year: '2025', description: 'When technology meets nature.', likes: 489, span: '1x1' },
-  { id: '10', title: 'Old Paper', category: 'Pencil Drawings', imageUrl: 'https://images.unsplash.com/photo-1594736797933-d0501ba2fe65?w=600&q=85', medium: 'Pencil on Aged Paper', dimensions: '15×20cm', year: '2023', description: 'The patina of time rendered in graphite.', likes: 178, span: '1x1' },
-  { id: '11', title: 'Spirit Fox', category: 'Anime Art', imageUrl: 'https://images.unsplash.com/photo-1591181520189-abcb0735c65d?w=600&q=85', medium: 'Digital', dimensions: '4K Resolution', year: '2024', description: 'A mythological creature in modern anime style.', likes: 623, span: '1x1' },
-  { id: '12', title: 'Still Life in Noir', category: 'Realism', imageUrl: 'https://images.unsplash.com/photo-1570158268183-d296b2892211?w=600&q=85', medium: 'Acrylic', dimensions: '35×45cm', year: '2024', description: 'Classical still life with a cinematic dark palette.', likes: 201, span: '1x1' },
-];
 
 export default function Gallery() {
   const page = usePageContent('Gallery');
+  const { user } = useAuth();
   const [activeCategory, setActiveCategory] = useState('All');
-  const [artworks, setArtworks] = useState(DEMO_ARTWORKS);
-  const [filtered, setFiltered] = useState(DEMO_ARTWORKS);
-  const [dbLoaded, setDbLoaded] = useState(false);
+  const [artworks, setArtworks] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const [lightbox, setLightbox] = useState(null);
   const [likedIds, setLikedIds] = useState([]);
   const [aiResults, setAiResults] = useState(null);
 
   useEffect(() => {
     studioClient.entities.Artwork.list('-created_date', 100).then(data => {
-      if (data.length > 0) { setArtworks(data); setDbLoaded(true); }
+      setArtworks(data);
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    studioClient.artworks.myLikes().then(setLikedIds).catch(() => {});
+  }, [user]);
 
   useEffect(() => {
     // If AI results are active, they're set directly via handleAIResults
@@ -58,15 +50,14 @@ export default function Gallery() {
   };
 
   const toggleLike = (id) => {
-    const isLiked = likedIds.includes(id);
-    setLikedIds(prev => isLiked ? prev.filter(x => x !== id) : [...prev, id]);
-    // Persist to DB for real artworks (not demo)
-    const artwork = artworks.find(a => a.id === id);
-    if (artwork && dbLoaded) {
-      const newLikes = (artwork.likes || 0) + (isLiked ? -1 : 1);
-      studioClient.entities.Artwork.update(id, { likes: newLikes }).catch(() => {});
-      setArtworks(prev => prev.map(a => a.id === id ? { ...a, likes: newLikes } : a));
+    if (!user) {
+      window.location.assign('/login?redirect=/gallery');
+      return;
     }
+    studioClient.artworks.toggleLike(id).then(result => {
+      setLikedIds(current => result.liked ? [...new Set([...current, id])] : current.filter(item => item !== id));
+      setArtworks(current => current.map(artwork => artwork.id === id ? { ...artwork, likes: result.likes } : artwork));
+    }).catch(() => {});
   };
 
   return (
@@ -111,6 +102,7 @@ export default function Gallery() {
 
         {/* Masonry grid */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12">
+          {filtered.length === 0 && <div className="border border-brass/10 py-20 text-center text-sm text-ivory/35">The portfolio is being curated. Please check back soon.</div>}
           <div className="masonry-grid">
             <AnimatePresence>
               {filtered.map((art, i) => (
@@ -225,7 +217,7 @@ export default function Gallery() {
                     }`}
                   >
                     <Heart size={14} className={likedIds.includes(lightbox.id) ? 'fill-brass' : ''} />
-                    {lightbox.likes + (likedIds.includes(lightbox.id) ? 1 : 0)}
+                    {artworks.find(item => item.id === lightbox.id)?.likes || 0}
                   </button>
                   <button className="flex-1 flex items-center justify-center gap-2 py-3 border border-brass/20 text-ivory/50 hover:border-brass/40 text-sm font-tight tracking-wide transition-all">
                     <Share2 size={14} /> Share

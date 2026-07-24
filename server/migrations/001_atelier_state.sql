@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS atelier_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Download, Check } from 'lucide-react';
 
 export default function InstallAppButton({ compact = false }) {

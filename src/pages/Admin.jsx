@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Image, ShoppingBag, MessageSquare, BookOpen,
-  Users, Plus, Trash2, Pencil, Video, FileText, X, Check, Settings, Star, Download, MoreHorizontal
+  Users, Plus, Trash2, Pencil, Video, FileText, X, Check, Settings, Star, Download, MoreHorizontal, PackageCheck, Activity
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import PageTransition from '@/components/PageTransition';
@@ -16,8 +16,11 @@ import PagesTab from '@/components/admin/PagesTab';
 import QuotesTab from '@/components/admin/QuotesTab';
 import InboxTab from '@/components/admin/InboxTab';
 import UsersTab from '@/components/admin/UsersTab';
+import { useAuth } from '@/lib/AuthContext';
+import OrdersTab from '@/components/admin/OrdersTab';
+import SystemTab from '@/components/admin/SystemTab';
 
-const tabs = [
+const allTabs = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'gallery', label: 'Gallery', icon: Image },
   { id: 'videos', label: 'Videos', icon: Video },
@@ -26,11 +29,13 @@ const tabs = [
   { id: 'testimonials', label: 'Testimonials', icon: Star },
   { id: 'quotes', label: 'Art Quotes', icon: FileText },
   { id: 'inbox', label: 'Inbox', icon: MessageSquare },
+  { id: 'orders', label: 'Orders', icon: PackageCheck },
   { id: 'users', label: 'Users', icon: Users },
   { id: 'pages', label: 'Page Content', icon: FileText },
   { id: 'blog', label: 'Blog', icon: BookOpen },
   { id: 'subscribers', label: 'Subscribers', icon: Users },
   { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'system', label: 'System', icon: Activity },
 ];
 
 const STATUS_COLORS = {
@@ -110,6 +115,13 @@ function EditModal({ item, fields, onSave, onClose, title }) {
 }
 
 export default function Admin() {
+  const { user } = useAuth();
+  const roleTabs = {
+    admin: allTabs.map(tab => tab.id),
+    editor: ['overview', 'gallery', 'videos', 'shop', 'testimonials', 'quotes', 'pages', 'blog'],
+    support: ['overview', 'inbox', 'commissions', 'orders'],
+  };
+  const tabs = allTabs.filter(tab => roleTabs[user?.role || 'support'].includes(tab.id));
   const [activeTab, setActiveTab] = useState('overview');
   const [artworks, setArtworks] = useState([]);
   const [videos, setVideos] = useState([]);
@@ -130,9 +142,10 @@ export default function Admin() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [newVideo, setNewVideo] = useState({ title: '', videoUrl: '', thumbnailUrl: '', category: 'Process', description: '', duration: '', isFeatured: false });
   const [newArtwork, setNewArtwork] = useState({ title: '', category: 'Portraits', imageUrl: '', medium: '', description: '', price: '' });
-  const pendingMessageCount = messages.filter(message => message.status !== 'replied').length;
+  const pendingMessageCount = messages.filter(message => !['replied', 'archived', 'spam'].includes(message.status)).length;
 
   useEffect(() => {
+    if (user?.role === 'editor') return undefined;
     let active = true;
     const loadMessages = async () => {
       try {
@@ -148,17 +161,18 @@ export default function Admin() {
       active = false;
       window.clearInterval(poller);
     };
-  }, []);
+  }, [user?.role]);
 
   useEffect(() => {
     const loaders = {
       overview: async () => {
-        const [gallery, videoItems, commissionItems, subscriberItems] = await Promise.all([
+        const requests = [
           studioClient.entities.Artwork.list('-created_date', 100),
           studioClient.entities.Video.list('-created_date', 100),
-          studioClient.entities.CommissionRequest.list('-created_date', 100),
-          studioClient.entities.NewsletterSubscriber.list('-created_date', 100),
-        ]);
+        ];
+        if (user?.role !== 'editor') requests.push(studioClient.entities.CommissionRequest.list('-created_date', 100));
+        if (user?.role === 'admin') requests.push(studioClient.entities.NewsletterSubscriber.list('-created_date', 100));
+        const [gallery, videoItems, commissionItems = [], subscriberItems = []] = await Promise.all(requests);
         setArtworks(gallery); setVideos(videoItems); setCommissions(commissionItems); setSubscribers(subscriberItems);
       },
       gallery: () => studioClient.entities.Artwork.list('-created_date', 50).then(setArtworks),
@@ -169,7 +183,7 @@ export default function Admin() {
       blog: () => studioClient.entities.BlogPost.list('-created_date', 50).then(setBlogPosts),
     };
     if (loaders[activeTab]) loaders[activeTab]();
-  }, [activeTab]);
+  }, [activeTab, user?.role]);
 
   const handleDelete = async (entity, id, setter) => {
     await studioClient.entities[entity].delete(id);
@@ -286,7 +300,7 @@ export default function Admin() {
         {/* Content */}
         <div className="flex-1 md:ml-60 p-5 lg:p-8 pb-24 md:pb-8">
 
-          {/* ── OVERVIEW ── */}
+          {/* -- OVERVIEW -- */}
           {activeTab === 'overview' && (
             <div>
               <h1 className="font-display text-4xl text-ivory mb-8">Dashboard</h1>
@@ -311,8 +325,8 @@ export default function Admin() {
             </div>
           )}
 
-          {/* ── AI STUDIO ── */}
-{/* ── GALLERY ── */}
+          {/* -- AI STUDIO -- */}
+{/* -- GALLERY -- */}
           {activeTab === 'gallery' && (
             <div>
               <div className="flex items-center justify-between mb-6">
@@ -364,7 +378,7 @@ export default function Admin() {
             </div>
           )}
 
-          {/* ── VIDEOS ── */}
+          {/* -- VIDEOS -- */}
           {activeTab === 'videos' && (
             <div>
               <div className="flex items-center justify-between mb-8">
@@ -410,7 +424,7 @@ export default function Admin() {
             </div>
           )}
 
-          {/* ── SHOP ── */}
+          {/* -- SHOP -- */}
           {activeTab === 'shop' && (
             <div>
               <div className="flex items-center justify-between mb-6">
@@ -463,7 +477,7 @@ export default function Admin() {
             </div>
           )}
 
-          {/* ── COMMISSIONS ── */}
+          {/* -- COMMISSIONS -- */}
           {activeTab === 'commissions' && (
             <div>
               <h1 className="font-display text-4xl text-ivory mb-8">Commissions</h1>
@@ -515,16 +529,17 @@ export default function Admin() {
             </div>
           )}
 
-          {/* ── TESTIMONIALS ── */}
+          {/* -- TESTIMONIALS -- */}
           {activeTab === 'testimonials' && <TestimonialsTab />}
           {activeTab === 'quotes' && <QuotesTab />}
           {activeTab === 'inbox' && <InboxTab messages={messages} setMessages={setMessages} />}
-          {activeTab === 'users' && <UsersTab />}
+          {activeTab === 'orders' && <OrdersTab />}
+          {activeTab === 'users' && <UsersTab currentUser={user} />}
 
-          {/* ── PAGE CONTENT ── */}
+          {/* -- PAGE CONTENT -- */}
           {activeTab === 'pages' && <PagesTab />}
 
-          {/* ── BLOG ── */}
+          {/* -- BLOG -- */}
           {activeTab === 'blog' && (
             <div>
               <div className="flex items-center justify-between mb-8">
@@ -563,7 +578,7 @@ export default function Admin() {
             </div>
           )}
 
-          {/* ── SUBSCRIBERS ── */}
+          {/* -- SUBSCRIBERS -- */}
           {activeTab === 'subscribers' && (
             <div>
               <h1 className="font-display text-4xl text-ivory mb-8">Subscribers <span className="text-brass/40 text-2xl">({subscribers.length})</span></h1>
@@ -595,12 +610,13 @@ export default function Admin() {
             </div>
           )}
 
-          {/* ── SETTINGS ── */}
+          {/* -- SETTINGS -- */}
           {activeTab === 'settings' && <SettingsTab />}
+          {activeTab === 'system' && <SystemTab />}
         </div>
       </div>
 
-      {/* ── MODALS ── */}
+      {/* -- MODALS -- */}
       <AnimatePresence>
         {editItem && editType === 'artwork' && (
           <EditModal item={editItem} title="Edit Artwork" onClose={() => setEditItem(null)}

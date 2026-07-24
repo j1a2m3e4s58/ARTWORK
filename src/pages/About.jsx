@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+﻿import { motion } from 'framer-motion';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
@@ -67,7 +67,7 @@ export default function About() {
               <div className="relative">
                 <div className="aspect-[3/4] overflow-hidden">
                   <img
-                    src={settings.artist_photo || 'https://images.unsplash.com/photo-1580894732444-8ecded7900cd?w=800&q=85'}
+                    src={settings.artist_photo || '/brand/reigns-atelier-logo.jpg'}
                     alt="Artist at work"
                     className="w-full h-full object-cover grayscale-[20%]"
                   />

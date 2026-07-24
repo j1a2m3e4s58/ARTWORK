@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Clock, Tag, Share2 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
@@ -6,39 +6,6 @@ import ReactMarkdown from 'react-markdown';
 import ScrollReveal from '@/components/ScrollReveal';
 import PageTransition from '@/components/PageTransition';
 
-// Hardcoded fallback posts for demo slugs
-const FALLBACK_POSTS = {
-  'the-art-of-chiaroscuro': {
-    title: 'The Art of Chiaroscuro: Drawing with Light and Shadow',
-    coverImageUrl: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=1400&q=90',
-    tags: ['Technique', 'Charcoal', 'Portrait'], publishedDate: 'December 1, 2025', readTime: 8, author: 'Reigns',
-    content: `Chiaroscuro — from the Italian *chiaro* (light) and *scuro* (dark) — is one of the oldest and most powerful techniques in the visual arts.\n\n## What Is Chiaroscuro?\n\nAt its core, chiaroscuro is the studied manipulation of light and shadow to give two-dimensional images a three-dimensional quality.\n\n## The Five Values\n\nEvery successful chiaroscuro drawing relies on mastering five tonal values:\n\n- **Highlight** — the lightest point, where light hits directly\n- **Light** — the general illuminated area\n- **Halftone** — the transition zone between light and shadow\n- **Core Shadow** — the darkest part of the shadow\n- **Reflected Light** — subtle light bouncing back from surrounding surfaces\n\n## Practical Application\n\nWhen I begin a portrait, I squint at my reference. Squinting eliminates detail and reduces everything to core light and shadow masses. This is your roadmap.`
-  },
-  'my-digital-art-setup': {
-    title: 'My Digital Art Setup: The Tools Behind the Work',
-    coverImageUrl: 'https://images.unsplash.com/photo-1561214115-f2f134cc4912?w=1400&q=90',
-    tags: ['Digital Art', 'Tools', 'Workflow'], publishedDate: 'November 15, 2025', readTime: 6, author: 'Reigns',
-    content: `After years of refining my digital workflow, here's exactly what I use to create my work.\n\n## Hardware\n\n**Wacom Cintiq Pro 16** — The display tablet that changed my life.\n\n**MacBook Pro M3 Max** — The processing power handles large Photoshop files effortlessly.\n\n## Software\n\n**Procreate on iPad Pro** — For sketching on the go.\n\n**Adobe Photoshop** — Primary tool for finished digital paintings.\n\n**Clip Studio Paint** — For anime-style work and line art.`
-  },
-  'from-sketch-to-masterpiece': {
-    title: 'From Sketch to Masterpiece: A Commission Breakdown',
-    coverImageUrl: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=1400&q=90',
-    tags: ['Process', 'Commission', 'Portrait'], publishedDate: 'October 22, 2025', readTime: 12, author: 'Reigns',
-    content: `Every commission starts with a conversation. The client shares references, mood boards, and their vision. My job is to listen between the lines.\n\n## Stage 1: Reference & Composition\n\nI study all provided references and sketch three thumbnail compositions. The client picks the direction that resonates most.\n\n## Stage 2: Underdrawing\n\nA detailed pencil sketch establishes proportions, values, and the key focal points. This is the blueprint.\n\n## Stage 3: Building Values\n\nWorking from dark to light, I establish the full tonal range before adding any detail.\n\n## Stage 4: Final Detail & Refinement\n\nThe final 20% of time produces 80% of the visual impact — hair strands, catch lights, texture.`
-  },
-  'pencil-drawing-fundamentals': {
-    title: "Pencil Drawing Fundamentals I Wish I'd Known Earlier",
-    coverImageUrl: 'https://images.unsplash.com/photo-1519764622345-23439dd774f7?w=1400&q=90',
-    tags: ['Tutorial', 'Pencil', 'Fundamentals'], publishedDate: 'September 10, 2025', readTime: 10, author: 'Reigns',
-    content: `Eight years in, I still return to fundamentals daily. Here are the lessons that changed everything.\n\n## 1. Observe More, Draw Less\n\nSpend 70% of your time looking, 30% drawing. Most mistakes happen because we're drawing what we *think* something looks like, not what it actually looks like.\n\n## 2. Grip and Pressure Control\n\nHold your pencil like a conductor holds a baton — loosely, with control. Vary your pressure constantly.\n\n## 3. Build Layers, Don't Press Hard\n\nMultiple light passes create richer darks than one heavy pass. You maintain control and can erase easily.`
-  },
-  'anime-vs-realism': {
-    title: 'Anime vs Realism: Two Worlds, One Artist',
-    coverImageUrl: 'https://images.unsplash.com/photo-1460661419201-fd4cecdf8a8b?w=1400&q=90',
-    tags: ['Anime Art', 'Realism', 'Philosophy'], publishedDate: 'August 5, 2025', readTime: 7, author: 'Reigns',
-    content: `People are often surprised that I work in both hyperrealism and anime-inspired illustration. They seem like opposite poles — but they share the same core.\n\n## The Common Ground\n\nBoth styles demand mastery of proportion, value, and composition. An anime character with wrong proportions feels just as off as a realistic portrait with incorrect anatomy.\n\n## What Realism Teaches Anime\n\nStudying light on real faces taught me where to place the anime "glow" — the simplified but emotionally resonant lighting that makes anime characters feel alive.\n\n## What Anime Teaches Realism\n\nAnime forced me to distill — to find the *essential* lines that communicate an emotion. That economy of line made my realistic work sharper.`
-  }
-};
 
 
 
@@ -56,11 +23,11 @@ export default function BlogPost() {
         // Try by id (if slug is actually an id)
         return studioClient.entities.BlogPost.filter({ id: slug }).then(byId => {
           if (byId.length > 0) setPost(byId[0]);
-          else setPost(FALLBACK_POSTS[slug] || null);
+          else setPost(null);
         });
       }
     }).catch(() => {
-      setPost(FALLBACK_POSTS[slug] || null);
+      setPost(null);
     }).finally(() => setLoading(false));
   }, [slug]);
 

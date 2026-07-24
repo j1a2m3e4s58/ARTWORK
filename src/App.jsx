@@ -1,6 +1,3 @@
-import { Toaster } from "@/components/ui/toaster"
-import { QueryClientProvider } from '@tanstack/react-query'
-import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
@@ -11,7 +8,9 @@ import CustomCursor from '@/components/CustomCursor';
 import Layout from '@/components/Layout';
 
 import AdminRoute from '@/components/AdminRoute';
+import AccountRoute from '@/components/AccountRoute';
 import PWAUpdateBanner from '@/components/PWAUpdateBanner';
+import AppErrorBoundary from '@/components/AppErrorBoundary';
 
 const Home = lazy(() => import('@/pages/Home'));
 const Gallery = lazy(() => import('@/pages/Gallery'));
@@ -29,6 +28,9 @@ const Register = lazy(() => import('@/pages/Register'));
 const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
 const LegalPage = lazy(() => import('@/pages/LegalPage'));
+const Account = lazy(() => import('@/pages/Account'));
+const AcceptInvite = lazy(() => import('@/pages/AcceptInvite'));
+const VerifyEmail = lazy(() => import('@/pages/VerifyEmail'));
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -61,10 +63,13 @@ const AuthenticatedApp = () => {
         <Route path="/contact" element={<Contact />} />
         <Route path="/testimonials" element={<Testimonials />} />
         <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
+        <Route path="/account" element={<AccountRoute><Account /></AccountRoute>} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/accept-invite" element={<AcceptInvite />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
       <Route path="/privacy" element={<LegalPage type="privacy" />} />
       <Route path="/terms" element={<LegalPage type="terms" />} />
       </Route>
@@ -75,13 +80,17 @@ const AuthenticatedApp = () => {
 };
 
 function App() {
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(() => sessionStorage.getItem('atelier_loaded') === 'true');
+  const finishLoading = () => {
+    sessionStorage.setItem('atelier_loaded', 'true');
+    setLoaded(true);
+  };
 
   return (
+    <AppErrorBoundary>
     <AuthProvider>
-      <QueryClientProvider client={queryClientInstance}>
         <Router>
-          {!loaded && <LoadingScreen onComplete={() => setLoaded(true)} />}
+          {!loaded && <LoadingScreen onComplete={finishLoading} />}
           {loaded && (
             <>
               <CustomCursor />
@@ -89,10 +98,9 @@ function App() {
             </>
           )}
         </Router>
-        <Toaster />
         <PWAUpdateBanner />
-      </QueryClientProvider>
     </AuthProvider>
+    </AppErrorBoundary>
   );
 }
 

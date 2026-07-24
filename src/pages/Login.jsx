@@ -9,13 +9,24 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [challenge, setChallenge] = useState('');
+  const [code, setCode] = useState('');
 
   const submit = async event => {
     event.preventDefault();
     setError('');
     setLoading(true);
     try {
-      await studioClient.auth.loginViaEmailPassword(email, password);
+      if (challenge) {
+        await studioClient.auth.verifyMfaLogin(challenge, code);
+      } else {
+        const result = await studioClient.auth.loginViaEmailPassword(email, password);
+        if (result.mfaRequired) {
+          setChallenge(result.challenge);
+          setLoading(false);
+          return;
+        }
+      }
       const redirect = new URLSearchParams(window.location.search).get('redirect') || '/';
       window.location.assign(redirect.startsWith('/') ? redirect : '/');
     } catch (err) {
@@ -30,20 +41,25 @@ export default function Login() {
       footer={<>New to the atelier? <Link to="/register" className="text-brass hover:underline">Create an account</Link></>}>
       {error && <div className="mb-4 border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
       <form onSubmit={submit} className="space-y-4">
-        <label className="block">
+        {!challenge && <label className="block">
           <span className="mb-1.5 block text-xs uppercase tracking-widest text-ivory/45">Email address</span>
           <span className="relative block"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-brass/50" size={16} />
             <input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)}
               className="w-full border border-brass/15 bg-obsidian py-3 pl-10 pr-3 text-sm text-ivory outline-none focus:border-brass/50" /></span>
-        </label>
-        <label className="block">
+        </label>}
+        {!challenge && <label className="block">
           <span className="mb-1.5 flex justify-between text-xs uppercase tracking-widest text-ivory/45">Password <Link to="/forgot-password" className="normal-case tracking-normal text-brass/70">Forgot?</Link></span>
           <span className="relative block"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-brass/50" size={16} />
             <input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}
               className="w-full border border-brass/15 bg-obsidian py-3 pl-10 pr-3 text-sm text-ivory outline-none focus:border-brass/50" /></span>
-        </label>
+        </label>}
+        {challenge && <label className="block">
+          <span className="mb-1.5 block text-xs uppercase tracking-widest text-ivory/45">Authenticator code</span>
+          <input inputMode="numeric" autoComplete="one-time-code" required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+            className="w-full border border-brass/15 bg-obsidian px-4 py-3 text-center text-xl tracking-[0.4em] text-ivory outline-none focus:border-brass/50" />
+        </label>}
         <button disabled={loading} className="flex w-full items-center justify-center gap-2 bg-brass py-3.5 text-sm uppercase tracking-wider text-obsidian disabled:opacity-50">
-          {loading && <Loader2 className="animate-spin" size={16} />} Log in
+          {loading && <Loader2 className="animate-spin" size={16} />} {challenge ? 'Verify code' : 'Log in'}
         </button>
       </form>
     </AuthLayout>

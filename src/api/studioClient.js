@@ -1,10 +1,17 @@
-const request = async (url, options = {}) => {
+﻿const request = async (url, options = {}) => {
   const isForm = options.body instanceof FormData;
+  const csrfToken = document.cookie
+    .split('; ')
+    .find(cookie => cookie.startsWith('atelier_csrf='))
+    ?.split('=')
+    .slice(1)
+    .join('=');
   const response = await fetch(url, {
     credentials: 'include',
     ...options,
-    headers: isForm ? options.headers : {
-      'Content-Type': 'application/json',
+    headers: {
+      ...(!isForm ? { 'Content-Type': 'application/json' } : {}),
+      ...(csrfToken ? { 'X-CSRF-Token': decodeURIComponent(csrfToken) } : {}),
       ...options.headers,
     },
   });
@@ -41,8 +48,8 @@ const createEntity = name => ({
 });
 
 const entityNames = [
-  'Artwork', 'BlogPost', 'CommissionRequest', 'Message', 'NewsletterSubscriber',
-  'Outbox', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'User', 'Video',
+  'Artwork', 'AuditLog', 'BlogPost', 'CommissionRequest', 'Message', 'NewsletterSubscriber',
+  'Notification', 'Order', 'Outbox', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'User', 'Video',
 ];
 
 const entities = Object.fromEntries(entityNames.map(name => [name, createEntity(name)]));
@@ -76,10 +83,24 @@ export const studioClient = {
     createUser(data) {
       return request('/api/admin/users', { method: 'POST', body: JSON.stringify(data) });
     },
+    resendInvite(id) {
+      return request(`/api/admin/users/${id}/resend-invite`, { method: 'POST' });
+    },
+    backup() {
+      return request('/api/admin/backup', { method: 'POST' });
+    },
   },
   messages: {
     reply(id, text) {
       return request(`/api/messages/${id}/reply`, { method: 'POST', body: JSON.stringify({ text }) });
+    },
+  },
+  artworks: {
+    myLikes() {
+      return request('/api/artworks/likes/me');
+    },
+    toggleLike(id) {
+      return request(`/api/artworks/${id}/like`, { method: 'POST' });
     },
   },
   integrations: {
@@ -116,6 +137,9 @@ export const studioClient = {
     loginViaEmailPassword: (email, password) => request('/api/auth/login', {
       method: 'POST', body: JSON.stringify({ email, password }),
     }),
+    verifyMfaLogin: (challenge, code) => request('/api/auth/mfa/verify-login', {
+      method: 'POST', body: JSON.stringify({ challenge, code }),
+    }),
     register: data => request('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
     logout: () => request('/api/auth/logout', { method: 'POST' }),
     resetPasswordRequest: email => request('/api/auth/forgot-password', {
@@ -124,11 +148,42 @@ export const studioClient = {
     resetPassword: ({ resetToken, newPassword }) => request('/api/auth/reset-password', {
       method: 'POST', body: JSON.stringify({ token: resetToken, password: newPassword }),
     }),
+    acceptInvite: ({ inviteToken, password }) => request('/api/auth/accept-invite', {
+      method: 'POST', body: JSON.stringify({ token: inviteToken, password }),
+    }),
+    verifyEmail: verificationToken => request('/api/auth/verify-email', {
+      method: 'POST', body: JSON.stringify({ token: verificationToken }),
+    }),
+    resendVerification: () => request('/api/auth/resend-verification', { method: 'POST' }),
     loginWithProvider: async () => { throw new Error('Social sign-in is not configured yet.'); },
     resendOtp: async () => ({ success: true }),
     verifyOtp: async () => ({ success: true }),
     setToken() {},
     redirectToLogin() { window.location.assign('/login'); },
+  },
+  account: {
+    updateProfile(data) {
+      return request('/api/account/profile', { method: 'PATCH', body: JSON.stringify(data) });
+    },
+    changePassword(data) {
+      return request('/api/account/change-password', { method: 'POST', body: JSON.stringify(data) });
+    },
+    remove() {
+      return request('/api/account', { method: 'DELETE' });
+    },
+    export() {
+      return request('/api/account/export');
+    },
+  },
+  system: {
+    ready() {
+      return request('/api/ready');
+    },
+  },
+  mfa: {
+    setup: () => request('/api/admin/mfa/setup', { method: 'POST' }),
+    enable: code => request('/api/admin/mfa/enable', { method: 'POST', body: JSON.stringify({ code }) }),
+    disable: (password, code) => request('/api/admin/mfa/disable', { method: 'POST', body: JSON.stringify({ password, code }) }),
   },
   agents: {
     async createConversation() { return { id: crypto.randomUUID() }; },

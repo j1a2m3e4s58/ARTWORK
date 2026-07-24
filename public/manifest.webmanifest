@@ -7,6 +7,12 @@
   "background_color": "#0A0A0B",
   "theme_color": "#0A0A0B",
   "orientation": "portrait-primary",
+  "categories": ["art", "shopping", "lifestyle"],
+  "shortcuts": [
+    { "name": "Gallery", "url": "/gallery", "icons": [{ "src": "/brand/reigns-app-icon-192.png", "sizes": "192x192" }] },
+    { "name": "Commission", "url": "/commission", "icons": [{ "src": "/brand/reigns-app-icon-192.png", "sizes": "192x192" }] },
+    { "name": "My Account", "url": "/account", "icons": [{ "src": "/brand/reigns-app-icon-192.png", "sizes": "192x192" }] }
+  ],
   "icons": [
     {
       "src": "/brand/reigns-app-icon-192.png",

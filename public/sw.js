@@ -1,4 +1,4 @@
-const CACHE = 'reigns-atelier-v2';
+const CACHE = 'reigns-atelier-v3';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/brand/reigns-app-icon-192.png', '/brand/reigns-app-icon-512.png'];
 
 self.addEventListener('install', event => {
@@ -21,10 +21,12 @@ self.addEventListener('message', event => {
 
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin || ['/api/', '/uploads/', '/admin', '/account'].some(path => url.pathname.startsWith(path))) return;
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        if (!response.ok || new URL(event.request.url).pathname.startsWith('/api/')) return response;
+        if (!response.ok) return response;
         const copy = response.clone();
         caches.open(CACHE).then(cache => cache.put(event.request, copy));
         return response;

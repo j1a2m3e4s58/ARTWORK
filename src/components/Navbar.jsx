@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, ShoppingBag, ArrowUpRight } from 'lucide-react';
+import { Menu, X, ShoppingBag, ArrowUpRight, UserRound } from 'lucide-react';
 import AdminGate from './AdminGate';
 import { useSettings } from '@/hooks/useSettings';
 import InstallAppButton from './InstallAppButton';
@@ -23,6 +23,7 @@ export default function Navbar() {
   const { user, logout } = useAuth();
   const visibleLinks = navLinks.filter(link => {
     const key = `show_${link.label.toLowerCase()}`;
+    if (['Videos', 'Blog'].includes(link.label)) return settings[key] === 'true';
     return settings[key] !== 'false';
   });
   const [scrolled, setScrolled] = useState(false);
@@ -100,7 +101,10 @@ export default function Navbar() {
                 <Link to="/register" className="font-tight text-xs border border-brass/30 px-3 py-2 text-brass hover:bg-brass/10">Sign up</Link>
               </div>
             ) : (
-              <button onClick={() => logout()} className="hidden md:block font-tight text-xs text-ivory/45 hover:text-brass">Sign out</button>
+              <div className="hidden items-center gap-3 md:flex">
+                <Link to={user.role === 'admin' ? '/admin' : '/account'} className="flex items-center gap-1.5 font-tight text-xs text-ivory/55 hover:text-brass"><UserRound size={15} /> Account</Link>
+                <button onClick={() => logout()} className="font-tight text-xs text-ivory/45 hover:text-brass">Sign out</button>
+              </div>
             )}
             <Link to="/shop" className="hidden md:flex items-center gap-2 text-ivory/60 hover:text-brass transition-colors duration-300">
               <ShoppingBag size={18} />
@@ -182,9 +186,9 @@ export default function Navbar() {
               </div>
 
               <div className="mt-4 flex items-center justify-center gap-6 border-t border-ivory/10 pt-4">
-                <a href={settings.instagram_url || 'https://instagram.com'} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">Instagram</a>
-                <a href={settings.twitter_url || 'https://twitter.com'} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">Twitter</a>
-                <a href={settings.youtube_url || 'https://youtube.com'} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">YouTube</a>
+                {settings.instagram_url && <a href={settings.instagram_url} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">Instagram</a>}
+                {settings.twitter_url && <a href={settings.twitter_url} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">Twitter</a>}
+                {settings.youtube_url && <a href={settings.youtube_url} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">YouTube</a>}
               </div>
               <div className="mt-4">
                 <InstallAppButton />
@@ -196,7 +200,10 @@ export default function Navbar() {
                     <Link to="/register" className="rounded-xl bg-brass px-3 py-2 text-center text-xs text-obsidian">Sign up</Link>
                   </>
                 ) : (
-                  <button onClick={() => logout()} className="col-span-2 rounded-xl border border-ivory/10 px-3 py-2 text-xs text-ivory/60">Sign out</button>
+                  <>
+                    <Link to={user.role === 'admin' ? '/admin' : '/account'} className="rounded-xl border border-brass/20 px-3 py-2 text-center text-xs text-brass">My account</Link>
+                    <button onClick={() => logout()} className="rounded-xl border border-ivory/10 px-3 py-2 text-xs text-ivory/60">Sign out</button>
+                  </>
                 )}
               </div>
             </motion.div>
