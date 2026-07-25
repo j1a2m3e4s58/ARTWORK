@@ -14,7 +14,7 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
-    "test": "node --test server/tests",
+    "test": "node --test server/tests/api.integration.test.js server/tests/database.postgres.test.js server/tests/payments.test.js server/tests/security.test.js server/tests/validation.test.js",
     "media:migrate": "node scripts/migrate-media-to-cloudinary.mjs",
     "content:clean": "node scripts/clean-unverified-content.mjs",
     "staging:smoke": "node scripts/rehearse-staging.mjs",
