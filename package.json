@@ -15,9 +15,14 @@
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
     "test": "node --test server/tests/api.integration.test.js server/tests/database.postgres.test.js server/tests/payments.test.js server/tests/security.test.js server/tests/validation.test.js",
+    "test:e2e": "playwright test",
     "media:migrate": "node scripts/migrate-media-to-cloudinary.mjs",
     "content:clean": "node scripts/clean-unverified-content.mjs",
     "staging:smoke": "node scripts/rehearse-staging.mjs",
+    "media:audit": "node scripts/audit-media-licences.mjs",
+    "payment:rehearse": "node scripts/rehearse-paystack.mjs",
+    "backup:rehearse": "node scripts/rehearse-backup-restore.mjs",
+    "launch:review": "node scripts/production-review.mjs",
     "audit:prod": "node scripts/audit-production.mjs",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build && npm run audit:prod"
   },
@@ -91,7 +96,9 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@eslint/js": "^9.19.0",
+    "@playwright/test": "^1.61.1",
     "@types/node": "^22.13.5",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",

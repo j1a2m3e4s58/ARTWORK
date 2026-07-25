@@ -1,29 +1,25 @@
-﻿import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+﻿import { Link } from 'react-router-dom';
 import { ArrowRight, Clock, Tag } from 'lucide-react';
-import { studioClient } from '@/api/studioClient';
+import ResourceFeedback from '@/components/ResourceFeedback';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import { usePageContent } from '@/hooks/usePageContent';
+import { useCollectionResource } from '@/hooks/useCollectionResource';
 
 
 export default function Blog() {
   const page = usePageContent('Blog');
-  const [posts, setPosts] = useState([]);
-
-  useEffect(() => {
-    studioClient.entities.BlogPost.list('-created_date', 50).then(data => {
-      setPosts(data);
-    }).catch(() => {});
-  }, []);
+  const { data: posts, loading, error, retry } = useCollectionResource('BlogPost');
 
   const [featured, ...rest] = posts;
 
-  if (!featured) return (
+  if (loading || error || !featured) return (
     <PageTransition>
-      <div className="min-h-screen bg-obsidian pt-28 flex items-center justify-center">
-        <p className="text-ivory/30 font-tight">No posts yet.</p>
+      <div className="min-h-screen bg-obsidian px-6 pt-40">
+        <div className="mx-auto max-w-4xl">
+          <ResourceFeedback loading={loading} error={error} onRetry={retry} empty={!featured} emptyMessage="No studio journal posts have been published yet." />
+        </div>
       </div>
     </PageTransition>
   );

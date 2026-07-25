@@ -12,7 +12,10 @@ import multer from 'multer';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { fileTypeFromBuffer } from 'file-type';
-import { db, save, newId, now, backupDatabase, databaseKind, closeDatabase, checkDatabase, queryCollection } from './db.js';
+import {
+  db, save, newId, now, backupDatabase, databaseKind, closeDatabase, checkDatabase,
+  queryCollection, claimOutboxBatch, completeOutboxRecord,
+} from './db.js';
 import { sendEmail, checkEmail } from './email.js';
 import { validateEntity } from './validation.js';
 import { storageProvider, storeFile, deleteStoredFile, checkStorage } from './storage.js';
@@ -254,25 +257,24 @@ async function processEmailOutbox() {
   if (outboxProcessing || !process.env.SMTP_HOST) return;
   outboxProcessing = true;
   try {
-    const due = db.data.Outbox
-      .filter(item => item.status === 'pending' && new Date(item.nextAttemptAt || 0).getTime() <= Date.now())
-      .slice(0, 10);
+    const due = await claimOutboxBatch(10);
     for (const item of due) {
       const delivery = await sendEmail({ to: item.to, subject: item.subject, text: item.text, html: item.html });
-      item.attempts = (item.attempts || 0) + 1;
-      item.lastAttemptAt = now();
+      const attempts = (item.attempts || 0) + 1;
+      const changes = { attempts, lastAttemptAt: now() };
       if (delivery.delivered) {
-        item.status = 'delivered';
-        item.messageId = delivery.messageId;
-      } else if (item.attempts >= 5) {
-        item.status = 'failed';
-        item.lastError = delivery.reason || delivery.error;
+        Object.assign(changes, { status: 'delivered', messageId: delivery.messageId });
+      } else if (attempts >= 5) {
+        Object.assign(changes, { status: 'failed', lastError: delivery.reason || delivery.error });
       } else {
-        item.lastError = delivery.reason || delivery.error;
-        item.nextAttemptAt = new Date(Date.now() + Math.min(60, item.attempts * 10) * 60 * 1000).toISOString();
+        Object.assign(changes, {
+          status: 'pending',
+          lastError: delivery.reason || delivery.error,
+          nextAttemptAt: new Date(Date.now() + Math.min(60, attempts * 10) * 60 * 1000).toISOString(),
+        });
       }
+      await completeOutboxRecord(item.id, item.leaseId, changes);
     }
-    if (due.length) await save();
   } finally {
     outboxProcessing = false;
   }
@@ -1067,6 +1069,13 @@ app.get('/api/entities/:name', async (req, res) => {
   let records = queried?.records || db.data[name].filter(record => includeDeleted || !record.deleted_at);
   if (user && ownData && !staffAccess) records = records.filter(record => record.userId === user.id);
   if (!staffAccess) {
+    const starterMediaAllowed = process.env.ALLOW_STARTER_MEDIA === 'true' || process.env.NODE_ENV !== 'production';
+    if (!starterMediaAllowed && ['Artwork', 'HeroSlide', 'ShopProduct', 'Video'].includes(name)) {
+      records = records.filter(record => (
+        record.contentStatus !== 'starter'
+        && !['pexels', 'pixabay', 'unsplash'].includes(String(record.sourceName || '').toLowerCase())
+      ));
+    }
     if (name === 'BlogPost') records = records.filter(record => record.status === 'published' || !record.status);
     if (name === 'Testimonial') records = records.filter(record => record.status === 'approved');
     if (['Artwork', 'HeroSlide', 'ShopProduct', 'Video'].includes(name)) {
@@ -1403,6 +1412,7 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, upload.single('fil
     purpose: staffRoles.has(req.user.role) ? 'content-library' : 'customer-reference',
     altText: '',
     sourceName: staffRoles.has(req.user.role) ? 'Studio upload' : 'Customer upload',
+    contentStatus: staffRoles.has(req.user.role) ? 'original' : 'customer-reference',
     created_date: now(),
   };
   db.data.Media.push(media);
@@ -1491,7 +1501,17 @@ app.post('/api/admin/backup', requireAdmin, async (req, res) => {
   const result = await backupDatabase({ force: true });
   await audit(req.user, 'system.backup_created', 'System', null);
   await save();
-  res.json({ success: Boolean(result), createdAt: now() });
+  res.json(result
+    ? { success: true, createdAt: now(), path: result }
+    : {
+        success: false,
+        managed: databaseKind === 'postgresql-relational',
+        provider: databaseKind,
+        createdAt: now(),
+        message: databaseKind === 'postgresql-relational'
+          ? 'Use the managed PostgreSQL backup and restore rehearsal for production data.'
+          : 'No new backup was created.',
+      });
 });
 
 app.post('/api/admin/outbox/retry', requireAdmin, async (req, res) => {
@@ -1529,7 +1549,7 @@ app.get('/api/metrics', (req, res) => {
   res.type('text/plain; version=0.0.4').send(`${lines.join('\n')}\n`);
 });
 
-if (process.env.NODE_ENV === 'production') {
+if (process.env.NODE_ENV === 'production' || process.env.SERVE_STATIC === 'true') {
   app.use(express.static(path.join(root, 'dist')));
   app.use((req, res, next) => {
     if (req.method === 'GET') return res.sendFile(path.join(root, 'dist', 'index.html'));

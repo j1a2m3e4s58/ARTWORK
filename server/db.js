@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSONFilePreset } from 'lowdb/node';
@@ -50,30 +50,22 @@ let snapshots = new Map();
 
 const serialize = value => JSON.stringify(value);
 
-async function createRelationalSchema(client) {
-  for (const table of Object.values(tableNames)) {
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS ${table} (
-        id UUID PRIMARY KEY,
-        data JSONB NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-    await client.query(`CREATE INDEX IF NOT EXISTS ${table}_updated_at_idx ON ${table} (updated_at DESC)`);
+async function applyMigrations(client) {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  const migrationsDir = path.join(here, 'migrations');
+  const files = (await readdir(migrationsDir)).filter(name => name.endsWith('.sql')).sort();
+  const applied = new Set((await client.query('SELECT version FROM schema_migrations')).rows.map(row => row.version));
+  for (const version of files) {
+    if (applied.has(version)) continue;
+    const sql = await readFile(path.join(migrationsDir, version), 'utf8');
+    await client.query(sql);
+    await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [version]);
   }
-  await client.query('CREATE UNIQUE INDEX IF NOT EXISTS users_email_idx ON users (LOWER(data->>\'email\'))');
-  await client.query('CREATE INDEX IF NOT EXISTS messages_user_idx ON messages ((data->>\'userId\'))');
-  await client.query('CREATE INDEX IF NOT EXISTS media_owner_idx ON media_assets ((data->>\'userId\'))');
-  await client.query('CREATE INDEX IF NOT EXISTS commissions_user_idx ON commission_requests ((data->>\'userId\'))');
-  await client.query('CREATE INDEX IF NOT EXISTS orders_user_idx ON orders ((data->>\'userId\'))');
-  await client.query('CREATE INDEX IF NOT EXISTS orders_payment_reference_idx ON orders ((data->>\'paymentReference\'))');
-  await client.query('CREATE UNIQUE INDEX IF NOT EXISTS payment_events_provider_id_idx ON payment_events ((data->>\'providerEventId\'))');
-  await client.query('CREATE INDEX IF NOT EXISTS site_content_key_idx ON site_content ((data->>\'key\'))');
-  await client.query('CREATE INDEX IF NOT EXISTS site_content_page_key_idx ON site_content ((data->>\'page\'), (data->>\'key\'))');
-  await client.query("CREATE INDEX IF NOT EXISTS orders_idempotency_key_idx ON orders ((data->>'userId'), (data->>'idempotencyKey')) WHERE COALESCE(data->>'idempotencyKey', '') <> ''");
-  await client.query("CREATE INDEX IF NOT EXISTS outbox_status_created_idx ON email_outbox ((data->>'status'), (data->>'created_date'))");
-  await client.query("CREATE INDEX IF NOT EXISTS commissions_status_created_idx ON commission_requests ((data->>'status'), (data->>'created_date'))");
 }
 
 async function importLegacySingleton(client) {
@@ -123,7 +115,7 @@ if (process.env.DATABASE_URL) {
   const client = await postgresPool.connect();
   try {
     await client.query('BEGIN');
-    await createRelationalSchema(client);
+    await applyMigrations(client);
     await importLegacySingleton(client);
     await client.query('COMMIT');
     const data = await loadPostgresData(client);
@@ -240,6 +232,91 @@ export async function queryCollection(name, { filters = {}, sort = '-created_dat
     postgresPool.query(`SELECT COUNT(*)::int AS total FROM ${table} ${condition}`, values.slice(0, values.length - 3)),
   ]);
   return { records: records.rows.map(row => row.data), total: count.rows[0]?.total || 0 };
+}
+
+function syncLocalRecord(name, record) {
+  const records = database.data[name];
+  const index = records.findIndex(item => item.id === record.id);
+  if (index === -1) records.push(record);
+  else records[index] = record;
+  if (snapshots.has(name)) snapshots.get(name).set(record.id, serialize(record));
+}
+
+export async function claimOutboxBatch(limit = 10, leaseMilliseconds = 5 * 60 * 1000) {
+  const leaseId = crypto.randomUUID();
+  const leaseUntil = new Date(Date.now() + leaseMilliseconds).toISOString();
+  if (!postgresPool) {
+    const due = database.data.Outbox
+      .filter(item => (
+        item.status === 'pending'
+        || (item.status === 'processing' && new Date(item.leaseUntil || 0).getTime() <= Date.now())
+      ) && new Date(item.nextAttemptAt || 0).getTime() <= Date.now())
+      .slice(0, limit);
+    for (const item of due) Object.assign(item, { status: 'processing', leaseId, leaseUntil });
+    if (due.length) await save();
+    return due.map(item => structuredClone(item));
+  }
+
+  const client = await postgresPool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `SELECT id, data
+       FROM email_outbox
+       WHERE (
+         data->>'status' = 'pending'
+         OR (
+           data->>'status' = 'processing'
+           AND COALESCE(NULLIF(data->>'leaseUntil', '')::timestamptz, '-infinity') <= NOW()
+         )
+       )
+       AND COALESCE(NULLIF(data->>'nextAttemptAt', '')::timestamptz, '-infinity') <= NOW()
+       ORDER BY COALESCE(NULLIF(data->>'nextAttemptAt', '')::timestamptz, created_at)
+       FOR UPDATE SKIP LOCKED
+       LIMIT $1`,
+      [Math.min(50, Math.max(1, Number(limit) || 10))],
+    );
+    const claimed = [];
+    for (const row of result.rows) {
+      const record = { ...row.data, status: 'processing', leaseId, leaseUntil };
+      await client.query(
+        'UPDATE email_outbox SET data = $2::jsonb, updated_at = NOW() WHERE id = $1',
+        [row.id, serialize(record)],
+      );
+      claimed.push(record);
+    }
+    await client.query('COMMIT');
+    for (const record of claimed) syncLocalRecord('Outbox', record);
+    return claimed;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function completeOutboxRecord(id, leaseId, changes) {
+  const current = database.data.Outbox.find(item => item.id === id);
+  if (!current || current.leaseId !== leaseId) return false;
+  const record = { ...current, ...changes };
+  delete record.leaseId;
+  delete record.leaseUntil;
+  if (!postgresPool) {
+    syncLocalRecord('Outbox', record);
+    await save();
+    return true;
+  }
+  const result = await postgresPool.query(
+    `UPDATE email_outbox
+     SET data = $3::jsonb, updated_at = NOW()
+     WHERE id = $1 AND data->>'leaseId' = $2
+     RETURNING data`,
+    [id, leaseId, serialize(record)],
+  );
+  if (!result.rowCount) return false;
+  syncLocalRecord('Outbox', result.rows[0].data);
+  return true;
 }
 
 for (const name of collectionNames) {

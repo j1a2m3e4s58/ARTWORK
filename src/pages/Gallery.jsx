@@ -8,23 +8,19 @@ import PageTransition from '@/components/PageTransition';
 import GalleryGuidedSearch from '@/components/GalleryGuidedSearch';
 import { usePageContent } from '@/hooks/usePageContent';
 import { useAuth } from '@/lib/AuthContext';
+import { useCollectionResource } from '@/hooks/useCollectionResource';
+import ResourceFeedback from '@/components/ResourceFeedback';
 
 export default function Gallery() {
   const page = usePageContent('Gallery');
   const { user } = useAuth();
   const [activeCategory, setActiveCategory] = useState('All');
-  const [artworks, setArtworks] = useState([]);
+  const { data: artworks, setData: setArtworks, loading, error, retry } = useCollectionResource('Artwork', { limit: 100 });
   const [filtered, setFiltered] = useState([]);
   const [lightbox, setLightbox] = useState(null);
   const [likedIds, setLikedIds] = useState([]);
   const [aiResults, setAiResults] = useState(null);
   const categories = ['All', ...new Set(artworks.map(artwork => artwork.category).filter(Boolean))];
-
-  useEffect(() => {
-    studioClient.entities.Artwork.list('-created_date', 100).then(data => {
-      setArtworks(data);
-    }).catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -100,7 +96,7 @@ export default function Gallery() {
 
         {/* Masonry grid */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12">
-          {filtered.length === 0 && <div className="border border-brass/10 py-20 text-center text-sm text-ivory/35">The portfolio is being curated. Please check back soon.</div>}
+          <ResourceFeedback loading={loading} error={error} onRetry={retry} empty={!filtered.length} emptyMessage="The portfolio is being curated. Please check back soon." />
           <div className="masonry-grid">
             <AnimatePresence>
               {filtered.map((art, i) => (
@@ -133,6 +129,7 @@ export default function Gallery() {
                       <div className="absolute top-4 right-4 flex gap-2">
                         <button
                           onClick={(e) => { e.stopPropagation(); toggleLike(art.id); }}
+                          aria-label={`${likedIds.includes(art.id) ? 'Unlike' : 'Like'} ${art.title}`}
                           className={`w-9 h-9 flex items-center justify-center border transition-colors duration-200 ${
                             likedIds.includes(art.id) ? 'border-brass bg-brass/20 text-brass' : 'border-ivory/20 text-ivory/60 hover:border-brass/40'
                           }`}
@@ -141,6 +138,7 @@ export default function Gallery() {
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); setLightbox(art); }}
+                          aria-label={`Enlarge ${art.title}`}
                           className="w-9 h-9 flex items-center justify-center border border-ivory/20 text-ivory/60 hover:border-brass/40 transition-colors duration-200"
                         >
                           <ZoomIn size={14} />
@@ -153,11 +151,6 @@ export default function Gallery() {
             </AnimatePresence>
           </div>
 
-          {filtered.length === 0 && (
-            <div className="text-center py-24">
-              <p className="text-ivory/30 font-tight tracking-wide">No artworks found.</p>
-            </div>
-          )}
         </div>
       </div>
 
@@ -192,7 +185,7 @@ export default function Gallery() {
               {/* Info */}
               <div className="lg:w-72 bg-carbon border-t lg:border-t-0 lg:border-l border-brass/10 p-8 flex flex-col justify-between">
                 <div>
-                  <button onClick={() => setLightbox(null)} className="text-ivory/40 hover:text-brass transition-colors mb-8">
+                  <button onClick={() => setLightbox(null)} aria-label="Close artwork viewer" className="text-ivory/40 hover:text-brass transition-colors mb-8">
                     <X size={18} />
                   </button>
                   <p className="font-tight text-[10px] uppercase tracking-[0.3em] text-brass/60 mb-2">{lightbox.category}</p>

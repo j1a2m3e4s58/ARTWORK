@@ -1,23 +1,17 @@
-﻿import { useState, useEffect } from 'react';
-import { Star } from 'lucide-react';
-import { studioClient } from '@/api/studioClient';
+﻿import { Star } from 'lucide-react';
+import ResourceFeedback from '@/components/ResourceFeedback';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import { usePageContent } from '@/hooks/usePageContent';
+import { useCollectionResource } from '@/hooks/useCollectionResource';
 
 
 const STATS = [];
 
 export default function Testimonials() {
   const page = usePageContent('Testimonials');
-  const [testimonials, setTestimonials] = useState([]);
-
-  useEffect(() => {
-    studioClient.entities.Testimonial.list('-created_date', 50).then(data => {
-      setTestimonials(data);
-    }).catch(() => {});
-  }, []);
+  const { data: testimonials, loading, error, retry } = useCollectionResource('Testimonial');
 
   return (
     <PageTransition>
@@ -49,6 +43,7 @@ export default function Testimonials() {
 
         {/* Reviews grid */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12">
+          <ResourceFeedback loading={loading} error={error} onRetry={retry} empty={!testimonials.length} emptyMessage="Verified client stories will appear here after publication." />
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {testimonials.map((t, i) => (
               <ScrollReveal key={t.id || t.clientName} delay={i * 0.1}>

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { db, save, closeDatabase } from '../server/db.js';
 
 const apply = process.argv.includes('--apply');
+const licencesAcknowledged = process.argv.includes('--acknowledge-licences');
 const fieldsByCollection = {
   Artwork: ['imageUrl'],
   HeroSlide: ['imageUrl'],
@@ -28,6 +29,12 @@ if (!apply) {
   process.stdout.write('Set Cloudinary credentials and rerun with --apply to upload and update records.\n');
   await closeDatabase();
   process.exit(0);
+}
+
+if (!licencesAcknowledged) {
+  process.stderr.write('Migration stopped: review `npm run media:audit` and rerun with --acknowledge-licences only after every source licence is documented.\n');
+  await closeDatabase();
+  process.exit(1);
 }
 
 const required = ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'];

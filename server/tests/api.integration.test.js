@@ -5,14 +5,24 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
+import { createServer } from 'node:net';
 
-const port = 43291;
-const baseUrl = `http://127.0.0.1:${port}`;
+let baseUrl;
+
+async function availablePort() {
+  const server = createServer();
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const { port } = server.address();
+  server.close();
+  await once(server, 'close');
+  return port;
+}
 
 async function waitForServer() {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
     try {
-      const response = await fetch(`${baseUrl}/api/health`);
+      const response = await fetch(`${baseUrl}/api/health`, { signal: AbortSignal.timeout(1_000) });
       if (response.ok) return;
     } catch {
       // The process is still starting.
@@ -23,6 +33,8 @@ async function waitForServer() {
 }
 
 test('API keeps public reads open while blocking unverified customer mutations', { timeout: 30_000 }, async () => {
+  const port = await availablePort();
+  baseUrl = `http://127.0.0.1:${port}`;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'atelier-api-test-'));
   const child = spawn(process.execPath, ['server/index.js'], {
     cwd: path.resolve('.'),
@@ -94,6 +106,71 @@ test('API keeps public reads open while blocking unverified customer mutations',
       ...unlockResponse.headers.getSetCookie().map(value => value.split(';')[0]),
     ].join('; ');
     const securedHeaders = { 'Content-Type': 'application/json', Cookie: adminCookieHeader, 'X-CSRF-Token': adminCsrf };
+    const readOutbox = async () => {
+      const response = await fetch(`${baseUrl}/api/entities/Outbox?limit=100`, { headers: { Cookie: adminCookieHeader } });
+      assert.equal(response.status, 200);
+      return response.json();
+    };
+    const tokenFromEmail = (outbox, recipient, pathName) => {
+      const email = [...outbox].reverse().find(item => item.to === recipient && item.text?.includes(pathName));
+      assert.ok(email, `Expected ${pathName} email for ${recipient}`);
+      return new URL(email.text.match(/https?:\/\/\S+/)?.[0]).searchParams.get('token');
+    };
+
+    const verificationToken = tokenFromEmail(await readOutbox(), 'collector@example.test', '/verify-email');
+    const verifyResponse = await fetch(`${baseUrl}/api/auth/verify-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: verificationToken }),
+    });
+    assert.equal(verifyResponse.status, 200);
+    const verifiedMessage = await fetch(`${baseUrl}/api/entities/Message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ name: 'Test Collector', subject: 'Question', message: 'Can I commission a portrait?' }),
+    });
+    assert.equal(verifiedMessage.status, 201);
+
+    const forgotResponse = await fetch(`${baseUrl}/api/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'collector@example.test' }),
+    });
+    assert.equal(forgotResponse.status, 200);
+    const resetToken = tokenFromEmail(await readOutbox(), 'collector@example.test', '/reset-password');
+    const resetResponse = await fetch(`${baseUrl}/api/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: resetToken, password: 'UpdatedCanvas2026!' }),
+    });
+    assert.equal(resetResponse.status, 200);
+    const collectorLogin = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'collector@example.test', password: 'UpdatedCanvas2026!' }),
+    });
+    assert.equal(collectorLogin.status, 200);
+
+    const inviteResponse = await fetch(`${baseUrl}/api/admin/users`, {
+      method: 'POST',
+      headers: securedHeaders,
+      body: JSON.stringify({ email: 'support@example.test', full_name: 'Studio Support', role: 'support' }),
+    });
+    assert.equal(inviteResponse.status, 201);
+    const inviteToken = tokenFromEmail(await readOutbox(), 'support@example.test', '/accept-invite');
+    const acceptInvite = await fetch(`${baseUrl}/api/auth/accept-invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: inviteToken, password: 'SupportCanvas2026!' }),
+    });
+    assert.equal(acceptInvite.status, 200);
+    const supportLogin = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'support@example.test', password: 'SupportCanvas2026!' }),
+    });
+    assert.equal(supportLogin.status, 200);
+
     const productResponse = await fetch(`${baseUrl}/api/entities/ShopProduct`, {
       method: 'POST',
       headers: securedHeaders,

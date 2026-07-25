@@ -36,7 +36,7 @@ export default function FloatingActions() {
         href={whatsappHref}
         target={cleanNumber ? '_blank' : undefined}
         rel={cleanNumber ? 'noopener noreferrer' : undefined}
-        className="flex h-12 min-w-12 items-center justify-center gap-2 rounded-full bg-[#25D366] px-3 text-white shadow-lg transition-transform hover:scale-105 hover:bg-[#20BA5A] focus-visible:ring-2 focus-visible:ring-white md:w-28"
+        className="flex h-12 min-w-12 items-center justify-center gap-2 rounded-full bg-[#075E54] px-3 text-white shadow-lg transition-transform hover:scale-105 hover:bg-[#128C7E] focus-visible:ring-2 focus-visible:ring-white md:w-28"
         aria-label={cleanNumber ? 'Contact Reigns Atelier on WhatsApp' : 'Open the contact page'}
         title={cleanNumber ? 'WhatsApp' : 'Contact Reigns Atelier'}
       >

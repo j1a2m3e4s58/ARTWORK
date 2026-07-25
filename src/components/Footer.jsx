@@ -62,7 +62,7 @@ export default function Footer() {
         {/* Mini gallery strip */}
         <div className="flex gap-2 mb-16 overflow-hidden">
           {galleryPreviews.map((img, i) => (
-            <Link key={i} to="/gallery" className="flex-1 min-w-0">
+            <Link key={i} to="/gallery" className="flex-1 min-w-0" aria-label={`View gallery artwork ${i + 1}`}>
               <div className="aspect-square overflow-hidden group">
                 <img
                   src={img}

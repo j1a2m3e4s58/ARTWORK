@@ -9,6 +9,8 @@ import { useAuth } from '@/lib/AuthContext';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import { useSettings } from '@/hooks/useSettings';
+import { useCollectionResource } from '@/hooks/useCollectionResource';
+import ResourceFeedback from '@/components/ResourceFeedback';
 
 const typeBadge = { Print: 'bg-brass/10 text-brass', Framed: 'bg-violet/30 text-soft-pink', 'Digital Download': 'bg-art-orange/10 text-art-orange', Original: 'bg-green-500/10 text-green-400' };
 
@@ -17,7 +19,7 @@ export default function Shop() {
   const page = usePageContent('Shop');
   const { user } = useAuth();
   const settings = useSettings();
-  const [products, setProducts] = useState([]);
+  const { data: products, loading, error, retry } = useCollectionResource('ShopProduct', { limit: 100 });
   const [filter, setFilter] = useState('All');
   const [cart, setCart] = useState([]);
   const [wishlist, setWishlist] = useState([]);
@@ -32,11 +34,6 @@ export default function Shop() {
   });
   const checkoutKey = useRef(crypto.randomUUID());
 
-  useEffect(() => {
-    studioClient.entities.ShopProduct.list('-created_date', 100).then(data => {
-      setProducts(data);
-    }).catch(() => {});
-  }, []);
   useEffect(() => {
     studioClient.payments.config().then(setPayment).catch(() => {});
   }, []);
@@ -156,9 +153,8 @@ export default function Shop() {
 
         {/* Grid */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12">
-          {filtered.length === 0 ? (
-            <div className="text-center py-24"><p className="text-ivory/30 font-tight">The collection is being prepared. Please check back soon.</p></div>
-          ) : (
+          <ResourceFeedback loading={loading} error={error} onRetry={retry} empty={!filtered.length} emptyMessage="The collection is being prepared. Please check back soon." />
+          {!loading && !error && filtered.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <AnimatePresence>
                 {filtered.map((product, i) => (
@@ -169,6 +165,7 @@ export default function Shop() {
                         <div className="absolute inset-0 bg-obsidian/0 group-hover:bg-obsidian/20 transition-colors duration-300" />
                         {product.isFeatured && <div className="absolute top-4 left-4 bg-brass text-obsidian font-tight text-[10px] px-3 py-1 tracking-widest uppercase">Featured</div>}
                         <button onClick={() => toggleWishlist(product.id)}
+                          aria-label={`${wishlist.includes(product.id) ? 'Remove' : 'Add'} ${product.title} ${wishlist.includes(product.id) ? 'from' : 'to'} wishlist`}
                           className={`absolute top-4 right-4 w-9 h-9 flex items-center justify-center border transition-all duration-200 ${wishlist.includes(product.id) ? 'border-brass bg-brass/20 text-brass' : 'border-ivory/20 text-ivory/60 bg-obsidian/40 hover:border-brass/40'}`}>
                           <Heart size={14} className={wishlist.includes(product.id) ? 'fill-brass' : ''} />
                         </button>
@@ -206,7 +203,7 @@ export default function Shop() {
               initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}>
               <div className="flex items-center justify-between p-6 border-b border-brass/10">
                 <h2 className="font-display text-2xl text-ivory">Cart <span className="text-brass/60 text-lg">({cartCount})</span></h2>
-                <button onClick={() => setCartOpen(false)} className="text-ivory/40 hover:text-brass transition-colors"><X size={20} /></button>
+                <button onClick={() => setCartOpen(false)} aria-label="Close cart" className="text-ivory/40 hover:text-brass transition-colors"><X size={20} /></button>
               </div>
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 {cart.length === 0 ? (
@@ -221,12 +218,12 @@ export default function Shop() {
                       <p className="text-ivory/80 text-sm font-tight leading-tight">{item.title}</p>
                       <p className="text-brass text-sm font-display mt-1">{formatMoney(item.price)}</p>
                       <div className="flex items-center gap-2 mt-2">
-                        <button onClick={() => item.qty > 1 ? setCart(c => c.map(i => i.id === item.id ? { ...i, qty: i.qty - 1 } : i)) : removeFromCart(item.id)} className="w-6 h-6 border border-brass/20 flex items-center justify-center text-ivory/60 hover:border-brass/40 transition-colors"><Minus size={10} /></button>
+                        <button onClick={() => item.qty > 1 ? setCart(c => c.map(i => i.id === item.id ? { ...i, qty: i.qty - 1 } : i)) : removeFromCart(item.id)} aria-label={`Decrease ${item.title} quantity`} className="w-6 h-6 border border-brass/20 flex items-center justify-center text-ivory/60 hover:border-brass/40 transition-colors"><Minus size={10} /></button>
                         <span className="text-ivory/70 text-xs w-4 text-center">{item.qty}</span>
-                        <button onClick={() => setCart(c => c.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i))} className="w-6 h-6 border border-brass/20 flex items-center justify-center text-ivory/60 hover:border-brass/40 transition-colors"><Plus size={10} /></button>
+                        <button onClick={() => setCart(c => c.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i))} aria-label={`Increase ${item.title} quantity`} className="w-6 h-6 border border-brass/20 flex items-center justify-center text-ivory/60 hover:border-brass/40 transition-colors"><Plus size={10} /></button>
                       </div>
                     </div>
-                    <button onClick={() => removeFromCart(item.id)} className="text-ivory/20 hover:text-brass/60 transition-colors flex-shrink-0"><X size={14} /></button>
+                    <button onClick={() => removeFromCart(item.id)} aria-label={`Remove ${item.title} from cart`} className="text-ivory/20 hover:text-brass/60 transition-colors flex-shrink-0"><X size={14} /></button>
                   </div>
                 ))}
               </div>

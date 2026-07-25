@@ -297,3 +297,21 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Keep secondary copy comfortably above WCAG AA contrast on the studio's dark surfaces. */
+:is(
+  [class*="text-ivory/2"],
+  [class*="text-ivory/3"],
+  [class*="text-ivory/4"],
+  [class*="text-ivory/5"]
+) {
+  color: rgb(249 246 240 / 0.72);
+}
+
+:is(
+  [class*="text-brass/4"],
+  [class*="text-brass/5"],
+  [class*="text-brass/6"]
+) {
+  color: rgb(201 169 110 / 0.9);
+}

@@ -1,11 +1,12 @@
-﻿import { useState, useEffect } from 'react';
+﻿import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, X, Eye, Clock } from 'lucide-react';
-import { studioClient } from '@/api/studioClient';
+import ResourceFeedback from '@/components/ResourceFeedback';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import { usePageContent } from '@/hooks/usePageContent';
+import { useCollectionResource } from '@/hooks/useCollectionResource';
 
 function formatViews(n) {
   if (!n) return 'New';
@@ -57,13 +58,9 @@ function VideoPlayer({ video }) {
 
 export default function Videos() {
   const page = usePageContent('Videos');
-  const [dbVideos, setDbVideos] = useState([]);
+  const { data: dbVideos, loading, error, retry } = useCollectionResource('Video');
   const [activeCategory, setActiveCategory] = useState('All');
   const [playing, setPlaying] = useState(null);
-
-  useEffect(() => {
-    studioClient.entities.Video.list('-created_date', 50).then(setDbVideos);
-  }, []);
 
   const allVideos = dbVideos;
   const categories = ['All', ...new Set(allVideos.map(video => video.category).filter(Boolean))];
@@ -103,7 +100,7 @@ export default function Videos() {
         </div>
 
         <div className="max-w-7xl mx-auto px-6 lg:px-12">
-          {!featured && <div className="border border-brass/10 py-20 text-center text-sm text-ivory/35">Studio films are being prepared. Please check back soon.</div>}
+          <ResourceFeedback loading={loading} error={error} onRetry={retry} empty={!featured} emptyMessage="Studio films are being prepared. Please check back soon." />
           {/* Featured */}
           {featured && (
             <ScrollReveal className="mb-10">
