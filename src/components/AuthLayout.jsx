@@ -2,12 +2,11 @@ import { useRef } from 'react';
 
 export default function AuthLayout({ icon: Icon, title, subtitle, footer, children }) {
   const holdTimer = useRef(null);
+  const openAdminSignIn = () => window.location.assign('/login?redirect=/admin&mode=admin');
   const startAdminHold = event => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     window.clearTimeout(holdTimer.current);
-    holdTimer.current = window.setTimeout(() => {
-      window.location.assign('/login?redirect=/admin&mode=admin');
-    }, 700);
+    holdTimer.current = window.setTimeout(openAdminSignIn, 700);
   };
   const cancelAdminHold = () => {
     window.clearTimeout(holdTimer.current);
@@ -22,7 +21,7 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, childr
         <div className="text-center mb-10">
           <button
             type="button"
-            onClick={() => window.location.assign('/login?redirect=/admin&mode=admin')}
+            onClick={openAdminSignIn}
             onPointerDown={startAdminHold}
             onPointerUp={cancelAdminHold}
             onPointerLeave={cancelAdminHold}
@@ -37,9 +36,20 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, childr
           >
             <img src="/brand/reigns-app-icon-192.png" alt="" className="h-20 w-20 rounded-full border border-brass/25 object-cover" draggable="false" />
           </button>
-          <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-brass/10 mb-4">
+          <button
+            type="button"
+            onClick={openAdminSignIn}
+            onPointerDown={startAdminHold}
+            onPointerUp={cancelAdminHold}
+            onPointerLeave={cancelAdminHold}
+            onPointerCancel={cancelAdminHold}
+            onContextMenu={event => event.preventDefault()}
+            className="mb-4 inline-flex h-10 w-10 touch-none items-center justify-center rounded-full bg-brass/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
+            aria-label="Open administrator sign-in from the security icon"
+            title="Open administrator sign-in"
+          >
             <Icon className="w-5 h-5 text-brass" aria-hidden="true" />
-          </div>
+          </button>
           <h1 className="font-display text-4xl text-ivory">{title}</h1>
           {subtitle && <p className="text-ivory/45 mt-2 text-sm">{subtitle}</p>}
         </div>

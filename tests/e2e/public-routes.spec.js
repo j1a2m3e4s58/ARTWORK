@@ -39,11 +39,17 @@ test('mobile navigation opens, traps the page, and closes with Escape', async ({
 
 test('pressing and holding the brand logo selects administrator sign-in', async ({ page }) => {
   await page.goto('/login');
-  const brand = page.getByRole('button', { name: 'Open administrator sign-in' });
+  const brand = page.getByRole('button', { name: 'Open administrator sign-in', exact: true });
   await brand.dispatchEvent('pointerdown', { pointerType: 'touch', button: 0 });
   await page.waitForTimeout(800);
   await expect(page).toHaveURL(/\/login\?redirect=\/admin&mode=admin/);
   await expect(page.getByRole('heading', { name: 'Studio administrator' })).toBeVisible();
+});
+
+test('the visible security icon opens administrator sign-in', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Open administrator sign-in from the security icon' }).click();
+  await expect(page).toHaveURL(/\/login\?redirect=\/admin&mode=admin/);
 });
 
 test('admin requires account login and then a password re-check', async ({ page }) => {

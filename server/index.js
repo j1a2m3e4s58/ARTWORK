@@ -412,12 +412,23 @@ app.use((req, res, next) => {
 async function ensureSeeds() {
   const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
   const adminPassword = process.env.ADMIN_PASSWORD;
-  if (adminEmail && adminPassword && !db.data.User.some(user => user.email === adminEmail)) {
-    db.data.User.push({
-      id: newId(), email: adminEmail, full_name: 'Studio Administrator',
-      passwordHash: await bcrypt.hash(adminPassword, 12), role: 'admin',
-      status: 'active', emailVerified: true, sessionVersion: 0, created_date: now(),
-    });
+  if (adminEmail && adminPassword) {
+    const configuredAdmin = db.data.User.find(user => user.email === adminEmail);
+    if (!configuredAdmin) {
+      db.data.User.push({
+        id: newId(), email: adminEmail, full_name: 'Studio Administrator',
+        passwordHash: await bcrypt.hash(adminPassword, 12), role: 'admin',
+        status: 'active', emailVerified: true, sessionVersion: 0, created_date: now(),
+      });
+    } else if (process.env.NODE_ENV !== 'production' && !(await bcrypt.compare(adminPassword, configuredAdmin.passwordHash))) {
+      // In local development the .env credentials are authoritative. This keeps
+      // a stale JSON database from silently locking the developer out.
+      configuredAdmin.passwordHash = await bcrypt.hash(adminPassword, 12);
+      configuredAdmin.role = 'admin';
+      configuredAdmin.status = 'active';
+      configuredAdmin.emailVerified = true;
+      configuredAdmin.sessionVersion = (configuredAdmin.sessionVersion || 0) + 1;
+    }
   }
   if (process.env.NODE_ENV === 'production' && process.env.SEED_DEMO_CONTENT !== 'true') {
     await save();
