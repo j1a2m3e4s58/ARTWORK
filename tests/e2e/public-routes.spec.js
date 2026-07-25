@@ -39,7 +39,7 @@ test('mobile navigation opens, traps the page, and closes with Escape', async ({
 
 test('pressing and holding the brand logo selects administrator sign-in', async ({ page }) => {
   await page.goto('/login');
-  const brand = page.getByRole('button', { name: 'Press and hold for administrator sign-in' });
+  const brand = page.getByRole('button', { name: 'Open administrator sign-in' });
   await brand.dispatchEvent('pointerdown', { pointerType: 'touch', button: 0 });
   await page.waitForTimeout(800);
   await expect(page).toHaveURL(/\/login\?redirect=\/admin&mode=admin/);

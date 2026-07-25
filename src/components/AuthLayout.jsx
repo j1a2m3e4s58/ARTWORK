@@ -22,6 +22,7 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, childr
         <div className="text-center mb-10">
           <button
             type="button"
+            onClick={() => window.location.assign('/login?redirect=/admin&mode=admin')}
             onPointerDown={startAdminHold}
             onPointerUp={cancelAdminHold}
             onPointerLeave={cancelAdminHold}
@@ -31,8 +32,8 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, childr
               if (event.key === 'Enter' || event.key === ' ') window.location.assign('/login?redirect=/admin&mode=admin');
             }}
             className="mx-auto mb-5 block touch-none rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
-            aria-label="Press and hold for administrator sign-in"
-            title="Press and hold for administrator sign-in"
+            aria-label="Open administrator sign-in"
+            title="Click or press and hold for administrator sign-in"
           >
             <img src="/brand/reigns-app-icon-192.png" alt="" className="h-20 w-20 rounded-full border border-brass/25 object-cover" draggable="false" />
           </button>

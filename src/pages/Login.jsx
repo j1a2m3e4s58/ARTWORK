@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, Lock, LogIn, Mail } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Lock, LogIn, Mail, ShieldCheck } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import AuthLayout from '@/components/AuthLayout';
 
@@ -9,6 +9,8 @@ export default function Login() {
     || new URLSearchParams(window.location.search).get('redirect') === '/admin';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const passwordRef = useRef(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [challenge, setChallenge] = useState('');
@@ -33,6 +35,10 @@ export default function Login() {
       window.location.assign(redirect.startsWith('/') ? redirect : '/');
     } catch (err) {
       setError(err.message);
+      if (!challenge) {
+        setPassword('');
+        window.requestAnimationFrame(() => passwordRef.current?.focus());
+      }
     } finally {
       setLoading(false);
     }
@@ -52,8 +58,12 @@ export default function Login() {
         {!challenge && <label htmlFor="login-password" className="block">
           <span className="mb-1.5 flex justify-between text-xs uppercase tracking-widest text-ivory/45">Password <Link to="/forgot-password" className="normal-case tracking-normal text-brass/70">Forgot?</Link></span>
           <span className="relative block"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-brass/50" size={16} />
-            <input id="login-password" name="password" type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}
-              className="w-full border border-brass/15 bg-obsidian py-3 pl-10 pr-3 text-sm text-ivory outline-none focus:border-brass/50" /></span>
+            <input ref={passwordRef} id="login-password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}
+              className="w-full border border-brass/15 bg-obsidian py-3 pl-10 pr-12 text-sm text-ivory outline-none focus:border-brass/50" />
+            <button type="button" onClick={() => setShowPassword(value => !value)} className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center text-ivory/60 hover:text-brass" aria-label={showPassword ? 'Hide password' : 'Show password'}>
+              {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+          </span>
         </label>}
         {challenge && <label htmlFor="login-code" className="block">
           <span className="mb-1.5 block text-xs uppercase tracking-widest text-ivory/45">Authenticator code</span>
@@ -63,6 +73,11 @@ export default function Login() {
         <button disabled={loading} className="flex w-full items-center justify-center gap-2 bg-brass py-3.5 text-sm uppercase tracking-wider text-obsidian disabled:opacity-50">
           {loading && <Loader2 className="animate-spin" size={16} />} {challenge ? 'Verify code' : 'Log in'}
         </button>
+        {!challenge && !adminMode && (
+          <button type="button" onClick={() => window.location.assign('/login?redirect=/admin&mode=admin')} className="flex w-full items-center justify-center gap-2 border border-brass/25 py-3 text-xs uppercase tracking-widest text-brass hover:bg-brass/10">
+            <ShieldCheck size={15} /> Administrator sign-in
+          </button>
+        )}
       </form>
     </AuthLayout>
   );
