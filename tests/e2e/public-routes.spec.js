@@ -37,6 +37,15 @@ test('mobile navigation opens, traps the page, and closes with Escape', async ({
   await expect(trigger).toBeFocused();
 });
 
+test('pressing and holding the brand logo selects administrator sign-in', async ({ page }) => {
+  await page.goto('/login');
+  const brand = page.getByRole('button', { name: 'Press and hold for administrator sign-in' });
+  await brand.dispatchEvent('pointerdown', { pointerType: 'touch', button: 0 });
+  await page.waitForTimeout(800);
+  await expect(page).toHaveURL(/\/login\?redirect=\/admin&mode=admin/);
+  await expect(page.getByRole('heading', { name: 'Studio administrator' })).toBeVisible();
+});
+
 test('admin requires account login and then a password re-check', async ({ page }) => {
   test.skip(page.viewportSize()?.width < 768, 'Run the security flow once on desktop.');
   await page.goto('/admin');

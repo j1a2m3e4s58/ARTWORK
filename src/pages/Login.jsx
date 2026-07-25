@@ -5,6 +5,8 @@ import { studioClient } from '@/api/studioClient';
 import AuthLayout from '@/components/AuthLayout';
 
 export default function Login() {
+  const adminMode = new URLSearchParams(window.location.search).get('mode') === 'admin'
+    || new URLSearchParams(window.location.search).get('redirect') === '/admin';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -37,7 +39,7 @@ export default function Login() {
   };
 
   return (
-    <AuthLayout icon={LogIn} title="Welcome back" subtitle="Sign in to continue your studio experience."
+    <AuthLayout icon={adminMode ? Lock : LogIn} title={adminMode ? 'Studio administrator' : 'Welcome back'} subtitle={adminMode ? 'Sign in with your administrator account to continue to Studio Control.' : 'Sign in to continue your studio experience.'}
       footer={<>New to the atelier? <Link to="/register" className="text-brass hover:underline">Create an account</Link></>}>
       {error && <div role="alert" className="mb-4 border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
       <form onSubmit={submit} className="space-y-4">
