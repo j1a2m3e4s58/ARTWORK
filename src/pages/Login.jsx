@@ -39,23 +39,23 @@ export default function Login() {
   return (
     <AuthLayout icon={LogIn} title="Welcome back" subtitle="Sign in to continue your studio experience."
       footer={<>New to the atelier? <Link to="/register" className="text-brass hover:underline">Create an account</Link></>}>
-      {error && <div className="mb-4 border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
+      {error && <div role="alert" className="mb-4 border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
       <form onSubmit={submit} className="space-y-4">
-        {!challenge && <label className="block">
+        {!challenge && <label htmlFor="login-email" className="block">
           <span className="mb-1.5 block text-xs uppercase tracking-widest text-ivory/45">Email address</span>
           <span className="relative block"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-brass/50" size={16} />
-            <input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)}
+            <input id="login-email" name="email" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)}
               className="w-full border border-brass/15 bg-obsidian py-3 pl-10 pr-3 text-sm text-ivory outline-none focus:border-brass/50" /></span>
         </label>}
-        {!challenge && <label className="block">
+        {!challenge && <label htmlFor="login-password" className="block">
           <span className="mb-1.5 flex justify-between text-xs uppercase tracking-widest text-ivory/45">Password <Link to="/forgot-password" className="normal-case tracking-normal text-brass/70">Forgot?</Link></span>
           <span className="relative block"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-brass/50" size={16} />
-            <input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}
+            <input id="login-password" name="password" type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}
               className="w-full border border-brass/15 bg-obsidian py-3 pl-10 pr-3 text-sm text-ivory outline-none focus:border-brass/50" /></span>
         </label>}
-        {challenge && <label className="block">
+        {challenge && <label htmlFor="login-code" className="block">
           <span className="mb-1.5 block text-xs uppercase tracking-widest text-ivory/45">Authenticator code</span>
-          <input inputMode="numeric" autoComplete="one-time-code" required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+          <input id="login-code" name="code" inputMode="numeric" autoComplete="one-time-code" required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
             className="w-full border border-brass/15 bg-obsidian px-4 py-3 text-center text-xl tracking-[0.4em] text-ivory outline-none focus:border-brass/50" />
         </label>}
         <button disabled={loading} className="flex w-full items-center justify-center gap-2 bg-brass py-3.5 text-sm uppercase tracking-wider text-obsidian disabled:opacity-50">

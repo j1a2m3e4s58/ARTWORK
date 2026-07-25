@@ -31,15 +31,7 @@ const SETTING_DEFAULTS = [
   { key: 'footer_copyright', label: 'Footer Copyright Text', value: '© 2026 Reigns Atelier. All artworks are the intellectual property of the artist.', group: 'Branding', icon: 'globe' },
   { key: 'site_tagline', label: 'Site Tagline', value: 'Where imagination bleeds onto canvas.', group: 'Branding', icon: 'globe' },
   { key: 'artist_photo', label: 'Artist Photo URL', value: '/brand/reigns-atelier-logo.jpg', group: 'Branding', icon: 'globe', hint: 'Upload or paste URL for the About page artist photo' },
-  { key: 'about_bio', label: 'About Bio', value: "I'm Reigns — a self-taught fine artist and digital illustrator obsessed with the space between a blank page and a completed masterpiece.", group: 'Branding', icon: 'globe' },
-  { key: 'stat_artworks', label: 'Stat: Artworks Created', value: '—', group: 'Stats', icon: 'globe' },
-  { key: 'stat_clients', label: 'Stat: Happy Clients', value: '—', group: 'Stats', icon: 'globe' },
-  { key: 'stat_years', label: 'Stat: Years of Practice', value: '—', group: 'Stats', icon: 'globe' },
-  { key: 'stat_awards', label: 'Stat: Awards Won', value: '—', group: 'Stats', icon: 'globe' },
-  { key: 'hero_image_1', label: 'Hero Image 1 URL', value: '/brand/reigns-atelier-logo.jpg', group: 'Hero Images', icon: 'globe' },
-  { key: 'hero_image_2', label: 'Hero Image 2 URL', value: '/brand/reigns-atelier-logo.jpg', group: 'Hero Images', icon: 'globe' },
-  { key: 'hero_image_3', label: 'Hero Image 3 URL', value: '/brand/reigns-atelier-logo.jpg', group: 'Hero Images', icon: 'globe' },
-  { key: 'hero_slide_seconds', label: 'Seconds Between Home Banners', value: '7', group: 'Hero Images', icon: 'globe', hint: 'Use the Home Banners tab to add, edit, arrange or remove slides.' },
+  { key: 'hero_slide_seconds', label: 'Seconds Between Home Banners', value: '7', group: 'Banners', icon: 'globe', hint: 'Use the Home Banners tab to add, edit, arrange or remove slides.' },
   { key: 'newsletter_heading', label: 'Newsletter Section Heading', value: 'Newsletter', group: 'Newsletter & Offers', icon: 'mail' },
   { key: 'newsletter_body', label: 'Newsletter Description Text', value: 'Stay inspired — new works, process videos, and exclusive offers.', group: 'Newsletter & Offers', icon: 'mail' },
   { key: 'newsletter_button', label: 'Subscribe Button Label', value: 'Subscribe', group: 'Newsletter & Offers', icon: 'mail' },
@@ -50,7 +42,7 @@ const SETTING_DEFAULTS = [
 
 const ICON_MAP = { phone: Phone, mail: Mail, instagram: Instagram, twitter: Twitter, youtube: Youtube, globe: Globe, message: MessageCircle };
 
-const GROUP_ORDER = ['Contact', 'Social', 'Branding', 'Navigation', 'Business', 'SEO & App', 'Stats', 'Hero Images', 'Newsletter & Offers'];
+const GROUP_ORDER = ['Contact', 'Social', 'Branding', 'Navigation', 'Business', 'SEO & App', 'Banners', 'Newsletter & Offers'];
 
 function SettingRow({ setting, onSave }) {
   const [val, setVal] = useState(setting.value);

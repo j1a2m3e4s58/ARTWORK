@@ -20,10 +20,10 @@ export default function AdminLayout() {
             </div>
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
-            <button onClick={lock} className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs text-ivory/55 hover:bg-ivory/5 hover:text-brass">
+            <button aria-label="Lock Studio Control" onClick={lock} className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs text-ivory/55 hover:bg-ivory/5 hover:text-brass">
               <LockKeyhole size={16} /><span className="hidden sm:inline">Lock</span>
             </button>
-            <Link to="/account" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs text-ivory/55 hover:bg-ivory/5 hover:text-brass">
+            <Link to="/account" aria-label="My account" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs text-ivory/55 hover:bg-ivory/5 hover:text-brass">
               <UserRound size={16} /><span className="hidden sm:inline">My account</span>
             </Link>
             <button onClick={() => logout()} className="flex min-h-11 items-center gap-2 rounded-lg border border-ivory/10 px-3 text-xs text-ivory/55 hover:border-brass/30 hover:text-brass" aria-label="Sign out">

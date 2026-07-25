@@ -7,6 +7,7 @@ import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import { useSettings } from '@/hooks/useSettings';
+import { usePageContent } from '@/hooks/usePageContent';
 
 const FEATURED_ARTWORKS_FALLBACK = [];
 
@@ -19,29 +20,15 @@ const STATS_FALLBACK = [
 
 const TESTIMONIALS_PREVIEW = [];
 
-const DEFAULT_QUOTES = [
-  { text: 'Art enables us to find ourselves and lose ourselves at the same time.', author: 'Thomas Merton' },
-  { text: 'Creativity takes courage.', author: 'Henri Matisse' },
-  { text: 'Every artist was first an amateur.', author: 'Ralph Waldo Emerson' },
-  { text: 'A picture is a poem without words.', author: 'Horace' },
-  { text: 'Art washes away from the soul the dust of everyday life.', author: 'Pablo Picasso' },
-  { text: 'The aim of art is to represent not the outward appearance, but inward significance.', author: 'Aristotle' },
-  { text: 'Where words end, art begins.', author: 'Anonymous' },
-  { text: 'Color is the place where our brain and the universe meet.', author: 'Paul Cézanne' },
-  { text: 'An empty canvas is an invitation to become fearless.', author: 'Anonymous' },
-  { text: 'Great art does not explain itself; it awakens something within us.', author: 'Anonymous' },
-  { text: 'The artist sees possibility where others see only space.', author: 'Anonymous' },
-  { text: 'A single line can hold an entire lifetime of feeling.', author: 'Anonymous' },
-];
-
 export default function Home() {
   const settings = useSettings();
+  const page = usePageContent('Home');
   const [heroIndex, setHeroIndex] = useState(0);
   const [heroSlides, setHeroSlides] = useState([]);
   const [studioVideos, setStudioVideos] = useState([]);
   const [testimonials, setTestimonials] = useState(() => TESTIMONIALS_PREVIEW.filter(() => false));
   const [featuredArtworks, setFeaturedArtworks] = useState(() => FEATURED_ARTWORKS_FALLBACK.filter(() => false));
-  const [quotes, setQuotes] = useState(DEFAULT_QUOTES);
+  const [quotes, setQuotes] = useState([]);
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [heroPaused, setHeroPaused] = useState(false);
   const heroRef = useRef(null);
@@ -58,14 +45,9 @@ export default function Home() {
       setHeroSlides(data.filter(slide => slide.active !== false));
     }).catch(() => {});
     studioClient.entities.Video.list('-created_date', 3).then(setStudioVideos).catch(() => {});
-    studioClient.entities.Quote.list('created_date').then(async data => {
-      if (data.length) {
-        setQuotes(data.filter(quote => quote.active !== false));
-      } else {
-        const seeded = await Promise.all(DEFAULT_QUOTES.map(quote => studioClient.entities.Quote.create({ ...quote, active: true })));
-        setQuotes(seeded);
-      }
-    });
+    studioClient.entities.Quote.list('created_date').then(data => {
+      setQuotes(data.filter(quote => quote.active !== false));
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -83,8 +65,8 @@ export default function Home() {
     eyebrow: 'Fine Art Studio',
     title: 'Reigns',
     accentTitle: 'Atelier',
-    subtitle: settings.hero_subtitle || 'Where imagination bleeds onto canvas. Fine art portraits, digital masterpieces, and bespoke commissions crafted with devotion.',
-    imageUrl: settings.hero_image_1 || '/brand/reigns-atelier-logo.jpg',
+    subtitle: page.hero_subtitle || 'Where imagination bleeds onto canvas. Fine art portraits, digital masterpieces, and bespoke commissions crafted with devotion.',
+    imageUrl: '/brand/reigns-atelier-logo.jpg',
     primaryLabel: 'View Gallery',
     primaryLink: '/gallery',
     secondaryLabel: 'Request Commission',
@@ -92,6 +74,9 @@ export default function Home() {
   };
   const slides = heroSlides.length ? heroSlides : [fallbackSlide];
   const activeSlide = slides[heroIndex % slides.length] || fallbackSlide;
+  const visibleStats = STATS_FALLBACK
+    .map(stat => ({ ...stat, value: page[stat.key] || stat.value }))
+    .filter(stat => stat.value && stat.value !== '—');
 
   useEffect(() => {
     const seconds = Math.max(4, Number(settings.hero_slide_seconds) || 7);
@@ -426,7 +411,7 @@ export default function Home() {
       )}
 
       {/* -- ARTIST QUOTE -- */}
-      <section className="py-24 relative overflow-hidden">
+      {quotes.length > 0 && <section className="py-24 relative overflow-hidden">
         <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 50% 50%, #3D2B52 0%, transparent 60%)' }} />
         <div className="noise-overlay absolute inset-0" />
         <div className="max-w-4xl mx-auto px-6 lg:px-12 text-center relative">
@@ -449,24 +434,24 @@ export default function Home() {
             </div>
           </ScrollReveal>
         </div>
-      </section>
+      </section>}
 
       {/* -- STATS -- */}
-      <section className="py-24 border-y border-brass/10 relative">
+      {visibleStats.length > 0 && <section className="py-24 border-y border-brass/10 relative">
         <div className="max-w-7xl mx-auto px-6 lg:px-12">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            {STATS_FALLBACK.map((stat, i) => (
+            {visibleStats.map((stat, i) => (
               <ScrollReveal key={stat.label} delay={i * 0.1} className="text-center">
-                <div className="font-display text-5xl md:text-6xl text-brass mb-2">{settings[stat.key] || stat.value}</div>
+                <div className="font-display text-5xl md:text-6xl text-brass mb-2">{stat.value}</div>
                 <div className="font-tight text-xs uppercase tracking-[0.25em] text-ivory/40">{stat.label}</div>
               </ScrollReveal>
             ))}
           </div>
         </div>
-      </section>
+      </section>}
 
       {/* -- TESTIMONIALS PREVIEW -- */}
-      <section className="py-32 bg-carbon relative overflow-hidden">
+      {testimonials.length > 0 && <section className="py-32 bg-carbon relative overflow-hidden">
         <div className="noise-overlay absolute inset-0" />
         <div className="max-w-7xl mx-auto px-6 lg:px-12 relative">
           <div className="text-center mb-16">
@@ -495,13 +480,13 @@ export default function Home() {
             ))}
           </div>
 
-          <ScrollReveal delay={0.4} className="text-center mt-12">
+          {settings.show_testimonials === 'true' && <ScrollReveal delay={0.4} className="text-center mt-12">
             <Link to="/testimonials" className="inline-flex items-center gap-2 text-brass font-tight text-sm tracking-wide border-b border-brass/30 hover:border-brass pb-1 transition-colors">
               Read All Reviews <ArrowRight size={14} />
             </Link>
-          </ScrollReveal>
+          </ScrollReveal>}
         </div>
-      </section>
+      </section>}
 
       {/* -- CTA -- */}
       <section className="py-32 relative overflow-hidden">
@@ -522,11 +507,11 @@ export default function Home() {
               >
                 Start Commission <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
               </Link>
-              <Link to="/shop"
+              {settings.show_shop !== 'false' && <Link to="/shop"
                 className="flex items-center gap-2 border border-brass/20 text-ivory/70 px-10 py-4 font-tight text-sm tracking-widest uppercase hover:border-brass/40 hover:text-brass transition-all duration-300"
               >
                 Browse Shop
-              </Link>
+              </Link>}
             </div>
           </ScrollReveal>
         </div>

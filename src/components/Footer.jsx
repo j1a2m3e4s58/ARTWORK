@@ -50,7 +50,7 @@ export default function Footer() {
           ) : (
             <span className="font-tight text-sm tracking-wide flex-1 text-center">{promoBanner}</span>
           )}
-          <button onClick={() => setBannerDismissed(true)} className="absolute right-4 top-1/2 -translate-y-1/2 hover:opacity-70 transition-opacity">
+          <button aria-label="Dismiss announcement" onClick={() => setBannerDismissed(true)} className="absolute right-4 top-1/2 -translate-y-1/2 hover:opacity-70 transition-opacity">
             <X size={14} />
           </button>
         </div>
@@ -82,10 +82,10 @@ export default function Footer() {
             <p className="font-tight text-[10px] uppercase tracking-[0.4em] text-brass/60 mb-4">{settings.site_logo_secondary || 'Atelier'}</p>
             <p className="text-ivory/40 text-sm leading-relaxed">Where imagination meets the canvas. Premium fine art commissions and original works.</p>
             <div className="flex gap-4 mt-6">
-              {settings.instagram_url && <a href={settings.instagram_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Instagram size={18} /></a>}
-              {settings.twitter_url && <a href={settings.twitter_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Twitter size={18} /></a>}
-              {settings.youtube_url && <a href={settings.youtube_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Youtube size={18} /></a>}
-              <a href={`mailto:${settings.contact_email || 'hello@reignsatelier.com'}`} className="text-ivory/30 hover:text-brass transition-colors"><Mail size={18} /></a>
+              {settings.instagram_url && <a aria-label="Instagram" href={settings.instagram_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Instagram size={18} /></a>}
+              {settings.twitter_url && <a aria-label="Twitter" href={settings.twitter_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Twitter size={18} /></a>}
+              {settings.youtube_url && <a aria-label="YouTube" href={settings.youtube_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Youtube size={18} /></a>}
+              {settings.contact_email && <a aria-label="Email the studio" href={`mailto:${settings.contact_email}`} className="text-ivory/30 hover:text-brass transition-colors"><Mail size={18} /></a>}
             </div>
           </div>
 
@@ -93,7 +93,12 @@ export default function Footer() {
           <div>
             <h4 className="font-tight text-xs uppercase tracking-[0.25em] text-brass/60 mb-6">Navigate</h4>
             <div className="flex flex-col gap-3">
-              {[['Gallery', '/gallery'], ['Commission', '/commission'], ['Shop', '/shop'], ['About', '/about']].map(([label, path]) => (
+              {[
+                settings.show_gallery !== 'false' && ['Gallery', '/gallery'],
+                ['Commission', '/commission'],
+                settings.show_shop !== 'false' && ['Available Works', '/shop'],
+                ['About', '/about'],
+              ].filter(Boolean).map(([label, path]) => (
                 <Link key={path} to={path} className="text-ivory/40 hover:text-ivory text-sm transition-colors flex items-center gap-1 group">
                   {label}
                   <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -124,15 +129,20 @@ export default function Footer() {
               <p className="text-brass text-sm font-tight">{settings.newsletter_success || 'Thank you for subscribing ✦'}</p>
             ) : (
               <form onSubmit={handleSubscribe} className="flex flex-col gap-2">
+                <label htmlFor="newsletter-email" className="sr-only">Email address</label>
                 <input
+                  id="newsletter-email"
+                  name="email"
                   type="email"
+                  autoComplete="email"
+                  required
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="your@email.com"
                   className="bg-obsidian border border-brass/20 text-ivory/80 text-sm px-4 py-2.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/50 transition-colors"
                 />
-                <label className="flex items-start gap-2 text-[11px] leading-relaxed text-ivory/35">
-                  <input type="checkbox" checked={newsletterConsent} onChange={event => setNewsletterConsent(event.target.checked)} className="mt-0.5 accent-brass" required />
+                <label htmlFor="newsletter-consent" className="flex items-start gap-2 text-[11px] leading-relaxed text-ivory/35">
+                  <input id="newsletter-consent" name="consent" type="checkbox" checked={newsletterConsent} onChange={event => setNewsletterConsent(event.target.checked)} className="mt-0.5 accent-brass" required />
                   I agree to receive studio news and understand I can unsubscribe at any time.
                 </label>
                 <TurnstileWidget onToken={setTurnstileToken} />

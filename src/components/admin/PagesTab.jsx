@@ -30,8 +30,8 @@ const PAGE_CONTENT_DEFAULTS = [
   { key: 'about_bio2', label: 'Bio (Second Paragraph)', value: 'Born from a deep love of portraiture and the classical masters, my work sits at the intersection of tradition and contemporary expression. I believe art should feel something — it should pull at you, even in silence.', group: 'About Page', page: 'About' },
   { key: 'about_mission', label: 'Mission Text', value: 'Art has the power to preserve memory, honor beauty, and give the intangible a home. I create to bridge the gap between what we feel and what we can say — to make the invisible visible through the patient work of the hand and heart.', group: 'About Page', page: 'About' },
   { key: 'about_inspiration', label: 'Inspiration Text', value: "The quiet drama of the human face. The way light falls across a sleeping figure. The tension in a pencil line that almost breaks. I am endlessly inspired by the masters — Rembrandt's chiaroscuro, Sargent's fluency, Moebius's precision — and by everyday life in all its gorgeous complexity.", group: 'About Page', page: 'About' },
-  { key: 'about_timeline', label: 'Timeline Events (format: year|event, one per line)', value: '2016|First sketchbook — drawing obsessively since childhood becomes a craft\n2018|First paid commission at 17 — a portrait that changed everything\n2020|Went fully digital — mastered Procreate and the Wacom tablet universe\n2022|Opened Reigns Atelier — turned passion into a professional studio\n2023|100+ commissions completed across 20 countries\n2025|First gallery exhibition — "Shadows & Lines" in Nairobi', group: 'About Page', page: 'About' },
-  { key: 'about_skills', label: 'Skills (format: name|level%, one per line)', value: 'Pencil & Charcoal|97\nDigital Illustration|93\nOil & Acrylic|85\nWatercolor|80\nInk Drawing|90\nPortrait Study|95', group: 'About Page', page: 'About' },
+  { key: 'about_timeline', label: 'Verified Timeline Events (format: year|event, one per line)', value: '', group: 'About Page', page: 'About' },
+  { key: 'about_skills', label: 'Verified Skills (format: name|level%, one per line)', value: '', group: 'About Page', page: 'About' },
   // Contact page
   { key: 'contact_eyebrow', label: 'Section Label', value: 'Get in Touch', group: 'Contact Page', page: 'Contact' },
   { key: 'contact_title', label: 'Page Title', value: "Let's Connect", group: 'Contact Page', page: 'Contact' },
@@ -60,10 +60,10 @@ const PAGE_CONTENT_DEFAULTS = [
   // Home page
   { key: 'hero_title', label: 'Hero Title', value: 'Reigns Atelier', group: 'Home Page', page: 'Home' },
   { key: 'hero_subtitle', label: 'Hero Subtitle', value: 'Where imagination bleeds onto canvas. Fine art portraits, digital masterpieces, and bespoke commissions crafted with devotion.', group: 'Home Page', page: 'Home' },
-  { key: 'stat_artworks', label: 'Stat: Artworks Created', value: '350+', group: 'Home Page', page: 'Home' },
-  { key: 'stat_clients', label: 'Stat: Happy Clients', value: '180+', group: 'Home Page', page: 'Home' },
-  { key: 'stat_years', label: 'Stat: Years of Practice', value: '8', group: 'Home Page', page: 'Home' },
-  { key: 'stat_awards', label: 'Stat: Awards Won', value: '12', group: 'Home Page', page: 'Home' },
+  { key: 'stat_artworks', label: 'Stat: Artworks Created', value: '—', group: 'Home Page', page: 'Home' },
+  { key: 'stat_clients', label: 'Stat: Happy Clients', value: '—', group: 'Home Page', page: 'Home' },
+  { key: 'stat_years', label: 'Stat: Years of Practice', value: '—', group: 'Home Page', page: 'Home' },
+  { key: 'stat_awards', label: 'Stat: Awards Won', value: '—', group: 'Home Page', page: 'Home' },
 ];
 
 const GROUP_ORDER = ['Home Page', 'Gallery Page', 'Shop Page', 'Videos Page', 'Blog Page', 'Testimonials Page', 'Commission Page', 'Commission Packages', 'Commission FAQs', 'About Page', 'Contact Page', 'Legal Pages'];

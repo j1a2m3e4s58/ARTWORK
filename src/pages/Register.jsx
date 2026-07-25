@@ -31,7 +31,7 @@ export default function Register() {
   return (
     <AuthLayout icon={UserPlus} title="Join the atelier" subtitle="Create an account to message the studio, request commissions, and track orders."
       footer={<>Already registered? <Link to="/login" className="text-brass hover:underline">Log in</Link></>}>
-      {error && <div className="mb-4 border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
+      {error && <div role="alert" className="mb-4 border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
       <form onSubmit={submit} className="space-y-4">
         {[
           { key: 'full_name', label: 'Full name', type: 'text', icon: User, autoComplete: 'name' },
@@ -39,11 +39,11 @@ export default function Register() {
           { key: 'password', label: 'Password', type: 'password', icon: Lock, autoComplete: 'new-password' },
           { key: 'confirm', label: 'Confirm password', type: 'password', icon: Lock, autoComplete: 'new-password' },
         ].map(({ key, label, icon: Icon, ...props }) => (
-          <label key={key} className="block">
+          <label key={key} htmlFor={`register-${key}`} className="block">
             <span className="mb-1.5 block text-xs uppercase tracking-widest text-ivory/45">{label}</span>
             <span className="relative block">
               <Icon className="absolute left-3 top-1/2 -translate-y-1/2 text-brass/50" size={16} />
-              <input {...props} minLength={props.type === 'password' ? 12 : undefined} required value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })}
+              <input id={`register-${key}`} name={key} {...props} minLength={props.type === 'password' ? 12 : undefined} required value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })}
                 className="w-full border border-brass/15 bg-obsidian py-3 pl-10 pr-3 text-sm text-ivory outline-none focus:border-brass/50" />
             </span>
           </label>

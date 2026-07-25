@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useRef } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, ArrowUpRight, UserRound, ShieldCheck } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
@@ -33,31 +33,7 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
-  const navigate = useNavigate();
   const menuButtonRef = useRef(null);
-  const logoPressTimerRef = useRef(null);
-  const logoLongPressRef = useRef(false);
-
-  const cancelLogoPress = () => {
-    if (logoPressTimerRef.current) window.clearTimeout(logoPressTimerRef.current);
-    logoPressTimerRef.current = null;
-  };
-
-  const startLogoPress = event => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    cancelLogoPress();
-    logoLongPressRef.current = false;
-    logoPressTimerRef.current = window.setTimeout(() => {
-      logoLongPressRef.current = true;
-      navigate('/admin');
-    }, 850);
-  };
-
-  const handleLogoClick = event => {
-    if (!logoLongPressRef.current) return;
-    event.preventDefault();
-    logoLongPressRef.current = false;
-  };
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 60);
@@ -66,7 +42,6 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => setMenuOpen(false), [location]);
-  useEffect(() => () => cancelLogoPress(), []);
   useEffect(() => {
     document.body.style.overflow = menuOpen ? 'hidden' : '';
     const closeOnEscape = event => {
@@ -96,13 +71,7 @@ export default function Navbar() {
           <div className="flex flex-col leading-none group select-none">
             <Link
               to="/"
-              onClick={handleLogoClick}
-              onPointerDown={startLogoPress}
-              onPointerUp={cancelLogoPress}
-              onPointerCancel={cancelLogoPress}
-              onPointerLeave={cancelLogoPress}
-              onContextMenu={event => event.preventDefault()}
-              className="flex touch-manipulation items-center gap-3"
+              className="flex items-center gap-3"
               aria-label="Reigns Atelier home"
             >
               <img src="/brand/reigns-app-icon-192.png" alt="" draggable="false" className="h-11 w-11 rounded-full border border-brass/20 object-cover" />
@@ -211,7 +180,7 @@ export default function Navbar() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-2">
                 {visibleLinks.map((link, i) => (
                   <motion.div
                     key={link.path}

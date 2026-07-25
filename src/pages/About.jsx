@@ -7,29 +7,23 @@ import { ArrowRight } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
 import { usePageContent } from '@/hooks/usePageContent';
 
-const DEFAULT_SKILLS = [
-  { name: 'Pencil & Charcoal', level: 97 },
-  { name: 'Digital Illustration', level: 93 },
-  { name: 'Oil & Acrylic', level: 85 },
-  { name: 'Watercolor', level: 80 },
-  { name: 'Ink Drawing', level: 90 },
-  { name: 'Portrait Study', level: 95 },
-];
-
-const DEFAULT_TIMELINE = [
-  { year: '2016', event: 'First sketchbook — drawing obsessively since childhood becomes a craft' },
-  { year: '2018', event: 'First paid commission at 17 — a portrait that changed everything' },
-  { year: '2020', event: 'Went fully digital — mastered Procreate and the Wacom tablet universe' },
-  { year: '2022', event: 'Opened Reigns Atelier — turned passion into a professional studio' },
-  { year: '2023', event: '100+ commissions completed across 20 countries' },
-  { year: '2025', event: 'First gallery exhibition — "Shadows & Lines" in Nairobi' },
-];
+const parseRows = (value, mapper) => String(value || '')
+  .split(/\r?\n/)
+  .map(row => row.trim())
+  .filter(Boolean)
+  .map(row => mapper(row.split('|').map(part => part.trim())))
+  .filter(Boolean);
 
 export default function About() {
   const settings = useSettings();
   const page = usePageContent('About');
-  const skills = (() => { try { return JSON.parse(page.about_skills); } catch { return DEFAULT_SKILLS; } })();
-  const timeline = (() => { try { return JSON.parse(page.about_timeline); } catch { return DEFAULT_TIMELINE; } })();
+  const skills = parseRows(page.about_skills, ([name, level]) => {
+    const numericLevel = Number.parseInt(level, 10);
+    return name && Number.isFinite(numericLevel)
+      ? { name, level: Math.min(100, Math.max(0, numericLevel)) }
+      : null;
+  });
+  const timeline = parseRows(page.about_timeline, ([year, event]) => year && event ? { year, event } : null);
 
   return (
     <PageTransition>
@@ -48,12 +42,12 @@ export default function About() {
               </ScrollReveal>
               <ScrollReveal delay={0.2}>
                 <p className="text-ivory/50 text-lg leading-relaxed mt-6 mb-8">
-                  {settings.about_bio || "I'm Reigns — a self-taught fine artist and digital illustrator obsessed with the space between a blank page and a completed masterpiece. Every stroke is intentional. Every shadow, earned."}
+                  {page.about_bio || 'Use the Admin workspace to add the artist biography.'}
                 </p>
               </ScrollReveal>
               <ScrollReveal delay={0.3}>
                 <p className="text-ivory/40 text-base leading-relaxed">
-                  {page.about_secondary_bio || 'Born from a deep love of portraiture and the classical masters, my work sits at the intersection of tradition and contemporary expression. I believe art should feel something — it should pull at you, even in silence.'}
+                  {page.about_bio2 || ''}
                 </p>
               </ScrollReveal>
               <ScrollReveal delay={0.4} className="mt-10">
@@ -75,7 +69,7 @@ export default function About() {
                 </div>
                 <div className="absolute -bottom-4 -right-4 w-32 h-32 border border-brass/20" />
                 <div className="absolute bottom-8 left-8">
-                  <p className="font-tight text-[10px] uppercase tracking-[0.3em] text-brass/70 mb-1">{page.about_established || 'Est. 2022'}</p>
+                  {page.about_established && <p className="font-tight text-[10px] uppercase tracking-[0.3em] text-brass/70 mb-1">{page.about_established}</p>}
                   <p className="font-display text-xl text-ivory">Reigns Atelier</p>
                 </div>
               </div>
@@ -108,7 +102,7 @@ export default function About() {
         </div>
 
         {/* Skills */}
-        <div className="max-w-7xl mx-auto px-6 lg:px-12 mb-24">
+        {skills.length > 0 && <div className="max-w-7xl mx-auto px-6 lg:px-12 mb-24">
           <ScrollReveal><SectionLabel>Expertise</SectionLabel></ScrollReveal>
           <ScrollReveal delay={0.1}><h2 className="font-display text-4xl text-ivory mt-2 mb-12">Skills & <em>Mastery</em></h2></ScrollReveal>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-16 gap-y-8">
@@ -132,10 +126,10 @@ export default function About() {
               </ScrollReveal>
             ))}
           </div>
-        </div>
+        </div>}
 
         {/* Timeline */}
-        <div className="max-w-7xl mx-auto px-6 lg:px-12">
+        {timeline.length > 0 && <div className="max-w-7xl mx-auto px-6 lg:px-12">
           <ScrollReveal><SectionLabel>Journey</SectionLabel></ScrollReveal>
           <ScrollReveal delay={0.1}><h2 className="font-display text-4xl text-ivory mt-2 mb-16">Artistic <em>Timeline</em></h2></ScrollReveal>
           <div className="relative">
@@ -173,7 +167,7 @@ export default function About() {
               ))}
             </div>
           </div>
-        </div>
+        </div>}
       </div>
     </PageTransition>
   );

@@ -39,6 +39,21 @@ The application creates and upgrades its relational schema during startup.
 Render only marks the release healthy when PostgreSQL, SMTP, Cloudinary,
 Turnstile, and the public origins are configured successfully.
 
+## Migrating existing media
+
+After the database and signed Cloudinary variables are connected, audit and
+migrate external starter media with:
+
+```bash
+npm run media:migrate
+npm run media:migrate -- --apply
+```
+
+The first command is a dry run. The apply command uploads each asset, preserves
+its original source URL on the record, and replaces the public URL with
+Cloudinary's durable HTTPS URL. Back up the database and confirm each asset's
+licence before applying this to production.
+
 ## First-release verification
 
 After the deployment becomes live:

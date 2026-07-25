@@ -86,16 +86,20 @@ export default function Contact() {
                   <h2 className="font-display text-3xl text-ivory mb-8">{page.contact_form_title || 'Send a Message'}</h2>
                   {error && <p role="alert" className="border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-300">{error}</p>}
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <input placeholder="Your name" value={form.name} onChange={e => set('name', e.target.value)}
+                    <label htmlFor="contact-name" className="sr-only">Your name</label>
+                    <input id="contact-name" name="name" autoComplete="name" placeholder="Your name" value={form.name} onChange={e => set('name', e.target.value)}
                       className="min-w-0 w-full bg-carbon border border-brass/15 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/40 transition-colors text-sm" required />
-                    <input type="email" aria-label="Account email" value={form.email} readOnly
+                    <label htmlFor="contact-email" className="sr-only">Account email</label>
+                    <input id="contact-email" name="email" type="email" value={form.email} readOnly
                       className="min-w-0 w-full bg-carbon border border-brass/15 text-ivory/50 px-5 py-3.5 text-sm" required />
                   </div>
                   <input tabIndex="-1" autoComplete="off" value={form.website} onChange={event => set('website', event.target.value)}
                     className="absolute -left-[9999px] h-px w-px opacity-0" aria-hidden="true" />
-                  <input placeholder="Subject" value={form.subject} onChange={e => set('subject', e.target.value)}
+                  <label htmlFor="contact-subject" className="sr-only">Subject</label>
+                  <input id="contact-subject" name="subject" placeholder="Subject" value={form.subject} onChange={e => set('subject', e.target.value)}
                     className="w-full bg-carbon border border-brass/15 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/40 transition-colors text-sm" />
-                  <textarea placeholder="Your message..." value={form.message} onChange={e => set('message', e.target.value)} rows={6}
+                  <label htmlFor="contact-message" className="sr-only">Your message</label>
+                  <textarea id="contact-message" name="message" placeholder="Your message..." value={form.message} onChange={e => set('message', e.target.value)} rows={6}
                     className="w-full bg-carbon border border-brass/15 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/40 transition-colors text-sm resize-none" required />
                   <button type="submit" disabled={sending}
                     className="flex items-center gap-2 bg-brass text-obsidian px-8 py-4 font-tight text-sm tracking-widest uppercase hover:bg-brass-light transition-all group disabled:opacity-50">
@@ -156,7 +160,7 @@ export default function Contact() {
                   <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 50% 80%, #3D2B52 0%, transparent 60%)' }} />
                   <div className="text-center relative">
                     <MapPin size={24} className="text-brass/40 mx-auto mb-2" />
-                    <p className="font-tight text-xs uppercase tracking-widest text-ivory/30">{page.contact_studio_map_label || 'Nairobi, Kenya'}</p>
+                    <p className="font-tight text-xs uppercase tracking-widest text-ivory/30">{page.contact_studio_map_label || 'Studio visits by appointment'}</p>
                     <p className="text-ivory/20 text-xs mt-1">{page.contact_studio_map_sublabel || 'Remote commissions worldwide'}</p>
                   </div>
                 </div>

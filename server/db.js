@@ -70,6 +70,10 @@ async function createRelationalSchema(client) {
   await client.query('CREATE INDEX IF NOT EXISTS orders_payment_reference_idx ON orders ((data->>\'paymentReference\'))');
   await client.query('CREATE UNIQUE INDEX IF NOT EXISTS payment_events_provider_id_idx ON payment_events ((data->>\'providerEventId\'))');
   await client.query('CREATE INDEX IF NOT EXISTS site_content_key_idx ON site_content ((data->>\'key\'))');
+  await client.query('CREATE INDEX IF NOT EXISTS site_content_page_key_idx ON site_content ((data->>\'page\'), (data->>\'key\'))');
+  await client.query("CREATE INDEX IF NOT EXISTS orders_idempotency_key_idx ON orders ((data->>'userId'), (data->>'idempotencyKey')) WHERE COALESCE(data->>'idempotencyKey', '') <> ''");
+  await client.query("CREATE INDEX IF NOT EXISTS outbox_status_created_idx ON email_outbox ((data->>'status'), (data->>'created_date'))");
+  await client.query("CREATE INDEX IF NOT EXISTS commissions_status_created_idx ON commission_requests ((data->>'status'), (data->>'created_date'))");
 }
 
 async function importLegacySingleton(client) {
@@ -130,26 +134,57 @@ if (process.env.DATABASE_URL) {
         const writer = await postgresPool.connect();
         try {
           await writer.query('BEGIN');
+          // Serialize state-diff commits across Render instances. The in-process
+          // queue below is not sufficient when more than one Node process runs.
+          await writer.query("SELECT pg_advisory_xact_lock(hashtext('reigns_atelier_state_write'))");
           for (const name of collectionNames) {
             const table = tableNames[name];
             const before = snapshots.get(name) || new Map();
             const current = new Map((database.data[name] || []).map(record => [record.id, serialize(record)]));
             for (const [id, payload] of current) {
               if (before.get(id) === payload) continue;
-              await writer.query(
-                `INSERT INTO ${table} (id, data) VALUES ($1, $2::jsonb)
-                 ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
-                [id, payload],
+              if (!before.has(id)) {
+                await writer.query(`INSERT INTO ${table} (id, data) VALUES ($1, $2::jsonb)`, [id, payload]);
+                continue;
+              }
+              const result = await writer.query(
+                `UPDATE ${table}
+                 SET data = $2::jsonb, updated_at = NOW()
+                 WHERE id = $1 AND data = $3::jsonb`,
+                [id, payload, before.get(id)],
               );
+              if (result.rowCount !== 1) {
+                const conflict = new Error(`${name} ${id} changed while this request was being processed. Please retry.`);
+                conflict.status = 409;
+                throw conflict;
+              }
             }
-            for (const id of before.keys()) {
-              if (!current.has(id)) await writer.query(`DELETE FROM ${table} WHERE id = $1`, [id]);
+            for (const [id, previousPayload] of before) {
+              if (current.has(id)) continue;
+              const result = await writer.query(
+                `DELETE FROM ${table} WHERE id = $1 AND data = $2::jsonb`,
+                [id, previousPayload],
+              );
+              if (result.rowCount !== 1) {
+                const conflict = new Error(`${name} ${id} changed before it could be deleted. Please retry.`);
+                conflict.status = 409;
+                throw conflict;
+              }
             }
           }
           await writer.query('COMMIT');
           takeSnapshots(database.data);
         } catch (error) {
           await writer.query('ROLLBACK');
+          if (error.code === '23505' || error.status === 409) {
+            const freshData = await loadPostgresData(writer);
+            database.data = freshData;
+            takeSnapshots(freshData);
+            if (!error.status) {
+              error.status = 409;
+              error.message = 'This record was created by another request. Refresh and try again.';
+            }
+          }
           throw error;
         } finally {
           writer.release();

@@ -10,6 +10,7 @@ import { usePageContent } from '@/hooks/usePageContent';
 import CommissionBriefBuilder from '@/components/CommissionBriefBuilder';
 import CommissionGuideChat from '@/components/CommissionGuideChat';
 import { useAuth } from '@/lib/AuthContext';
+import { Link } from 'react-router-dom';
 
 const DEFAULT_PACKAGES = [
   { name: 'Sketch Study', price: 'GH₵ 800', duration: '5-7 days', features: ['One subject', 'Pencil / Charcoal', 'Digital delivery', '1 revision', 'A4 size'] },
@@ -31,8 +32,18 @@ export default function Commission() {
   const settings = useSettings();
   const { user } = useAuth();
   const page = usePageContent('Commission');
-  const packages = (() => { try { return JSON.parse(page.commission_packages); } catch { return DEFAULT_PACKAGES; } })();
-  const faqs = (() => { try { return JSON.parse(page.commission_faqs); } catch { return DEFAULT_FAQS; } })();
+  const packages = [1, 2, 3].map((number, index) => ({
+    name: page[`commission_pkg${number}_name`] || DEFAULT_PACKAGES[index].name,
+    price: page[`commission_pkg${number}_price`] || DEFAULT_PACKAGES[index].price,
+    duration: page[`commission_pkg${number}_duration`] || DEFAULT_PACKAGES[index].duration,
+    features: String(page[`commission_pkg${number}_features`] || DEFAULT_PACKAGES[index].features.join(','))
+      .split(',').map(feature => feature.trim()).filter(Boolean),
+    featured: number === 2,
+  }));
+  const faqs = [1, 2, 3, 4].map((number, index) => ({
+    q: page[`commission_faq${number}_q`] || DEFAULT_FAQS[index].q,
+    a: page[`commission_faq${number}_a`] || DEFAULT_FAQS[index].a,
+  })).filter(faq => faq.q && faq.a);
 
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({ name: user?.full_name || '', email: user?.email || '', phone: '', artworkType: '', budget: '', deadline: '', description: '', package: '', referenceImageUrl: '' });
@@ -100,12 +111,14 @@ export default function Commission() {
               Thank you, {form.name}. Your commission request has been received. I will review it and respond within 24 hours with next steps.
             </p>
             <div className="flex flex-col gap-3">
-              <a href={`https://wa.me/${(settings.whatsapp_number || '1234567890').replace(/[^+\d]/g, '')}?text=Hello, I just submitted a commission request as ${encodeURIComponent(form.name)}`}
+              {settings.whatsapp_number ? <a href={`https://wa.me/${settings.whatsapp_number.replace(/[^\d]/g, '')}?text=Hello, I just submitted a commission request as ${encodeURIComponent(form.name)}`}
                 target="_blank" rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 bg-[#25D366] text-white py-3 font-tight text-sm tracking-wide hover:bg-[#20BA5A] transition-colors"
               >
                 Follow up on WhatsApp
-              </a>
+              </a> : <Link to="/contact" className="flex items-center justify-center gap-2 border border-brass/30 text-brass py-3 font-tight text-sm tracking-wide hover:border-brass transition-colors">
+                Contact the studio
+              </Link>}
               <button onClick={() => { setSubmitted(false); setForm({ name: user?.full_name || '', email: user?.email || '', phone: '', artworkType: '', budget: '', deadline: '', description: '', package: '', referenceImageUrl: '' }); setStep(1); }}
                 className="border border-brass/20 text-ivory/60 py-3 font-tight text-sm tracking-wide hover:border-brass/40 transition-colors"
               >
@@ -201,11 +214,14 @@ export default function Commission() {
                 {step === 1 && (
                   <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
                     <p className="text-ivory/50 text-sm mb-6">Step 1 of 3 — Your details</p>
-                    <input placeholder="Your full name *" value={form.name} onChange={e => set('name', e.target.value)}
+                    <label htmlFor="commission-name" className="sr-only">Your full name</label>
+                    <input id="commission-name" name="name" autoComplete="name" placeholder="Your full name *" value={form.name} onChange={e => set('name', e.target.value)}
                       className="w-full bg-obsidian border border-brass/20 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/50 transition-colors text-sm" />
-                    <input type="email" aria-label="Account email" value={form.email} readOnly
+                    <label htmlFor="commission-email" className="sr-only">Account email</label>
+                    <input id="commission-email" name="email" type="email" value={form.email} readOnly
                       className="w-full bg-obsidian border border-brass/20 text-ivory/50 px-5 py-3.5 text-sm" />
-                    <input type="tel" placeholder="Phone / WhatsApp (optional)" value={form.phone} onChange={e => set('phone', e.target.value)}
+                    <label htmlFor="commission-phone" className="sr-only">Phone or WhatsApp number</label>
+                    <input id="commission-phone" name="phone" autoComplete="tel" type="tel" placeholder="Phone / WhatsApp (optional)" value={form.phone} onChange={e => set('phone', e.target.value)}
                       className="w-full bg-obsidian border border-brass/20 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/50 transition-colors text-sm" />
                     <button onClick={() => setStep(2)} disabled={!form.name || !form.email}
                       className="w-full flex items-center justify-center gap-2 bg-brass text-obsidian py-4 font-tight text-sm tracking-widest uppercase hover:bg-brass-light transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed mt-4">
@@ -216,7 +232,8 @@ export default function Commission() {
                 {step === 2 && (
                   <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
                     <p className="text-ivory/50 text-sm mb-6">Step 2 of 3 — Artwork details</p>
-                    <div className="grid grid-cols-2 gap-2">
+                    <fieldset className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-2">
+                      <legend className="sr-only">Artwork type</legend>
                       {ARTWORK_TYPES.map(type => (
                         <button key={type} onClick={() => set('artworkType', type)}
                           className={`py-3 px-4 border text-sm font-tight tracking-wide text-left transition-all duration-200 ${
@@ -225,8 +242,9 @@ export default function Commission() {
                           {type}
                         </button>
                       ))}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 mt-2">
+                    </fieldset>
+                    <fieldset className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-2 mt-2">
+                      <legend className="sr-only">Budget</legend>
                       {BUDGETS.map(b => (
                         <button key={b} onClick={() => set('budget', b)}
                           className={`py-3 px-4 border text-sm font-tight tracking-wide transition-all duration-200 ${
@@ -235,8 +253,9 @@ export default function Commission() {
                           {b}
                         </button>
                       ))}
-                    </div>
-                    <input type="date" value={form.deadline} onChange={e => set('deadline', e.target.value)}
+                    </fieldset>
+                    <label htmlFor="commission-deadline" className="sr-only">Preferred deadline</label>
+                    <input id="commission-deadline" name="deadline" type="date" value={form.deadline} onChange={e => set('deadline', e.target.value)}
                       className="w-full bg-obsidian border border-brass/20 text-ivory/60 px-5 py-3.5 focus:outline-none focus:border-brass/50 transition-colors text-sm" />
                     <div className="flex gap-3 mt-4">
                       <button onClick={() => setStep(1)} className="flex-1 border border-brass/20 text-ivory/50 py-4 font-tight text-sm tracking-widest uppercase hover:border-brass/40 transition-all">Back</button>
@@ -251,14 +270,16 @@ export default function Commission() {
                   <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
                     <p className="text-ivory/50 text-sm mb-6">Step 3 of 3 — Your vision</p>
                     <CommissionBriefBuilder form={form} set={set} />
-                    <textarea
+                    <label htmlFor="commission-description" className="sr-only">Describe your vision</label>
+                    <textarea id="commission-description" name="description"
                       placeholder="Describe your vision in detail. What emotions should the artwork evoke? Any specific elements, colors, or references? *"
                       value={form.description}
                       onChange={e => set('description', e.target.value)}
                       rows={6}
                       className="w-full bg-obsidian border border-brass/20 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/50 transition-colors text-sm resize-none"
                     />
-                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
+                    <label htmlFor="commission-reference" className="sr-only">Reference image</label>
+                    <input id="commission-reference" name="referenceImage" ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
                     <div
                       className="border border-dashed border-brass/20 p-6 text-center hover:border-brass/40 transition-colors cursor-pointer relative"
                       onClick={() => !uploading && fileInputRef.current?.click()}
@@ -298,6 +319,7 @@ export default function Commission() {
               <ScrollReveal key={i} delay={i * 0.05}>
                 <div className="border border-brass/10 overflow-hidden">
                   <button
+                    aria-expanded={openFaq === i}
                     onClick={() => setOpenFaq(openFaq === i ? null : i)}
                     className="w-full flex items-center justify-between p-6 text-left hover:bg-brass/3 transition-colors"
                   >
