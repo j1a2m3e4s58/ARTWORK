@@ -22,7 +22,16 @@ export default defineConfig({
     reducedMotion: 'reduce',
   },
   projects: [
+    {
+      name: 'small-mobile-chromium',
+      use: {
+        ...devices['iPhone 13'],
+        browserName: 'chromium',
+        viewport: { width: 320, height: 568 },
+      },
+    },
     { name: 'mobile-chromium', use: { ...devices['iPhone 13'], browserName: 'chromium' } },
+    { name: 'tablet-chromium', use: { ...devices['iPad Mini'], browserName: 'chromium' } },
     { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'] } },
   ],
   webServer: externalBaseUrl ? undefined : {

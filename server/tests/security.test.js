@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { canUseProtectedFeature, passwordProblem, requiresProductionMfa } from '../security.js';
+import { validateRuntimeConfiguration } from '../runtime-config.js';
 
 test('password policy rejects weak credentials and accepts a strong passphrase', () => {
   assert.match(passwordProblem('short'), /12 characters/);
@@ -19,4 +20,24 @@ test('production administrators must enable MFA', () => {
   assert.equal(requiresProductionMfa({ role: 'admin', mfaEnabled: false }, 'production', true), true);
   assert.equal(requiresProductionMfa({ role: 'admin', mfaEnabled: true }, 'production', true), false);
   assert.equal(requiresProductionMfa({ role: 'editor', mfaEnabled: false }, 'production', true), false);
+});
+
+test('production configuration rejects temporary services and insecure origins', () => {
+  const problems = validateRuntimeConfiguration({
+    NODE_ENV: 'production',
+    TRUST_PROXY: 'false',
+    STORAGE_PROVIDER: 'local',
+    JWT_SECRET: 'short',
+    ADMIN_PASSWORD: 'short',
+    APP_ORIGIN: 'http://example.com',
+    SITE_URL: 'http://example.com',
+  });
+  assert.ok(problems.some(problem => problem.includes('DATABASE_URL')));
+  assert.ok(problems.some(problem => problem.includes('TRUST_PROXY')));
+  assert.ok(problems.some(problem => problem.includes('cloudinary')));
+  assert.ok(problems.some(problem => problem.includes('HTTPS')));
+});
+
+test('development configuration permits local infrastructure', () => {
+  assert.deepEqual(validateRuntimeConfiguration({ NODE_ENV: 'development' }), []);
 });

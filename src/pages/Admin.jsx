@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Image, ShoppingBag, MessageSquare, BookOpen,
@@ -24,25 +25,27 @@ import MediaLibraryTab from '@/components/admin/MediaLibraryTab';
 import RecycleBinTab from '@/components/admin/RecycleBinTab';
 
 const allTabs = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { id: 'gallery', label: 'Gallery', icon: Image },
-  { id: 'banners', label: 'Home Banners', icon: PanelsTopLeft },
-  { id: 'media', label: 'Media Library', icon: Library },
-  { id: 'recycle', label: 'Recycle Bin', icon: ArchiveRestore },
-  { id: 'videos', label: 'Videos', icon: Video },
-  { id: 'shop', label: 'Shop', icon: ShoppingBag },
-  { id: 'commissions', label: 'Commissions', icon: MessageSquare },
-  { id: 'testimonials', label: 'Testimonials', icon: Star },
-  { id: 'quotes', label: 'Art Quotes', icon: FileText },
-  { id: 'inbox', label: 'Inbox', icon: MessageSquare },
-  { id: 'orders', label: 'Orders', icon: PackageCheck },
-  { id: 'users', label: 'Users', icon: Users },
-  { id: 'pages', label: 'Page Content', icon: FileText },
-  { id: 'blog', label: 'Blog', icon: BookOpen },
-  { id: 'subscribers', label: 'Subscribers', icon: Users },
-  { id: 'settings', label: 'Settings', icon: Settings },
-  { id: 'system', label: 'System', icon: Activity },
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard, group: 'Dashboard' },
+  { id: 'gallery', label: 'Gallery', icon: Image, group: 'Content' },
+  { id: 'banners', label: 'Home Banners', icon: PanelsTopLeft, group: 'Content' },
+  { id: 'media', label: 'Media Library', icon: Library, group: 'Content' },
+  { id: 'videos', label: 'Videos', icon: Video, group: 'Content' },
+  { id: 'testimonials', label: 'Testimonials', icon: Star, group: 'Content' },
+  { id: 'quotes', label: 'Art Quotes', icon: FileText, group: 'Content' },
+  { id: 'pages', label: 'Page Content', icon: FileText, group: 'Content' },
+  { id: 'blog', label: 'Blog', icon: BookOpen, group: 'Content' },
+  { id: 'shop', label: 'Available Works', icon: ShoppingBag, group: 'Sales' },
+  { id: 'orders', label: 'Orders', icon: PackageCheck, group: 'Sales' },
+  { id: 'commissions', label: 'Commissions', icon: MessageSquare, group: 'Sales' },
+  { id: 'inbox', label: 'Inbox', icon: MessageSquare, group: 'Communication' },
+  { id: 'subscribers', label: 'Subscribers', icon: Users, group: 'Communication' },
+  { id: 'users', label: 'Users', icon: Users, group: 'People' },
+  { id: 'settings', label: 'Settings', icon: Settings, group: 'System' },
+  { id: 'system', label: 'System Health', icon: Activity, group: 'System' },
+  { id: 'recycle', label: 'Recycle Bin', icon: ArchiveRestore, group: 'System' },
 ];
+
+const tabGroups = ['Dashboard', 'Content', 'Sales', 'Communication', 'People', 'System'];
 
 const STATUS_COLORS = {
   pending: 'text-yellow-400 bg-yellow-400/10',
@@ -122,13 +125,16 @@ function EditModal({ item, fields, onSave, onClose, title }) {
 
 export default function Admin() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const roleTabs = {
     admin: allTabs.map(tab => tab.id),
     editor: ['overview', 'gallery', 'banners', 'media', 'recycle', 'videos', 'shop', 'testimonials', 'quotes', 'pages', 'blog'],
     support: ['overview', 'inbox', 'commissions', 'orders'],
   };
   const tabs = allTabs.filter(tab => roleTabs[user?.role || 'support'].includes(tab.id));
-  const [activeTab, setActiveTab] = useState('overview');
+  const requestedSection = searchParams.get('section');
+  const initialSection = tabs.some(tab => tab.id === requestedSection) ? requestedSection : 'overview';
+  const [activeTab, setActiveTab] = useState(initialSection);
   const [artworks, setArtworks] = useState([]);
   const [videos, setVideos] = useState([]);
   const [products, setProducts] = useState([]);
@@ -152,6 +158,26 @@ export default function Admin() {
   const [newVideo, setNewVideo] = useState({ title: '', videoUrl: '', thumbnailUrl: '', category: 'Process', description: '', duration: '', isFeatured: false, status: 'draft' });
   const [newArtwork, setNewArtwork] = useState({ title: '', category: 'Portraits', imageUrl: '', medium: '', description: '', price: '', status: 'draft' });
   const pendingMessageCount = messages.filter(message => !['replied', 'archived', 'spam'].includes(message.status)).length;
+
+  const selectTab = id => {
+    if (!tabs.some(tab => tab.id === id)) return;
+    setActiveTab(id);
+    setSearchParams(current => {
+      const next = new URLSearchParams(current);
+      if (id === 'overview') next.delete('section');
+      else next.set('section', id);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const nextSection = searchParams.get('section');
+    if (tabs.some(tab => tab.id === nextSection)) {
+      if (nextSection !== activeTab) setActiveTab(nextSection);
+    } else if (activeTab !== 'overview') {
+      setActiveTab('overview');
+    }
+  }, [searchParams, tabs, activeTab]);
 
   useEffect(() => {
     if (user?.role === 'editor') return undefined;
@@ -268,26 +294,39 @@ export default function Admin() {
             <p className="font-tight text-[10px] uppercase tracking-[0.3em] text-brass/50">Admin Panel</p>
             <p className="font-display text-lg text-ivory mt-1">Reigns Atelier</p>
           </div>
-          {tabs.map(({ id, label, icon: Icon }) => (
-            <button key={id} onClick={() => setActiveTab(id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 mb-0.5 text-left transition-all duration-200 ${
-                activeTab === id ? 'bg-brass/10 text-brass border-l-2 border-brass' : 'text-ivory/40 hover:text-ivory/70 hover:bg-brass/5'
-              }`}>
-              <Icon size={15} />
-              <span className="font-tight text-sm">{label}</span>
-              {id === 'inbox' && pendingMessageCount > 0 && (
-                <span className="ml-auto min-w-5 rounded-full bg-brass px-1.5 py-0.5 text-center text-[10px] font-semibold text-obsidian">
-                  {pendingMessageCount}
-                </span>
-              )}
-            </button>
-          ))}
+          {tabGroups.map(group => {
+            const groupTabs = tabs.filter(tab => tab.group === group);
+            if (!groupTabs.length) return null;
+            return (
+              <section key={group} className="mb-5" aria-labelledby={`admin-group-${group.toLowerCase()}`}>
+                <h2 id={`admin-group-${group.toLowerCase()}`} className="mb-1 px-3 text-[9px] font-semibold uppercase tracking-[0.22em] text-ivory/25">
+                  {group}
+                </h2>
+                {groupTabs.map(({ id, label, icon: Icon }) => (
+                  <button key={id} onClick={() => selectTab(id)}
+                    aria-current={activeTab === id ? 'page' : undefined}
+                    className={`mb-0.5 flex w-full items-center gap-3 px-3 py-2.5 text-left transition-all duration-200 ${
+                      activeTab === id ? 'border-l-2 border-brass bg-brass/10 text-brass' : 'text-ivory/40 hover:bg-brass/5 hover:text-ivory/70'
+                    }`}>
+                    <Icon size={15} />
+                    <span className="font-tight text-sm">{label}</span>
+                    {id === 'inbox' && pendingMessageCount > 0 && (
+                      <span className="ml-auto min-w-5 rounded-full bg-brass px-1.5 py-0.5 text-center text-[10px] font-semibold text-obsidian">
+                        {pendingMessageCount}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </section>
+            );
+          })}
         </div>
 
         {/* Mobile bottom bar */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-carbon/95 backdrop-blur-xl border-t border-brass/10 z-50 flex px-2 pb-[max(.4rem,env(safe-area-inset-bottom))]">
           {tabs.filter(tab => ['overview', 'inbox', 'commissions', 'users'].includes(tab.id)).map(({ id, label, icon: Icon }) => (
-            <button key={id} onClick={() => setActiveTab(id)}
+            <button key={id} onClick={() => selectTab(id)}
+              aria-current={activeTab === id ? 'page' : undefined}
               className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-2 transition-colors ${activeTab === id ? 'text-brass' : 'text-ivory/30'}`}>
               <Icon size={17} /><span className="text-[9px] font-tight">{label}</span>
               {id === 'inbox' && pendingMessageCount > 0 && (
@@ -308,18 +347,30 @@ export default function Admin() {
               <motion.div className="absolute inset-x-3 bottom-3 max-h-[75vh] overflow-y-auto rounded-2xl border border-brass/15 bg-carbon p-4"
                 initial={{ y: 80 }} animate={{ y: 0 }} exit={{ y: 80 }}>
                 <div className="mb-3 flex items-center justify-between"><p className="font-display text-xl text-ivory">Admin tools</p><button onClick={() => setMobileMenuOpen(false)}><X size={18} /></button></div>
-                <div className="grid grid-cols-2 gap-2">
-                  {tabs.map(({ id, label, icon: Icon }) => (
-                    <button key={id} onClick={() => { setActiveTab(id); setMobileMenuOpen(false); }}
-                      className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-left text-sm ${activeTab === id ? 'border-brass/30 bg-brass/10 text-brass' : 'border-ivory/5 text-ivory/55'}`}>
-                      <Icon size={16} /> {label}
-                      {id === 'inbox' && pendingMessageCount > 0 && (
-                        <span className="ml-auto min-w-5 rounded-full bg-brass px-1.5 text-center text-[10px] font-semibold text-obsidian">
-                          {pendingMessageCount}
-                        </span>
-                      )}
-                    </button>
-                  ))}
+                <div className="space-y-4">
+                  {tabGroups.map(group => {
+                    const groupTabs = tabs.filter(tab => tab.group === group);
+                    if (!groupTabs.length) return null;
+                    return (
+                      <section key={group}>
+                        <h2 className="mb-2 text-[9px] font-semibold uppercase tracking-[0.22em] text-ivory/30">{group}</h2>
+                        <div className="grid grid-cols-2 gap-2">
+                          {groupTabs.map(({ id, label, icon: Icon }) => (
+                            <button key={id} onClick={() => { selectTab(id); setMobileMenuOpen(false); }}
+                              aria-current={activeTab === id ? 'page' : undefined}
+                              className={`flex min-h-12 items-center gap-3 rounded-xl border px-3 py-3 text-left text-sm ${activeTab === id ? 'border-brass/30 bg-brass/10 text-brass' : 'border-ivory/5 text-ivory/55'}`}>
+                              <Icon size={16} /> {label}
+                              {id === 'inbox' && pendingMessageCount > 0 && (
+                                <span className="ml-auto min-w-5 rounded-full bg-brass px-1.5 text-center text-[10px] font-semibold text-obsidian">
+                                  {pendingMessageCount}
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    );
+                  })}
                 </div>
               </motion.div>
             </motion.div>
@@ -353,7 +404,7 @@ export default function Admin() {
                   { label: 'Subscribers', value: subscribers.length || '—', color: 'text-green-400', tab: 'subscribers' },
                 ].map(item => (
                   <div key={item.label} className="bg-carbon border border-brass/10 p-6 cursor-pointer hover:border-brass/25 transition-colors"
-                    onClick={() => setActiveTab(item.tab)}>
+                    onClick={() => selectTab(item.tab)}>
                     <p className="font-tight text-xs uppercase tracking-widest text-ivory/30 mb-2">{item.label}</p>
                     <p className={`font-display text-4xl ${item.color}`}>{item.value}</p>
                   </div>

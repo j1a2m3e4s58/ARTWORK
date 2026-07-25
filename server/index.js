@@ -24,6 +24,7 @@ import QRCode from 'qrcode';
 import { initializePayment, paymentStatus, verifyPayment, verifyPaymentWebhook } from './payments.js';
 import { canUseProtectedFeature, passwordProblem, requiresProductionMfa } from './security.js';
 import { reportOperationalError } from './operations.js';
+import { assertRuntimeConfiguration } from './runtime-config.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -33,6 +34,7 @@ const port = Number(process.env.PORT || process.env.API_PORT || 43130);
 const host = process.env.API_HOST || (process.env.RENDER === 'true' ? '0.0.0.0' : '127.0.0.1');
 const jwtSecret = process.env.JWT_SECRET;
 
+assertRuntimeConfiguration(process.env);
 if (!jwtSecret || jwtSecret.length < 32) {
   throw new Error('JWT_SECRET must be set in .env and contain at least 32 characters.');
 }
@@ -734,15 +736,23 @@ async function ensureSeeds() {
   await save();
 }
 await ensureSeeds();
-const outboxTimer = setInterval(() => processEmailOutbox().catch(error => {
-  reportOperationalError('email_outbox_failed', error);
-}), 60_000);
-outboxTimer.unref();
-const maintenanceTimer = setInterval(() => runMaintenance().catch(error => {
-  reportOperationalError('maintenance_failed', error);
-}), 60 * 60 * 1000);
-maintenanceTimer.unref();
+const backgroundJobsEnabled = process.env.BACKGROUND_JOBS_ENABLED !== 'false';
+const outboxTimer = backgroundJobsEnabled
+  ? setInterval(() => processEmailOutbox().catch(error => {
+    reportOperationalError('email_outbox_failed', error);
+  }), 60_000)
+  : null;
+outboxTimer?.unref();
+const maintenanceTimer = backgroundJobsEnabled
+  ? setInterval(() => runMaintenance().catch(error => {
+    reportOperationalError('maintenance_failed', error);
+  }), 60 * 60 * 1000)
+  : null;
+maintenanceTimer?.unref();
 await runMaintenance();
+if (backgroundJobsEnabled) {
+  processEmailOutbox().catch(error => reportOperationalError('email_outbox_startup_failed', error));
+}
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, database: databaseKind }));
 app.get('/api/ready', async (_req, res) => {
@@ -1576,6 +1586,8 @@ app.use((error, _req, res, _next) => {
 const server = app.listen(port, host, () => console.log(`Reigns Atelier API listening on http://${host}:${port}`));
 const shutdown = signal => {
   console.log(JSON.stringify({ level: 'info', event: 'shutdown', signal }));
+  if (outboxTimer) clearInterval(outboxTimer);
+  if (maintenanceTimer) clearInterval(maintenanceTimer);
   server.close(async () => {
     await save();
     await closeDatabase();

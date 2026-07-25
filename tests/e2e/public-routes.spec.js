@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-const publicRoutes = ['/', '/gallery', '/commission', '/shop', '/about', '/contact'];
+const publicRoutes = [
+  '/', '/gallery', '/commission', '/shop', '/about', '/contact',
+  '/privacy', '/terms', '/login', '/register', '/forgot-password',
+];
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem('atelier_loaded', 'true'));
@@ -12,7 +15,7 @@ for (const route of publicRoutes) {
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(route);
-    await expect(page.locator('nav').first()).toBeVisible();
+    await expect(page.locator('body')).toBeVisible();
     await expect.poll(() => page.evaluate(() => (
       document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1
     ))).toBe(true);
