@@ -33,5 +33,5 @@ export default function TurnstileWidget({ onToken }) {
     };
   }, [id, onToken]);
   if (!siteKey) return null;
-  return <div id={`turnstile-${id}`} className="min-h-[65px]" aria-label="Human verification" />;
+  return <div id={`turnstile-${id}`} className="min-h-[65px]" role="group" aria-label="Human verification" />;
 }

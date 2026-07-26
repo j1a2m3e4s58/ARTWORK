@@ -8,6 +8,7 @@ import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import { useSettings } from '@/hooks/useSettings';
 import { usePageContent } from '@/hooks/usePageContent';
+import { imageSrcSet, imageVariant } from '@/lib/media';
 
 const FEATURED_ARTWORKS_FALLBACK = [];
 
@@ -101,9 +102,12 @@ export default function Home() {
             style={{ y: reduceMotion ? 0 : heroY }}
           >
             <img
-              src={activeSlide.imageUrl}
+              src={imageVariant(activeSlide.imageUrl, 1600)}
+              srcSet={imageSrcSet(activeSlide.imageUrl)}
+              sizes="100vw"
               alt={activeSlide.altText || `${activeSlide.title} ${activeSlide.accentTitle || ''}`.trim()}
               className="w-full h-full object-cover"
+              fetchPriority="high"
             />
             <div className="absolute inset-0 bg-gradient-to-r from-obsidian via-obsidian/70 to-obsidian/20" />
             <div className="absolute inset-0 bg-gradient-to-t from-obsidian/80 via-transparent to-obsidian/30" />
@@ -118,7 +122,7 @@ export default function Home() {
           style={{ background: '#3D2B52' }} />
 
         <motion.div
-          className="relative z-10 mx-auto w-full max-w-7xl px-5 pt-16 sm:px-6 sm:pt-24 lg:px-12"
+          className="relative z-10 mx-auto w-full max-w-7xl px-5 pt-8 sm:px-6 sm:pt-20 lg:px-12"
           style={{ opacity: heroOpacity }}
         >
           <motion.div
@@ -126,7 +130,7 @@ export default function Home() {
             animate={{ opacity: 1 }}
             transition={{ delay: 0.4, duration: 0.8 }}
           >
-            <div className="flex items-center gap-3 mb-6">
+            <div className="mb-4 flex items-center gap-3 sm:mb-6">
               <div className="w-8 h-px bg-brass" />
               <span className="font-tight text-xs uppercase tracking-[0.35em] text-brass/70">{activeSlide.eyebrow || 'Fine Art Studio'}</span>
             </div>
@@ -135,7 +139,7 @@ export default function Home() {
           <div className="overflow-hidden mb-2">
             <motion.h1
               key={`${activeSlide.id}-title`}
-              className="font-display text-[clamp(3.25rem,15vw,7rem)] leading-[0.9] text-ivory"
+              className="font-display text-[clamp(2.65rem,14vw,7rem)] leading-[0.9] text-ivory"
               initial={{ y: 120, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.5, duration: 1, ease: [0.16, 1, 0.3, 1] }}
@@ -143,10 +147,10 @@ export default function Home() {
               {activeSlide.title}
             </motion.h1>
           </div>
-          <div className="overflow-hidden mb-8">
+          <div className="mb-5 overflow-hidden sm:mb-8">
             <motion.h1
               key={`${activeSlide.id}-accent`}
-              className="font-display text-[clamp(3.25rem,15vw,7rem)] leading-[0.9] italic text-brass"
+              className="font-display text-[clamp(2.65rem,14vw,7rem)] leading-[0.9] italic text-brass"
               initial={{ y: 120, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.65, duration: 1, ease: [0.16, 1, 0.3, 1] }}
@@ -157,7 +161,7 @@ export default function Home() {
 
           <motion.p
             key={`${activeSlide.id}-subtitle`}
-            className="text-ivory/50 text-lg md:text-xl max-w-lg leading-relaxed mb-10 font-light"
+            className="mb-6 max-w-lg text-base font-light leading-relaxed text-ivory/55 sm:mb-10 sm:text-lg md:text-xl"
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.9, duration: 0.8 }}
@@ -319,7 +323,9 @@ export default function Home() {
                 <Link to="/gallery" className="group block">
                   <div className="relative overflow-hidden aspect-[3/4]">
                     <img
-                      src={art.imageUrl}
+                      src={imageVariant(art.imageUrl, 768)}
+                      srcSet={imageSrcSet(art.imageUrl, [320, 480, 768])}
+                      sizes="(min-width: 1024px) 20vw, 256px"
                       alt={art.title}
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 group-hover:grayscale-0 grayscale-[20%]"
                       loading="lazy"

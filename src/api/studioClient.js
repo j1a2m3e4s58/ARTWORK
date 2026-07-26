@@ -96,6 +96,15 @@ export const studioClient = {
     purgeMedia(id) {
       return request(`/api/admin/media/${id}/purge`, { method: 'DELETE' });
     },
+    testEmail() {
+      return request('/api/admin/test-email', { method: 'POST' });
+    },
+    testStorage() {
+      return request('/api/admin/test-storage', { method: 'POST' });
+    },
+    testAlert() {
+      return request('/api/admin/test-alert', { method: 'POST' });
+    },
   },
   messages: {
     reply(id, text) {

@@ -8,15 +8,19 @@ export async function reportOperationalError(event, error, context = {}) {
     occurredAt: new Date().toISOString(),
   };
   console.error(JSON.stringify({ level: 'error', ...payload }));
-  if (!process.env.ERROR_WEBHOOK_URL) return;
+  if (!process.env.ERROR_WEBHOOK_URL) return { delivered: false, reason: 'webhook_not_configured' };
   try {
-    await fetch(process.env.ERROR_WEBHOOK_URL, {
+    const response = await fetch(process.env.ERROR_WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(5000),
     });
+    return response.ok
+      ? { delivered: true, status: response.status }
+      : { delivered: false, reason: `webhook_http_${response.status}` };
   } catch {
     // Console output remains the reliable fallback when the alert channel fails.
+    return { delivered: false, reason: 'webhook_delivery_failed' };
   }
 }

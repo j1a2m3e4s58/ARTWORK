@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Eye, EyeOff, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { useSettings } from '@/hooks/useSettings';
+import { useAuth } from '@/lib/AuthContext';
 
 const AdminAccessContext = createContext(null);
 
@@ -12,9 +13,13 @@ export function useAdminAccess() {
 
 export default function AdminAccessGate({ children }) {
   const settings = useSettings();
+  const { user, checkUserAuth } = useAuth();
   const passwordRef = useRef(null);
   const [checking, setChecking] = useState(true);
   const [unlocked, setUnlocked] = useState(false);
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaSetup, setMfaSetup] = useState(null);
+  const [mfaCode, setMfaCode] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -24,7 +29,10 @@ export default function AdminAccessGate({ children }) {
     let active = true;
     studioClient.admin.access()
       .then(result => {
-        if (active) setUnlocked(Boolean(result.unlocked));
+        if (active) {
+          setUnlocked(Boolean(result.unlocked));
+          setMfaRequired(Boolean(result.mfaRequired));
+        }
       })
       .catch(() => {
         if (active) setUnlocked(false);
@@ -55,9 +63,38 @@ export default function AdminAccessGate({ children }) {
       setPassword('');
       setUnlocked(true);
     } catch (unlockError) {
+      if (/multi-factor/i.test(unlockError.message)) setMfaRequired(true);
       setError(unlockError.message);
       setPassword('');
       window.requestAnimationFrame(() => passwordRef.current?.focus());
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const startMfa = async () => {
+    setError('');
+    try {
+      setMfaSetup(await studioClient.mfa.setup());
+    } catch (setupError) {
+      setError(setupError.message);
+    }
+  };
+
+  const enableMfa = async event => {
+    event.preventDefault();
+    if (mfaCode.length !== 6 || submitting) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      await studioClient.mfa.enable(mfaCode);
+      await checkUserAuth();
+      setMfaRequired(false);
+      setMfaSetup(null);
+      setMfaCode('');
+      window.requestAnimationFrame(() => passwordRef.current?.focus());
+    } catch (enableError) {
+      setError(enableError.message);
     } finally {
       setSubmitting(false);
     }
@@ -77,6 +114,46 @@ export default function AdminAccessGate({ children }) {
       <div className="flex min-h-screen items-center justify-center bg-obsidian text-brass">
         <Loader2 className="animate-spin" size={28} aria-label="Checking secure admin access" />
       </div>
+    );
+  }
+
+  if (mfaRequired && user?.role === 'admin') {
+    return (
+      <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-obsidian px-4 py-8 text-ivory">
+        <div className="absolute inset-0 bg-gradient-to-br from-violet/30 via-obsidian to-obsidian" aria-hidden="true" />
+        <section className="relative z-10 w-full max-w-lg border border-brass/25 bg-carbon/80 p-5 shadow-2xl backdrop-blur-2xl sm:p-7">
+          <div className="mb-5 flex h-10 w-10 items-center justify-center border border-brass/35 bg-brass/10 text-brass"><ShieldCheck size={19} /></div>
+          <p className="font-tight text-[10px] uppercase tracking-[0.3em] text-brass/65">Required security setup</p>
+          <h1 className="mt-2 font-display text-3xl text-ivory">Protect Studio Control</h1>
+          <p className="mt-2 text-sm leading-relaxed text-ivory/55">
+            Production administrators must connect an authenticator app before accessing studio records.
+          </p>
+          {!mfaSetup ? (
+            <button onClick={startMfa} className="mt-6 min-h-12 w-full bg-brass px-4 text-sm font-semibold uppercase tracking-wider text-obsidian">
+              Set up authenticator
+            </button>
+          ) : (
+            <form onSubmit={enableMfa} className="mt-6 grid gap-5 sm:grid-cols-[180px_1fr]">
+              <img src={mfaSetup.qrDataUrl} alt="Authenticator QR code" className="h-44 w-44 bg-white p-2" />
+              <div>
+                <p className="text-xs text-ivory/45">Scan the QR code with Google Authenticator, Microsoft Authenticator, Authy, or your password manager.</p>
+                <code className="mt-3 block break-all text-xs text-brass">{mfaSetup.manualKey}</code>
+                <label htmlFor="admin-mfa-code" className="mt-4 block text-xs uppercase tracking-wider text-ivory/45">Six-digit code</label>
+                <input id="admin-mfa-code" value={mfaCode} onChange={event => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  inputMode="numeric" autoComplete="one-time-code" className="mt-2 min-h-11 w-full border border-brass/25 bg-obsidian px-3 text-center tracking-[0.35em] text-ivory" />
+                <button disabled={mfaCode.length !== 6 || submitting} className="mt-3 min-h-11 w-full bg-brass px-3 text-sm text-obsidian disabled:opacity-40">
+                  {submitting ? 'Verifying…' : 'Verify and continue'}
+                </button>
+              </div>
+            </form>
+          )}
+          {error && <p className="mt-4 border-l-2 border-red-400 bg-red-400/10 px-3 py-2 text-sm text-red-200" role="alert">{error}</p>}
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            <Link to="/" className="border border-ivory/15 px-3 py-2.5 text-center text-xs text-ivory/55">Return to site</Link>
+            <Link to="/account" className="border border-ivory/15 px-3 py-2.5 text-center text-xs text-ivory/55">My account</Link>
+          </div>
+        </section>
+      </main>
     );
   }
 

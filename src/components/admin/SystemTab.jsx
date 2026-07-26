@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, CheckCircle2, DatabaseBackup, MailWarning, RefreshCw, Server } from 'lucide-react';
+import { Activity, BellRing, CheckCircle2, Cloud, CreditCard, DatabaseBackup, MailCheck, MailWarning, RefreshCw, Server } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
 
@@ -11,6 +11,7 @@ export default function SystemTab() {
   const [mfaSetup, setMfaSetup] = useState(null);
   const [mfaCode, setMfaCode] = useState('');
   const [disablePassword, setDisablePassword] = useState('');
+  const [testing, setTesting] = useState('');
   useEffect(() => {
     Promise.all([studioClient.system.status(), studioClient.entities.AuditLog.list('-created_date', 50)])
       .then(([ready, auditLogs]) => { setHealth(ready); setLogs(auditLogs); })
@@ -40,16 +41,35 @@ export default function SystemTab() {
     setHealth(await studioClient.system.status());
     setNotice('Queued email delivery was retried.');
   };
+  const rehearse = async (name, action, successMessage) => {
+    setTesting(name);
+    setNotice('');
+    try {
+      await action();
+      setNotice(successMessage);
+      setHealth(await studioClient.system.status());
+    } catch (error) {
+      setNotice(`${name} failed: ${error.message}`);
+    } finally {
+      setTesting('');
+    }
+  };
   return (
     <div>
       <h1 className="font-display text-4xl text-ivory">System & Operations</h1>
       <p className="mb-8 mt-2 text-sm text-ivory/40">Environment readiness, backups and administrator audit history.</p>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {[
           { label: 'API', value: health?.ok ? 'Ready' : health ? 'Needs attention' : 'Checking', icon: Activity, good: health?.ok },
           { label: 'Database', value: health?.services?.database?.kind || 'Checking', icon: Server, good: health?.services?.database?.ok },
           { label: 'Email', value: health?.services?.email?.ok ? 'Connected' : 'Needs setup', icon: health?.services?.email?.ok ? CheckCircle2 : MailWarning, good: health?.services?.email?.ok },
           { label: 'Storage', value: health?.services?.storage?.provider || 'Checking', icon: DatabaseBackup, good: health?.services?.storage?.ok },
+          {
+            label: 'Payments',
+            value: health?.services?.payment?.configured ? `${health.services.payment.provider} sandbox` : 'Manual testing mode',
+            icon: CreditCard,
+            good: health?.services?.payment?.configured,
+          },
         ].map(({ label, value, icon: Icon, good }) => (
           <div key={label} className={`border p-4 ${good ? 'border-green-400/20 bg-green-400/5' : 'border-yellow-400/20 bg-yellow-400/5'}`}>
             <Icon size={18} className={good ? 'text-green-300' : 'text-yellow-300'} /><p className="mt-3 text-xs uppercase tracking-wider text-ivory/35">{label}</p><p className="mt-1 text-sm text-ivory/75">{value}</p>
@@ -58,6 +78,24 @@ export default function SystemTab() {
       </div>
       <button onClick={backup} className="mt-5 flex items-center gap-2 border border-brass/25 px-4 py-2 text-sm text-brass"><DatabaseBackup size={15} /> Create backup now</button>
       <button onClick={retryEmail} className="ml-0 mt-3 flex items-center gap-2 border border-brass/25 px-4 py-2 text-sm text-brass sm:ml-3 sm:mt-5 sm:inline-flex"><RefreshCw size={15} /> Retry failed email</button>
+      <section className="mt-6 border border-brass/10 bg-carbon p-5">
+        <h2 className="font-display text-2xl">Production rehearsals</h2>
+        <p className="mt-2 text-sm text-ivory/40">Run controlled end-to-end checks against the services configured on this deployment.</p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <button disabled={Boolean(testing)} onClick={() => rehearse('Email test', studioClient.admin.testEmail, 'A test email was delivered to your administrator address.')}
+            className="flex min-h-11 items-center justify-center gap-2 border border-brass/25 px-3 text-sm text-brass disabled:opacity-40"><MailCheck size={16} /> Test email</button>
+          <button disabled={Boolean(testing)} onClick={() => rehearse('Cloudinary test', studioClient.admin.testStorage, 'Cloudinary upload and deletion completed successfully.')}
+            className="flex min-h-11 items-center justify-center gap-2 border border-brass/25 px-3 text-sm text-brass disabled:opacity-40"><Cloud size={16} /> Test media</button>
+          <button disabled={Boolean(testing)} onClick={() => rehearse('Alert test', studioClient.admin.testAlert, 'The monitoring webhook accepted the test alert.')}
+            className="flex min-h-11 items-center justify-center gap-2 border border-brass/25 px-3 text-sm text-brass disabled:opacity-40"><BellRing size={16} /> Test alert</button>
+        </div>
+        {testing && <p className="mt-3 text-xs text-ivory/45">{testing} is running…</p>}
+        {!health?.services?.payment?.configured && (
+          <p className="mt-4 border-l border-yellow-300/40 pl-3 text-xs leading-relaxed text-ivory/45">
+            Checkout remains in manual mode until Paystack test credentials are configured and the sandbox rehearsal succeeds.
+          </p>
+        )}
+      </section>
       {health?.counts && <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">{Object.entries(health.counts).map(([key, value]) => <div key={key} className="border border-brass/10 bg-carbon p-3"><p className="text-2xl text-brass">{value}</p><p className="mt-1 break-words text-[10px] uppercase tracking-wider text-ivory/35">{key.replace(/([A-Z])/g, ' $1')}</p></div>)}</div>}
       {notice && <p className="mt-3 text-sm text-ivory/55">{notice}</p>}
       <section className="mt-8 border border-brass/10 bg-carbon p-5">

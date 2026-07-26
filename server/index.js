@@ -62,6 +62,10 @@ app.use(helmet({
     },
   },
 }));
+app.use((_req, res, next) => {
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
 const allowedOrigins = (process.env.APP_ORIGIN || 'http://127.0.0.1:43127').split(',').map(origin => origin.trim());
 const publicOrigin = String(process.env.SITE_URL || allowedOrigins[0]).replace(/\/+$/, '');
 app.use(cors({ origin: allowedOrigins, credentials: true }));
@@ -122,7 +126,7 @@ const authenticatedCreate = new Set(['CommissionRequest', 'Message', 'Order']);
 const staffRoles = new Set(['admin', 'editor', 'support']);
 const contentEntities = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'Media', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
 const supportEntities = new Set(['CommissionRequest', 'Message', 'Order']);
-const hiddenUserFields = ({ passwordHash, mfaSecret, pendingMfaSecret, ...user }) => user;
+const hiddenUserFields = ({ passwordHash, mfaSecret, pendingMfaSecret, managedPasswordFingerprint, ...user }) => user;
 const hashToken = token => createHash('sha256').update(token).digest('hex');
 const token = () => randomBytes(32).toString('hex');
 const secureCookie = process.env.NODE_ENV === 'production';
@@ -420,21 +424,39 @@ async function ensureSeeds() {
   const adminPassword = process.env.ADMIN_PASSWORD;
   if (adminEmail && adminPassword) {
     const configuredAdmin = db.data.User.find(user => user.email === adminEmail);
+    const managedPasswordFingerprint = createHash('sha256')
+      .update(`reigns-atelier-managed-admin:${adminPassword}`)
+      .digest('hex');
     if (!configuredAdmin) {
       db.data.User.push({
         id: newId(), email: adminEmail, full_name: 'Studio Administrator',
         passwordHash: await bcrypt.hash(adminPassword, 12), role: 'admin',
-        status: 'active', emailVerified: true, sessionVersion: 0, created_date: now(),
+        status: 'active', emailVerified: true, sessionVersion: 0,
+        managedPasswordFingerprint, created_date: now(),
       });
-    } else if (process.env.NODE_ENV !== 'production' && !(await bcrypt.compare(adminPassword, configuredAdmin.passwordHash))) {
-      // In local development the .env credentials are authoritative. This keeps
-      // a stale JSON database from silently locking the developer out.
+    } else if (configuredAdmin.managedPasswordFingerprint !== managedPasswordFingerprint) {
+      // A changed ADMIN_PASSWORD is an explicit credential rotation. The
+      // fingerprint prevents ordinary restarts from repeatedly replacing it.
       configuredAdmin.passwordHash = await bcrypt.hash(adminPassword, 12);
+      configuredAdmin.managedPasswordFingerprint = managedPasswordFingerprint;
       configuredAdmin.role = 'admin';
       configuredAdmin.status = 'active';
       configuredAdmin.emailVerified = true;
       configuredAdmin.sessionVersion = (configuredAdmin.sessionVersion || 0) + 1;
     }
+  }
+  const operationalDefaults = [
+    ['show_shop', 'false', 'Show Shop Navigation'],
+    ['show_blog', 'false', 'Show Blog Navigation'],
+    ['show_testimonials', 'false', 'Enable Testimonials Page'],
+    ['show_contact_map', 'false', 'Show Contact Map'],
+  ];
+  for (const [key, value, label] of operationalDefaults) {
+    if (db.data.SiteContent.some(item => item.page === 'Settings' && item.key === key && !item.deleted_at)) continue;
+    db.data.SiteContent.push({
+      id: newId(), key, value, label, page: 'Settings',
+      group: 'Navigation', created_date: now(),
+    });
   }
   if (production && process.env.SEED_DEMO_CONTENT !== 'true' && !bootstrapProductionContent) {
     await save();
@@ -816,6 +838,46 @@ app.get('/api/admin/system-status', requireAdmin, async (_req, res) => {
   });
 });
 
+app.post('/api/admin/test-email', requireAdmin, authLimiter, async (req, res) => {
+  const delivery = await sendEmail({
+    to: req.user.email,
+    subject: 'Reigns Atelier email service test',
+    text: `Email delivery was tested successfully at ${now()}.`,
+  });
+  await audit(req.user, 'system.email_tested', 'System', null, { delivered: delivery.delivered });
+  await save();
+  res.status(delivery.delivered ? 200 : 502).json(delivery);
+});
+
+app.post('/api/admin/test-storage', requireAdmin, mutationLimiter, async (req, res) => {
+  const id = `system-test-${newId()}`;
+  const buffer = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  );
+  try {
+    const stored = await storeFile({ buffer, mime: 'image/png', extension: 'png', uploadDir, id });
+    await deleteStoredFile({ publicId: stored.publicId, resourceType: stored.resourceType, uploadDir });
+    await audit(req.user, 'system.storage_tested', 'System', null, { provider: storageProvider });
+    await save();
+    res.json({ success: true, provider: storageProvider, uploadAndDelete: true });
+  } catch (error) {
+    await reportOperationalError('storage_rehearsal_failed', error, { actorId: req.user.id });
+    res.status(502).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/test-alert', requireAdmin, authLimiter, async (req, res) => {
+  const result = await reportOperationalError(
+    'administrator_alert_rehearsal',
+    new Error('This is a controlled monitoring test from Studio Control.'),
+    { actorId: req.user.id },
+  );
+  await audit(req.user, 'system.alert_tested', 'System', null, result);
+  await save();
+  res.status(result?.delivered ? 200 : 502).json(result);
+});
+
 app.post('/api/auth/register', authLimiter, verifyHuman, async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
@@ -892,7 +954,10 @@ app.get('/api/auth/me', (req, res) => {
 });
 
 app.get('/api/admin/access', requireStaffIdentity, (req, res) => {
-  res.json({ unlocked: hasAdminAccess(req, req.user) });
+  res.json({
+    unlocked: hasAdminAccess(req, req.user),
+    mfaRequired: requiresProductionMfa(req.user),
+  });
 });
 
 app.post('/api/admin/unlock', requireStaffIdentity, authLimiter, async (req, res) => {

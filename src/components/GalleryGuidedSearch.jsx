@@ -38,7 +38,7 @@ export default function GalleryGuidedSearch({ artworks, onResults }) {
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center md:w-auto">
       <div className="relative flex-1">
         <Compass size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 ${active ? 'text-brass' : 'text-ivory/30'}`} />
         <input
@@ -56,7 +56,7 @@ export default function GalleryGuidedSearch({ artworks, onResults }) {
         )}
       </div>
       <button onClick={handleSearch} disabled={!query.trim() || loading}
-        className="flex items-center gap-1.5 bg-brass/10 border border-brass/30 text-brass px-4 py-2.5 font-tight text-xs tracking-wide hover:bg-brass/20 transition-all disabled:opacity-30 whitespace-nowrap">
+        className="flex min-h-11 w-full items-center justify-center gap-1.5 whitespace-nowrap border border-brass/30 bg-brass/10 px-4 py-2.5 font-tight text-xs tracking-wide text-brass transition-all hover:bg-brass/20 disabled:opacity-30 sm:w-auto">
         {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} Guided Search
       </button>
     </div>
