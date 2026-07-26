@@ -79,8 +79,6 @@ services:
         generateValue: true
       - key: LOG_REQUESTS
         value: "true"
-      - key: ERROR_WEBHOOK_URL
-        sync: false
       - key: ALLOW_STARTER_MEDIA
         value: "false"
       - key: EMAIL_LOG_RETENTION_DAYS

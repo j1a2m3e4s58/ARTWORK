@@ -15,7 +15,6 @@ const productionRequirements = [
   'TURNSTILE_SECRET_KEY',
   'VITE_TURNSTILE_SITE_KEY',
   'METRICS_TOKEN',
-  'ERROR_WEBHOOK_URL',
 ];
 
 const isPlaceholder = value => /replace-with|example\.com|changeme|change-me/i.test(String(value || ''));
@@ -32,7 +31,7 @@ export function validateRuntimeConfiguration(env = process.env) {
   if (String(env.JWT_SECRET || '').length < 32) problems.push('JWT_SECRET must contain at least 32 characters');
   if (String(env.ADMIN_PASSWORD || '').length < 12) problems.push('ADMIN_PASSWORD must contain at least 12 characters');
 
-  for (const name of ['APP_ORIGIN', 'SITE_URL', 'ERROR_WEBHOOK_URL']) {
+  for (const name of ['APP_ORIGIN', 'SITE_URL']) {
     if (env[name] && !String(env[name]).startsWith('https://')) {
       problems.push(`${name} must use HTTPS in production`);
     }
