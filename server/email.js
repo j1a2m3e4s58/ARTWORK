@@ -9,6 +9,9 @@ const transporter = configured ? nodemailer.createTransport({
   auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
   pool: true,
   maxConnections: Number(process.env.SMTP_MAX_CONNECTIONS || 3),
+  // Render exposes its usable IPv4 route through a private interface.
+  // Allow Nodemailer to include that interface when resolving SMTP hosts.
+  allowInternalNetworkInterfaces: true,
   connectionTimeout: 10_000,
   greetingTimeout: 10_000,
   socketTimeout: 20_000,

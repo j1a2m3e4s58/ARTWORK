@@ -762,11 +762,20 @@ app.get('/api/ready', async (_req, res) => {
   ]);
   const storage = checkStorage();
   const production = process.env.NODE_ENV === 'production';
+  const requireEmail = process.env.EMAIL_REQUIRED_FOR_READINESS === 'true';
   const required = production
-    ? [database.ok, email.ok, storage.ok, Boolean(process.env.APP_ORIGIN), Boolean(process.env.SITE_URL), turnstileConfigured]
+    ? [
+        database.ok,
+        storage.ok,
+        Boolean(process.env.APP_ORIGIN),
+        Boolean(process.env.SITE_URL),
+        turnstileConfigured,
+        requireEmail ? email.ok : true,
+      ]
     : [database.ok];
   const payload = {
     ok: required.every(Boolean),
+    degraded: email.ok ? [] : ['email'],
     services: { database, email, storage, humanVerification: { ok: turnstileConfigured } },
     payment: paymentStatus,
     environment: process.env.NODE_ENV || 'development',

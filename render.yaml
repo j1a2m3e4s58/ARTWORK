@@ -65,6 +65,8 @@ services:
         sync: false
       - key: SMTP_MAX_CONNECTIONS
         value: "3"
+      - key: EMAIL_REQUIRED_FOR_READINESS
+        value: "false"
       - key: TURNSTILE_SECRET_KEY
         sync: false
       - key: VITE_TURNSTILE_SITE_KEY
