@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canUseProtectedFeature, passwordProblem, requiresProductionMfa } from '../security.js';
+import { blocksEntityReadForPendingMfa, canUseProtectedFeature, passwordProblem, requiresProductionMfa } from '../security.js';
 import { validateRuntimeConfiguration } from '../runtime-config.js';
 
 test('password policy rejects weak credentials and accepts a strong passphrase', () => {
@@ -20,6 +20,12 @@ test('production administrators must enable MFA', () => {
   assert.equal(requiresProductionMfa({ role: 'admin', mfaEnabled: false }, 'production', true), true);
   assert.equal(requiresProductionMfa({ role: 'admin', mfaEnabled: true }, 'production', true), false);
   assert.equal(requiresProductionMfa({ role: 'editor', mfaEnabled: false }, 'production', true), false);
+});
+
+test('pending administrator MFA never blocks public portfolio reads', () => {
+  const administrator = { role: 'admin', mfaEnabled: false };
+  assert.equal(blocksEntityReadForPendingMfa(administrator, true, 'production', true), false);
+  assert.equal(blocksEntityReadForPendingMfa(administrator, false, 'production', true), true);
 });
 
 test('production configuration rejects temporary services and insecure origins', () => {

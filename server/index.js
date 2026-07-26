@@ -22,7 +22,7 @@ import { storageProvider, storeFile, deleteStoredFile, checkStorage } from './st
 import { authenticator } from 'otplib';
 import QRCode from 'qrcode';
 import { initializePayment, paymentStatus, verifyPayment, verifyPaymentWebhook } from './payments.js';
-import { canUseProtectedFeature, passwordProblem, requiresProductionMfa } from './security.js';
+import { blocksEntityReadForPendingMfa, canUseProtectedFeature, passwordProblem, requiresProductionMfa } from './security.js';
 import { reportOperationalError } from './operations.js';
 import { assertRuntimeConfiguration } from './runtime-config.js';
 
@@ -1086,12 +1086,14 @@ app.get('/api/entities/:name', async (req, res) => {
   const { name } = req.params;
   if (!Array.isArray(db.data[name])) return res.status(404).json({ error: 'Unknown entity.' });
   const user = readUser(req);
-  if (requiresProductionMfa(user)) {
+  const publicAccess = publicRead.has(name);
+  const pendingAdminMfa = requiresProductionMfa(user);
+  if (blocksEntityReadForPendingMfa(user, publicAccess)) {
     return res.status(403).json({ error: 'Enable multi-factor authentication before accessing studio records.', code: 'mfa_required' });
   }
   const ownData = ['CommissionRequest', 'Message', 'Notification', 'Order'].includes(name);
-  const staffAccess = canManage(user, name) && hasAdminAccess(req, user);
-  if (!publicRead.has(name) && !staffAccess && !(user && ownData)) {
+  const staffAccess = !pendingAdminMfa && canManage(user, name) && hasAdminAccess(req, user);
+  if (!publicAccess && !staffAccess && !(user && ownData)) {
     return res.status(403).json({ error: 'You do not have access to these records.' });
   }
   const includeDeleted = req.query.includeDeleted === 'true' && staffAccess;
@@ -1113,10 +1115,9 @@ app.get('/api/entities/:name', async (req, res) => {
   if (!staffAccess) {
     const starterMediaAllowed = process.env.ALLOW_STARTER_MEDIA === 'true' || process.env.NODE_ENV !== 'production';
     if (!starterMediaAllowed && ['Artwork', 'HeroSlide', 'ShopProduct', 'Video'].includes(name)) {
-      records = records.filter(record => (
-        record.contentStatus !== 'starter'
-        && !['pexels', 'pixabay', 'unsplash'].includes(String(record.sourceName || '').toLowerCase())
-      ));
+      // Licensed third-party sources are valid published content. Only records
+      // explicitly marked as starter placeholders are hidden in production.
+      records = records.filter(record => record.contentStatus !== 'starter');
     }
     if (name === 'BlogPost') records = records.filter(record => record.status === 'published' || !record.status);
     if (name === 'Testimonial') records = records.filter(record => record.status === 'approved');

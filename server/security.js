@@ -14,3 +14,12 @@ export function canUseProtectedFeature(user) {
 export function requiresProductionMfa(user, environment = process.env.NODE_ENV, enabled = process.env.REQUIRE_ADMIN_MFA !== 'false') {
   return Boolean(environment === 'production' && enabled && user?.role === 'admin' && !user.mfaEnabled);
 }
+
+export function blocksEntityReadForPendingMfa(
+  user,
+  isPublicEntity,
+  environment = process.env.NODE_ENV,
+  enabled = process.env.REQUIRE_ADMIN_MFA !== 'false',
+) {
+  return !isPublicEntity && requiresProductionMfa(user, environment, enabled);
+}

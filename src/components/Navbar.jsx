@@ -36,8 +36,9 @@ export default function Navbar() {
   const menuButtonRef = useRef(null);
   const adminHoldTimerRef = useRef(null);
   const adminHoldTriggeredRef = useRef(false);
-  const openAdminSignIn = () => {
-    window.location.assign('/login?redirect=/admin&mode=admin');
+  const isStaff = ['admin', 'editor', 'support'].includes(user?.role);
+  const openAdminPortal = () => {
+    window.location.assign(isStaff ? '/admin' : '/login?redirect=/admin&mode=admin');
   };
   const startAdminHold = event => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
@@ -45,7 +46,7 @@ export default function Navbar() {
     window.clearTimeout(adminHoldTimerRef.current);
     adminHoldTimerRef.current = window.setTimeout(() => {
       adminHoldTriggeredRef.current = true;
-      openAdminSignIn();
+      openAdminPortal();
     }, 650);
   };
   const cancelAdminHold = () => {
@@ -91,8 +92,8 @@ export default function Navbar() {
             <Link
               to="/"
               className="flex items-center gap-3"
-              aria-label="Reigns Atelier home. Press and hold to open administrator sign-in."
-              title="Home — press and hold for administrator sign-in"
+              aria-label={`Reigns Atelier home. Press and hold to ${isStaff ? 'open Studio Control' : 'open administrator sign-in'}.`}
+              title={`Home — press and hold to ${isStaff ? 'open Studio Control' : 'open administrator sign-in'}`}
               onPointerDown={startAdminHold}
               onPointerUp={cancelAdminHold}
               onPointerLeave={cancelAdminHold}
@@ -100,7 +101,7 @@ export default function Navbar() {
               onContextMenu={event => {
                 event.preventDefault();
                 cancelAdminHold();
-                openAdminSignIn();
+                openAdminPortal();
               }}
               onClick={event => {
                 if (!adminHoldTriggeredRef.current) return;
