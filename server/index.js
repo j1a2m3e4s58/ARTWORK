@@ -412,6 +412,10 @@ app.use((req, res, next) => {
 });
 
 async function ensureSeeds() {
+  const production = process.env.NODE_ENV === 'production';
+  const bootstrapProductionContent = production
+    && process.env.BOOTSTRAP_PORTFOLIO_CONTENT !== 'false'
+    && !db.data.SiteContent.some(item => item.key === 'initial_portfolio_content_seeded');
   const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
   const adminPassword = process.env.ADMIN_PASSWORD;
   if (adminEmail && adminPassword) {
@@ -432,7 +436,7 @@ async function ensureSeeds() {
       configuredAdmin.sessionVersion = (configuredAdmin.sessionVersion || 0) + 1;
     }
   }
-  if (process.env.NODE_ENV === 'production' && process.env.SEED_DEMO_CONTENT !== 'true') {
+  if (production && process.env.SEED_DEMO_CONTENT !== 'true' && !bootstrapProductionContent) {
     await save();
     return;
   }
@@ -731,6 +735,12 @@ async function ensureSeeds() {
     db.data.SiteContent.push({
       id: newId(), key: 'show_videos', value: 'true', page: 'Settings',
       group: 'Navigation', created_date: now(),
+    });
+  }
+  if (bootstrapProductionContent) {
+    db.data.SiteContent.push({
+      id: newId(), key: 'initial_portfolio_content_seeded', value: 'true',
+      page: 'System', group: 'Deployment', created_date: now(),
     });
   }
   await save();
