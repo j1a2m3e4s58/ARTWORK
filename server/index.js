@@ -16,7 +16,7 @@ import {
   db, save, newId, now, backupDatabase, databaseKind, closeDatabase, checkDatabase,
   queryCollection, claimOutboxBatch, completeOutboxRecord,
 } from './db.js';
-import { sendEmail, checkEmail } from './email.js';
+import { sendEmail, checkEmail, emailConfigured } from './email.js';
 import { validateEntity } from './validation.js';
 import { storageProvider, storeFile, deleteStoredFile, checkStorage } from './storage.js';
 import { authenticator } from 'otplib';
@@ -756,13 +756,15 @@ if (backgroundJobsEnabled) {
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, database: databaseKind }));
 app.get('/api/ready', async (_req, res) => {
+  const requireEmail = process.env.EMAIL_REQUIRED_FOR_READINESS === 'true';
   const [database, email] = await Promise.all([
     checkDatabase().catch(error => ({ ok: false, reason: error.message })),
-    checkEmail(),
+    requireEmail
+      ? checkEmail()
+      : Promise.resolve({ ok: null, configured: emailConfigured, checked: false }),
   ]);
   const storage = checkStorage();
   const production = process.env.NODE_ENV === 'production';
-  const requireEmail = process.env.EMAIL_REQUIRED_FOR_READINESS === 'true';
   const required = production
     ? [
         database.ok,
@@ -775,7 +777,7 @@ app.get('/api/ready', async (_req, res) => {
     : [database.ok];
   const payload = {
     ok: required.every(Boolean),
-    degraded: email.ok ? [] : ['email'],
+    degraded: requireEmail && !email.ok ? ['email'] : [],
     services: { database, email, storage, humanVerification: { ok: turnstileConfigured } },
     payment: paymentStatus,
     environment: process.env.NODE_ENV || 'development',
