@@ -15,7 +15,8 @@ for (const route of publicRoutes) {
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(route);
-    await expect(page.locator('body')).toBeVisible();
+    await expect(page.locator('#root')).not.toBeEmpty();
+    await expect(page.locator('#root').locator('main, nav, form').first()).toBeVisible();
     await expect.poll(() => page.evaluate(() => (
       document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1
     ))).toBe(true);
