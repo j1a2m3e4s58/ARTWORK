@@ -3,11 +3,11 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, childr
     <div className="min-h-screen flex items-center justify-center bg-obsidian px-4 py-28 relative overflow-hidden">
       <div className="absolute inset-0 gradient-radial-violet opacity-40" />
       <div className="noise-overlay absolute inset-0" />
-      <div className="w-full max-w-md relative">
+      <div className="relative w-full max-w-md">
         <div className="text-center mb-10">
           <a
             href="/"
-            className="mx-auto mb-5 block touch-none rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
+            className="mb-5 flex w-full justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass"
             aria-label="Return to Reigns Atelier"
           >
             <img src="/brand/reigns-app-icon-192.png" alt="" className="h-20 w-20 rounded-full border border-brass/25 object-cover" draggable="false" />

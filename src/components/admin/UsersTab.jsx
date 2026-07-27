@@ -4,7 +4,7 @@ import { studioClient } from '@/api/studioClient';
 
 export default function UsersTab({ currentUser }) {
   const [users, setUsers] = useState([]);
-  const [draft, setDraft] = useState({ full_name: '', email: '', role: 'support' });
+  const [draft, setDraft] = useState({ full_name: '', email: '', role: 'customer' });
   const [error, setError] = useState('');
   useEffect(() => { studioClient.entities.User.list('-created_date').then(setUsers); }, []);
   const addUser = async () => {
@@ -12,7 +12,7 @@ export default function UsersTab({ currentUser }) {
       setError('');
       const user = await studioClient.admin.createUser(draft);
       setUsers(current => [user, ...current]);
-      setDraft({ full_name: '', email: '', role: 'support' });
+      setDraft({ full_name: '', email: '', role: 'customer' });
     } catch (err) {
       setError(err.message);
     }
@@ -43,7 +43,7 @@ export default function UsersTab({ currentUser }) {
         <input value={draft.full_name} onChange={e => setDraft({ ...draft, full_name: e.target.value })} placeholder="Full name" className="bg-obsidian border border-brass/15 px-3 py-2 text-sm text-ivory" />
         <input value={draft.email} onChange={e => setDraft({ ...draft, email: e.target.value })} placeholder="Email" type="email" className="bg-obsidian border border-brass/15 px-3 py-2 text-sm text-ivory" />
         <select value={draft.role} onChange={e => setDraft({ ...draft, role: e.target.value })} className="bg-obsidian border border-brass/15 px-3 py-2 text-sm text-ivory">
-          {['support', 'editor', 'admin'].map(role => <option key={role}>{role}</option>)}
+          {['customer', 'support', 'editor', 'admin'].map(role => <option key={role}>{role}</option>)}
         </select>
         <button onClick={addUser} className="flex items-center justify-center gap-2 bg-brass px-4 py-2 text-sm text-obsidian"><MailPlus size={15} /> Send invitation</button>
         {error && <p className="md:col-span-4 text-xs text-red-400">{error}</p>}

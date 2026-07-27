@@ -101,6 +101,30 @@
     background: #C9A96E;
   }
 
+  .pointer-accent {
+    position: fixed;
+    z-index: 9999;
+    left: -18px;
+    top: -18px;
+    display: grid;
+    height: 36px;
+    width: 36px;
+    place-items: center;
+    pointer-events: none;
+    border: 1px solid rgba(201, 169, 110, 0.82);
+    border-radius: 9999px;
+    background: rgba(10, 10, 11, 0.16);
+    box-shadow: 0 0 18px rgba(201, 169, 110, 0.16);
+    transition: transform 75ms linear;
+  }
+
+  .pointer-accent > span {
+    height: 7px;
+    width: 7px;
+    border-radius: 9999px;
+    background: #C9A96E;
+  }
+
   .admin-access-input:-webkit-autofill,
   .admin-access-input:-webkit-autofill:hover,
   .admin-access-input:-webkit-autofill:focus {

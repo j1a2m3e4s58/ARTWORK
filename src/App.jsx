@@ -14,6 +14,7 @@ import AdminAccessGate from '@/components/AdminAccessGate';
 import AccountLayout from '@/components/AccountLayout';
 import FeatureRoute from '@/components/FeatureRoute';
 import SiteMetadata from '@/components/SiteMetadata';
+import PointerAccent from '@/components/PointerAccent';
 
 const Home = lazy(() => import('@/pages/Home'));
 const Gallery = lazy(() => import('@/pages/Gallery'));
@@ -93,6 +94,7 @@ function App() {
     <AuthProvider>
         <Router>
           <SiteMetadata />
+          <PointerAccent />
           {!loaded && <LoadingScreen onComplete={finishLoading} />}
           {loaded && (
             <>

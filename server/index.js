@@ -1129,7 +1129,7 @@ app.post('/api/admin/users', requireAdmin, async (req, res) => {
   const user = {
     id: newId(), email, full_name: String(req.body.full_name || '').trim(),
     passwordHash: await bcrypt.hash(token(), 12),
-    role: ['editor', 'support', 'admin'].includes(req.body.role) ? req.body.role : 'support',
+    role: ['customer', 'editor', 'support', 'admin'].includes(req.body.role) ? req.body.role : 'customer',
     status: 'invited', emailVerified: false, sessionVersion: 0,
     created_date: now(), invitedBy: req.user.id,
   };
