@@ -127,13 +127,13 @@ export default function Home() {
           style={{ opacity: heroOpacity }}
         >
           <motion.div
-            initial={{ opacity: 0 }}
+            initial={reduceMotion ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 0.4, duration: 0.8 }}
+            transition={reduceMotion ? { duration: 0 } : { delay: 0.4, duration: 0.8 }}
           >
             <div className="mb-4 flex items-center gap-3 sm:mb-6">
               <div className="w-8 h-px bg-brass" />
-              <span className="font-tight text-xs uppercase tracking-[0.35em] text-brass/70">{activeSlide.eyebrow || 'Fine Art Studio'}</span>
+              <span className="font-tight text-xs uppercase tracking-[0.35em] text-brass/90">{activeSlide.eyebrow || 'Fine Art Studio'}</span>
             </div>
           </motion.div>
 
@@ -141,9 +141,9 @@ export default function Home() {
             <motion.h1
               key={`${activeSlide.id}-title`}
               className="font-display text-[clamp(2.65rem,14vw,7rem)] leading-[0.9] text-ivory"
-              initial={{ y: 120, opacity: 0 }}
+              initial={reduceMotion ? false : { y: 120, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.5, duration: 1, ease: [0.16, 1, 0.3, 1] }}
+              transition={reduceMotion ? { duration: 0 } : { delay: 0.5, duration: 1, ease: [0.16, 1, 0.3, 1] }}
             >
               {activeSlide.title}
             </motion.h1>
@@ -152,9 +152,9 @@ export default function Home() {
             <motion.h1
               key={`${activeSlide.id}-accent`}
               className="font-display text-[clamp(2.65rem,14vw,7rem)] leading-[0.9] italic text-brass"
-              initial={{ y: 120, opacity: 0 }}
+              initial={reduceMotion ? false : { y: 120, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.65, duration: 1, ease: [0.16, 1, 0.3, 1] }}
+              transition={reduceMotion ? { duration: 0 } : { delay: 0.65, duration: 1, ease: [0.16, 1, 0.3, 1] }}
             >
               {activeSlide.accentTitle}
             </motion.h1>
@@ -163,18 +163,18 @@ export default function Home() {
           <motion.p
             key={`${activeSlide.id}-subtitle`}
             className="mb-6 max-w-lg text-base font-light leading-relaxed text-ivory/55 sm:mb-10 sm:text-lg md:text-xl"
-            initial={{ opacity: 0, y: 30 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.9, duration: 0.8 }}
+            transition={reduceMotion ? { duration: 0 } : { delay: 0.9, duration: 0.8 }}
           >
             {activeSlide.subtitle}
           </motion.p>
 
           <motion.div
             className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-4"
-            initial={{ opacity: 0, y: 30 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.1, duration: 0.8 }}
+            transition={reduceMotion ? { duration: 0 } : { delay: 1.1, duration: 0.8 }}
           >
             <Link to={activeSlide.primaryLink || '/gallery'}
               className="group flex min-h-12 w-full items-center justify-center gap-2 bg-brass px-6 py-3 font-tight text-xs uppercase tracking-widest text-obsidian transition-all duration-300 hover:bg-brass-light sm:w-auto sm:px-8 sm:py-4 sm:text-sm"

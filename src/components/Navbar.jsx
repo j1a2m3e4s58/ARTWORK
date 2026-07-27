@@ -77,7 +77,7 @@ export default function Navbar() {
               <img src="/brand/reigns-app-icon-192.png" alt="" draggable="false" className="h-11 w-11 rounded-full border border-brass/20 object-cover" />
               <span>
                 <span className="font-display text-xl text-ivory tracking-wide group-hover:text-brass transition-colors duration-300 block">{settings.site_logo_primary || 'Reigns'}</span>
-                <span className="font-tight text-[10px] uppercase tracking-[0.35em] text-brass/70 block">{settings.site_logo_secondary || 'Atelier'}</span>
+              <span className="font-tight text-[10px] uppercase tracking-[0.35em] text-brass/90 block">{settings.site_logo_secondary || 'Atelier'}</span>
               </span>
             </Link>
           </div>
