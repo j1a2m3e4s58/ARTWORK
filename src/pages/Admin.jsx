@@ -23,6 +23,7 @@ import SystemTab from '@/components/admin/SystemTab';
 import HeroSlidesTab from '@/components/admin/HeroSlidesTab';
 import MediaLibraryTab from '@/components/admin/MediaLibraryTab';
 import RecycleBinTab from '@/components/admin/RecycleBinTab';
+import CommissionPackagesTab from '@/components/admin/CommissionPackagesTab';
 
 const allTabs = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard, group: 'Dashboard' },
@@ -37,6 +38,7 @@ const allTabs = [
   { id: 'shop', label: 'Available Works', icon: ShoppingBag, group: 'Sales' },
   { id: 'orders', label: 'Orders', icon: PackageCheck, group: 'Sales' },
   { id: 'commissions', label: 'Commissions', icon: MessageSquare, group: 'Sales' },
+  { id: 'commission-packages', label: 'Commission Packages', icon: PackageCheck, group: 'Sales' },
   { id: 'inbox', label: 'Inbox', icon: MessageSquare, group: 'Communication' },
   { id: 'subscribers', label: 'Subscribers', icon: Users, group: 'Communication' },
   { id: 'users', label: 'People & Access', icon: Users, group: 'People' },
@@ -128,7 +130,7 @@ export default function Admin() {
   const [searchParams, setSearchParams] = useSearchParams();
   const roleTabs = {
     admin: allTabs.map(tab => tab.id),
-    editor: ['overview', 'gallery', 'banners', 'media', 'recycle', 'videos', 'shop', 'testimonials', 'quotes', 'pages', 'blog'],
+    editor: ['overview', 'gallery', 'banners', 'media', 'recycle', 'videos', 'shop', 'testimonials', 'quotes', 'pages', 'blog', 'commission-packages'],
     support: ['overview', 'inbox', 'commissions', 'orders'],
   };
   const tabs = allTabs.filter(tab => roleTabs[user?.role || 'support'].includes(tab.id));
@@ -643,6 +645,7 @@ export default function Admin() {
 
           {/* -- PAGE CONTENT -- */}
           {activeTab === 'pages' && <PagesTab />}
+          {activeTab === 'commission-packages' && <CommissionPackagesTab />}
 
           {/* -- BLOG -- */}
           {activeTab === 'blog' && (

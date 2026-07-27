@@ -32,7 +32,7 @@ export default function Commission() {
   const settings = useSettings();
   const { user } = useAuth();
   const page = usePageContent('Commission');
-  const packages = [1, 2, 3].map((number, index) => ({
+  const legacyPackages = [1, 2, 3].map((number, index) => ({
     name: page[`commission_pkg${number}_name`] || DEFAULT_PACKAGES[index].name,
     price: page[`commission_pkg${number}_price`] || DEFAULT_PACKAGES[index].price,
     duration: page[`commission_pkg${number}_duration`] || DEFAULT_PACKAGES[index].duration,
@@ -40,6 +40,21 @@ export default function Commission() {
       .split(',').map(feature => feature.trim()).filter(Boolean),
     featured: number === 2,
   }));
+  let packages = legacyPackages;
+  try {
+    const managedPackages = JSON.parse(page.commission_packages || '');
+    if (Array.isArray(managedPackages) && managedPackages.length) {
+      packages = managedPackages
+        .filter(pkg => pkg?.active !== false)
+        .map((pkg, index) => ({
+          name: String(pkg.name || `Package ${index + 1}`),
+          price: String(pkg.price || ''),
+          duration: String(pkg.duration || ''),
+          features: Array.isArray(pkg.features) ? pkg.features.map(feature => String(feature).trim()).filter(Boolean) : [],
+          featured: Boolean(pkg.featured),
+        }));
+    }
+  } catch { /* Continue using the existing three packages until the new manager is saved. */ }
   const faqs = [1, 2, 3, 4].map((number, index) => ({
     q: page[`commission_faq${number}_q`] || DEFAULT_FAQS[index].q,
     a: page[`commission_faq${number}_a`] || DEFAULT_FAQS[index].a,
