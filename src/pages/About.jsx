@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
 import { usePageContent } from '@/hooks/usePageContent';
+import { imageSrcSet, imageVariant } from '@/lib/media';
 
 const parseRows = (value, mapper) => String(value || '')
   .split(/\r?\n/)
@@ -61,7 +62,9 @@ export default function About() {
               <div className="relative">
                 <div className="aspect-[3/4] overflow-hidden">
                   <img
-                    src={settings.artist_photo || '/brand/reigns-atelier-logo.jpg'}
+                    src={imageVariant(settings.artist_photo || '/brand/reigns-atelier-logo.jpg', 1024)}
+                    srcSet={imageSrcSet(settings.artist_photo || '/brand/reigns-atelier-logo.jpg', [480, 768, 1024])}
+                    sizes="(min-width: 1024px) 50vw, 100vw"
                     alt="Artist at work"
                     className="w-full h-full object-cover grayscale-[20%]"
                   />

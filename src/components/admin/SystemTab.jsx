@@ -11,6 +11,9 @@ export default function SystemTab() {
   const [mfaSetup, setMfaSetup] = useState(null);
   const [mfaCode, setMfaCode] = useState('');
   const [disablePassword, setDisablePassword] = useState('');
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [recoveryCodes, setRecoveryCodes] = useState([]);
   const [testing, setTesting] = useState('');
   useEffect(() => {
     Promise.all([studioClient.system.status(), studioClient.entities.AuditLog.list('-created_date', 50)])
@@ -23,10 +26,11 @@ export default function SystemTab() {
   };
   const startMfa = async () => setMfaSetup(await studioClient.mfa.setup());
   const enableMfa = async () => {
-    await studioClient.mfa.enable(mfaCode);
+    const result = await studioClient.mfa.enable(mfaCode);
     await checkUserAuth();
     setMfaSetup(null);
     setMfaCode('');
+    setRecoveryCodes(result.recoveryCodes || []);
     setNotice('Two-factor authentication enabled.');
   };
   const disableMfa = async () => {
@@ -40,6 +44,13 @@ export default function SystemTab() {
     await studioClient.system.retryOutbox();
     setHealth(await studioClient.system.status());
     setNotice('Queued email delivery was retried.');
+  };
+  const regenerateRecoveryCodes = async () => {
+    const result = await studioClient.mfa.regenerateRecoveryCodes(recoveryPassword, recoveryCode);
+    setRecoveryPassword('');
+    setRecoveryCode('');
+    setRecoveryCodes(result.recoveryCodes || []);
+    setNotice('Previous recovery codes were revoked. Save the new codes now.');
   };
   const rehearse = async (name, action, successMessage) => {
     setTesting(name);
@@ -58,7 +69,7 @@ export default function SystemTab() {
     <div>
       <h1 className="font-display text-4xl text-ivory">System & Operations</h1>
       <p className="mb-8 mt-2 text-sm text-ivory/40">Environment readiness, backups and administrator audit history.</p>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         {[
           { label: 'API', value: health?.ok ? 'Ready' : health ? 'Needs attention' : 'Checking', icon: Activity, good: health?.ok },
           { label: 'Database', value: health?.services?.database?.kind || 'Checking', icon: Server, good: health?.services?.database?.ok },
@@ -69,6 +80,20 @@ export default function SystemTab() {
             value: health?.services?.payment?.configured ? `${health.services.payment.provider} sandbox` : 'Manual testing mode',
             icon: CreditCard,
             good: health?.services?.payment?.configured,
+          },
+          {
+            label: 'Monitoring',
+            value: health?.services?.monitoring?.ok ? 'Alert channel ready' : 'Webhook required',
+            icon: BellRing,
+            good: health?.services?.monitoring?.ok,
+          },
+          {
+            label: 'Restore test',
+            value: health?.services?.backup?.lastVerifiedAt
+              ? new Date(health.services.backup.lastVerifiedAt).toLocaleDateString()
+              : 'Not recorded',
+            icon: DatabaseBackup,
+            good: health?.services?.backup?.ok,
           },
         ].map(({ label, value, icon: Icon, good }) => (
           <div key={label} className={`border p-4 ${good ? 'border-green-400/20 bg-green-400/5' : 'border-yellow-400/20 bg-yellow-400/5'}`}>
@@ -112,10 +137,29 @@ export default function SystemTab() {
           </div>
         )}
         {user?.mfaEnabled && (
-          <div className="mt-4 grid gap-2 sm:grid-cols-3">
-            <input type="password" value={disablePassword} onChange={event => setDisablePassword(event.target.value)} placeholder="Current password" className="border border-brass/15 bg-obsidian px-3 py-2 text-sm text-ivory" />
-            <input value={mfaCode} onChange={event => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Authenticator code" className="border border-brass/15 bg-obsidian px-3 py-2 text-sm text-ivory" />
-            <button onClick={disableMfa} className="border border-red-400/20 px-4 py-2 text-sm text-red-300">Disable 2FA</button>
+          <>
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <input type="password" value={recoveryPassword} onChange={event => setRecoveryPassword(event.target.value)} placeholder="Current password" className="border border-brass/15 bg-obsidian px-3 py-2 text-sm text-ivory" />
+              <input value={recoveryCode} onChange={event => setRecoveryCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Authenticator code" className="border border-brass/15 bg-obsidian px-3 py-2 text-sm text-ivory" />
+              <button onClick={regenerateRecoveryCodes} className="border border-brass/25 px-4 py-2 text-sm text-brass">Generate new recovery codes</button>
+            </div>
+            <details className="mt-4 border-t border-ivory/10 pt-4">
+              <summary className="cursor-pointer text-xs text-red-300/75">Disable two-factor authentication</summary>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <input type="password" value={disablePassword} onChange={event => setDisablePassword(event.target.value)} placeholder="Current password" className="border border-brass/15 bg-obsidian px-3 py-2 text-sm text-ivory" />
+                <input value={mfaCode} onChange={event => setMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Authenticator code" className="border border-brass/15 bg-obsidian px-3 py-2 text-sm text-ivory" />
+                <button onClick={disableMfa} className="border border-red-400/20 px-4 py-2 text-sm text-red-300">Disable 2FA</button>
+              </div>
+            </details>
+          </>
+        )}
+        {recoveryCodes.length > 0 && (
+          <div className="mt-5 border border-yellow-300/25 bg-yellow-300/5 p-4">
+            <p className="text-sm text-yellow-100">Save these one-time codes securely. They will disappear when you leave this section.</p>
+            <div className="mt-3 grid grid-cols-2 gap-2 font-mono text-sm text-brass sm:grid-cols-5">
+              {recoveryCodes.map(code => <code key={code}>{code}</code>)}
+            </div>
+            <button onClick={() => setRecoveryCodes([])} className="mt-4 border border-brass/25 px-3 py-2 text-xs text-brass">I saved these codes</button>
           </div>
         )}
       </section>

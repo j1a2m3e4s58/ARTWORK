@@ -73,7 +73,8 @@ export default function Home() {
     secondaryLabel: 'Request Commission',
     secondaryLink: '/commission',
   };
-  const slides = heroSlides.length ? heroSlides : [fallbackSlide];
+  const maximumHeroSlides = Math.min(8, Math.max(1, Number(settings.max_hero_slides) || 6));
+  const slides = heroSlides.length ? heroSlides.slice(0, maximumHeroSlides) : [fallbackSlide];
   const activeSlide = slides[heroIndex % slides.length] || fallbackSlide;
   const visibleStats = STATS_FALLBACK
     .map(stat => ({ ...stat, value: page[stat.key] || stat.value }))

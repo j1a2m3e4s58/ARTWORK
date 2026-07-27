@@ -2,7 +2,7 @@ import 'dotenv/config';
 import path from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -50,7 +50,7 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       imgSrc: ["'self'", 'data:', 'https:'],
       mediaSrc: ["'self'", 'https:'],
-      frameSrc: ["'self'", 'https://www.youtube.com', 'https://player.vimeo.com'],
+      frameSrc: ["'self'", 'https://www.youtube.com', 'https://player.vimeo.com', 'https://challenges.cloudflare.com'],
       connectSrc: ["'self'", 'https://api.cloudinary.com', 'https://challenges.cloudflare.com'],
       styleSrc: ["'self'", "'unsafe-inline'"],
       fontSrc: ["'self'", 'data:'],
@@ -126,9 +126,22 @@ const authenticatedCreate = new Set(['CommissionRequest', 'Message', 'Order']);
 const staffRoles = new Set(['admin', 'editor', 'support']);
 const contentEntities = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'Media', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
 const supportEntities = new Set(['CommissionRequest', 'Message', 'Order']);
-const hiddenUserFields = ({ passwordHash, mfaSecret, pendingMfaSecret, managedPasswordFingerprint, ...user }) => user;
+const hiddenUserFields = ({
+  passwordHash, mfaSecret, pendingMfaSecret, mfaRecoveryCodeHashes,
+  managedPasswordFingerprint, ...user
+}) => user;
 const hashToken = token => createHash('sha256').update(token).digest('hex');
 const token = () => randomBytes(32).toString('hex');
+const normalizeRecoveryCode = value => String(value || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+const createRecoveryCodes = () => Array.from({ length: 10 }, () => {
+  const raw = randomBytes(6).toString('hex').toUpperCase();
+  return `${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}`;
+});
+const setRecoveryCodes = user => {
+  const codes = createRecoveryCodes();
+  user.mfaRecoveryCodeHashes = codes.map(code => hashToken(normalizeRecoveryCode(code)));
+  return codes;
+};
 const secureCookie = process.env.NODE_ENV === 'production';
 const encryptionKey = createHash('sha256').update(jwtSecret).digest();
 
@@ -424,7 +437,7 @@ async function ensureSeeds() {
   const adminPassword = process.env.ADMIN_PASSWORD;
   if (adminEmail && adminPassword) {
     const configuredAdmin = db.data.User.find(user => user.email === adminEmail);
-    const managedPasswordFingerprint = createHash('sha256')
+    const managedPasswordFingerprint = createHmac('sha256', jwtSecret)
       .update(`reigns-atelier-managed-admin:${adminPassword}`)
       .digest('hex');
     if (!configuredAdmin) {
@@ -457,6 +470,41 @@ async function ensureSeeds() {
       id: newId(), key, value, label, page: 'Settings',
       group: 'Navigation', created_date: now(),
     });
+  }
+  const provenanceByHost = {
+    'images.pexels.com': { name: 'Pexels', license: 'https://www.pexels.com/license/' },
+    'videos.pexels.com': { name: 'Pexels', license: 'https://www.pexels.com/license/' },
+    'cdn.pixabay.com': { name: 'Pixabay', license: 'https://pixabay.com/service/license-summary/' },
+  };
+  const mediaFields = {
+    Artwork: ['imageUrl'],
+    HeroSlide: ['imageUrl'],
+    Video: ['videoUrl', 'thumbnailUrl'],
+    ShopProduct: ['imageUrl'],
+    BlogPost: ['coverImageUrl'],
+  };
+  for (const [collection, fields] of Object.entries(mediaFields)) {
+    for (const record of db.data[collection]) {
+      if (record.contentStatus === 'original' || record.sourceType === 'original') continue;
+      const sources = fields
+        .map(field => record[field])
+        .filter(Boolean)
+        .map(url => {
+          try {
+            return { url, ...provenanceByHost[new URL(url).hostname] };
+          } catch {
+            return null;
+          }
+        })
+        .filter(source => source?.license);
+      if (!sources.length) continue;
+      record.sourceName ||= [...new Set(sources.map(source => source.name))].join(' / ');
+      record.sourceUrl ||= sources[0].url;
+      record.licenseUrls ||= [...new Set(sources.map(source => source.license))];
+      record.licenseUrl ||= record.licenseUrls[0];
+      record.licenseVerifiedAt ||= '2026-07-27T00:00:00.000Z';
+      record.contentStatus ||= 'licensed-stock';
+    }
   }
   if (production && process.env.SEED_DEMO_CONTENT !== 'true' && !bootstrapProductionContent) {
     await save();
@@ -797,6 +845,14 @@ app.get('/api/ready', async (_req, res) => {
   ]);
   const storage = checkStorage();
   const production = process.env.NODE_ENV === 'production';
+  const monitoring = {
+    ok: Boolean(process.env.ERROR_WEBHOOK_URL),
+    metricsProtected: Boolean(process.env.METRICS_TOKEN),
+  };
+  const backup = {
+    ok: Boolean(process.env.BACKUP_VERIFIED_AT),
+    lastVerifiedAt: process.env.BACKUP_VERIFIED_AT || null,
+  };
   const required = production
     ? [
         database.ok,
@@ -809,8 +865,16 @@ app.get('/api/ready', async (_req, res) => {
     : [database.ok];
   const payload = {
     ok: required.every(Boolean),
-    degraded: requireEmail && !email.ok ? ['email'] : [],
-    services: { database, email, storage, humanVerification: { ok: turnstileConfigured } },
+    degraded: [
+      ...(requireEmail && !email.ok ? ['email'] : []),
+      ...(!requireEmail && emailConfigured ? ['email_unchecked'] : []),
+      ...(production && !monitoring.ok ? ['monitoring'] : []),
+      ...(production && !backup.ok ? ['backup_unverified'] : []),
+    ],
+    services: {
+      database, email, storage, monitoring, backup,
+      humanVerification: { ok: turnstileConfigured },
+    },
     payment: paymentStatus,
     environment: process.env.NODE_ENV || 'development',
   };
@@ -823,15 +887,24 @@ app.get('/api/admin/system-status', requireAdmin, async (_req, res) => {
     checkEmail(),
   ]);
   const storage = checkStorage();
+  const monitoring = {
+    ok: Boolean(process.env.ERROR_WEBHOOK_URL),
+    metricsProtected: Boolean(process.env.METRICS_TOKEN),
+  };
+  const backup = {
+    ok: Boolean(process.env.BACKUP_VERIFIED_AT),
+    lastVerifiedAt: process.env.BACKUP_VERIFIED_AT || null,
+  };
   res.json({
     ok: database.ok && (process.env.NODE_ENV !== 'production' || (email.ok && storage.ok)),
-    services: { database, email, storage, payment: paymentStatus },
+    services: { database, email, storage, monitoring, backup, payment: paymentStatus },
     counts: {
       pendingMessages: db.data.Message.filter(item => !['replied', 'archived', 'spam'].includes(item.status) && !item.deleted_at).length,
       pendingCommissions: db.data.CommissionRequest.filter(item => item.status === 'pending' && !item.deleted_at).length,
       pendingOrders: db.data.Order.filter(item => item.status === 'pending' && !item.deleted_at).length,
       failedEmails: db.data.Outbox.filter(item => item.status === 'failed').length,
       queuedEmails: db.data.Outbox.filter(item => item.status === 'pending').length,
+      activeAdministrators: db.data.User.filter(item => item.role === 'admin' && item.status === 'active' && !item.deleted_at).length,
     },
     environment: process.env.NODE_ENV || 'development',
     checkedAt: now(),
@@ -885,7 +958,9 @@ app.post('/api/auth/register', authLimiter, verifyHuman, async (req, res) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
   const passwordError = passwordProblem(password);
   if (passwordError) return res.status(400).json({ error: passwordError });
-  if (db.data.User.some(user => user.email === email)) return res.status(409).json({ error: 'An account with this email already exists.' });
+  if (db.data.User.some(user => user.email === email)) {
+    return res.status(409).json({ error: 'The account could not be created. Sign in or use account recovery.' });
+  }
   const user = {
     id: newId(), email, full_name: fullName || email.split('@')[0],
     passwordHash: await bcrypt.hash(password, 12), role: 'customer',
@@ -925,8 +1000,25 @@ app.post('/api/auth/mfa/verify-login', authLimiter, async (req, res) => {
     const payload = jwt.verify(String(req.body.challenge || ''), jwtSecret);
     if (payload.purpose !== 'mfa') throw new Error();
     const user = db.data.User.find(item => item.id === payload.id && item.status === 'active');
-    if (!user?.mfaSecret || !authenticator.check(String(req.body.code || ''), decrypt(user.mfaSecret))) {
+    const suppliedCode = String(req.body.code || '');
+    const authenticatorValid = user?.mfaSecret && /^\d{6}$/.test(suppliedCode)
+      && authenticator.check(suppliedCode, decrypt(user.mfaSecret));
+    const recoveryHash = hashToken(normalizeRecoveryCode(suppliedCode));
+    const recoveryIndex = user?.mfaRecoveryCodeHashes?.findIndex(item => safeEqual(item, recoveryHash)) ?? -1;
+    if (!user?.mfaSecret || (!authenticatorValid && recoveryIndex < 0)) {
       return res.status(401).json({ error: 'Invalid authentication code.' });
+    }
+    if (recoveryIndex >= 0) {
+      user.mfaRecoveryCodeHashes.splice(recoveryIndex, 1);
+      await audit(user, 'account.mfa_recovery_code_used', 'User', user.id, {
+        remainingCodes: user.mfaRecoveryCodeHashes.length,
+      });
+      await save();
+      await deliverEmail({
+        to: user.email,
+        subject: 'A Reigns Atelier recovery code was used',
+        text: 'A one-time recovery code was used to sign in. If this was not you, reset your password immediately.',
+      });
     }
     setSession(res, user);
     res.json(hiddenUserFields(user));
@@ -1017,6 +1109,11 @@ app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
   db.data.passwordResetTokens = db.data.passwordResetTokens.filter(item => item.id !== tokenRecord.id);
   await audit(user, 'account.password_reset', 'User', user.id);
   await save();
+  await deliverEmail({
+    to: user.email,
+    subject: 'Your Reigns Atelier password was changed',
+    text: 'Your password was changed using account recovery. If this was not you, contact the studio immediately.',
+  });
   res.json({ success: true });
 });
 
@@ -1130,9 +1227,15 @@ app.post('/api/admin/mfa/enable', requireAdminIdentity, authLimiter, async (req,
   req.user.mfaSecret = req.user.pendingMfaSecret;
   delete req.user.pendingMfaSecret;
   req.user.mfaEnabled = true;
+  const recoveryCodes = setRecoveryCodes(req.user);
   await audit(req.user, 'account.mfa_enabled', 'User', req.user.id);
   await save();
-  res.json({ success: true });
+  await deliverEmail({
+    to: req.user.email,
+    subject: 'Two-factor authentication enabled',
+    text: 'Two-factor authentication was enabled for your Reigns Atelier account. Store your recovery codes securely.',
+  });
+  res.json({ success: true, recoveryCodes });
 });
 
 app.post('/api/admin/mfa/disable', requireAdmin, authLimiter, async (req, res) => {
@@ -1141,10 +1244,34 @@ app.post('/api/admin/mfa/disable', requireAdmin, authLimiter, async (req, res) =
   if (!passwordValid || !codeValid) return res.status(400).json({ error: 'Password or authentication code is incorrect.' });
   delete req.user.mfaSecret;
   delete req.user.pendingMfaSecret;
+  delete req.user.mfaRecoveryCodeHashes;
   req.user.mfaEnabled = false;
   await audit(req.user, 'account.mfa_disabled', 'User', req.user.id);
   await save();
+  await deliverEmail({
+    to: req.user.email,
+    subject: 'Two-factor authentication disabled',
+    text: 'Two-factor authentication was disabled for your Reigns Atelier account. If this was not you, reset your password immediately.',
+  });
   res.json({ success: true });
+});
+
+app.post('/api/admin/mfa/recovery-codes', requireAdmin, authLimiter, async (req, res) => {
+  const passwordValid = await bcrypt.compare(String(req.body.password || ''), req.user.passwordHash);
+  const codeValid = req.user.mfaSecret
+    && authenticator.check(String(req.body.code || ''), decrypt(req.user.mfaSecret));
+  if (!passwordValid || !codeValid) {
+    return res.status(400).json({ error: 'Password or authentication code is incorrect.' });
+  }
+  const recoveryCodes = setRecoveryCodes(req.user);
+  await audit(req.user, 'account.mfa_recovery_codes_regenerated', 'User', req.user.id);
+  await save();
+  await deliverEmail({
+    to: req.user.email,
+    subject: 'New recovery codes generated',
+    text: 'Your previous Reigns Atelier recovery codes were replaced. If this was not you, reset your password immediately.',
+  });
+  res.json({ success: true, recoveryCodes });
 });
 
 app.get('/api/entities/:name', async (req, res) => {
@@ -1560,6 +1687,11 @@ app.post('/api/account/change-password', requireUser, authLimiter, async (req, r
   req.user.sessionVersion = (req.user.sessionVersion || 0) + 1;
   await audit(req.user, 'account.password_changed', 'User', req.user.id);
   await save();
+  await deliverEmail({
+    to: req.user.email,
+    subject: 'Your Reigns Atelier password was changed',
+    text: 'Your account password was changed. If this was not you, use account recovery immediately.',
+  });
   setSession(res, req.user);
   res.json({ success: true });
 });

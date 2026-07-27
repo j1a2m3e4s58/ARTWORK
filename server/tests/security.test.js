@@ -47,3 +47,11 @@ test('production configuration rejects temporary services and insecure origins',
 test('development configuration permits local infrastructure', () => {
   assert.deepEqual(validateRuntimeConfiguration({ NODE_ENV: 'development' }), []);
 });
+
+test('production refuses unsafe multi-instance web concurrency', () => {
+  const problems = validateRuntimeConfiguration({
+    NODE_ENV: 'production',
+    WEB_CONCURRENCY: '2',
+  });
+  assert.ok(problems.some(problem => problem.includes('WEB_CONCURRENCY must remain 1')));
+});

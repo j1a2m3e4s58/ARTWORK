@@ -199,31 +199,6 @@
     50% { transform: translateY(-20px) rotate(3deg); }
   }
 
-  .cursor-dot {
-    width: 8px;
-    height: 8px;
-    background: #C9A96E;
-    border-radius: 50%;
-    position: fixed;
-    pointer-events: none;
-    z-index: 99999;
-    transform: translate(-50%, -50%);
-    transition: transform 0.1s ease, opacity 0.2s;
-    mix-blend-mode: difference;
-  }
-
-  .cursor-ring {
-    width: 36px;
-    height: 36px;
-    border: 1.5px solid rgba(201, 169, 110, 0.6);
-    border-radius: 50%;
-    position: fixed;
-    pointer-events: none;
-    z-index: 99998;
-    transform: translate(-50%, -50%);
-    transition: transform 0.15s ease, width 0.2s ease, height 0.2s ease, opacity 0.2s;
-  }
-
   .masonry-grid {
     columns: 3;
     column-gap: 1.5rem;
@@ -278,21 +253,7 @@
   }
 }
 
-@media (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  html.custom-cursor-active,
-  html.custom-cursor-active a,
-  html.custom-cursor-active button,
-  html.custom-cursor-active input,
-  html.custom-cursor-active textarea,
-  html.custom-cursor-active select {
-    cursor: none;
-  }
-}
-
 @media (pointer: coarse), (prefers-reduced-motion: reduce) {
-  .cursor-dot, .cursor-ring {
-    display: none;
-  }
   *, *::before, *::after {
     scroll-behavior: auto !important;
   }

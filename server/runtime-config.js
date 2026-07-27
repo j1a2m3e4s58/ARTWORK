@@ -30,6 +30,9 @@ export function validateRuntimeConfiguration(env = process.env) {
   if (env.STORAGE_PROVIDER !== 'cloudinary') problems.push('STORAGE_PROVIDER must be cloudinary in production');
   if (String(env.JWT_SECRET || '').length < 32) problems.push('JWT_SECRET must contain at least 32 characters');
   if (String(env.ADMIN_PASSWORD || '').length < 12) problems.push('ADMIN_PASSWORD must contain at least 12 characters');
+  if (Number(env.WEB_CONCURRENCY || 1) > 1) {
+    problems.push('WEB_CONCURRENCY must remain 1 until shared rate limiting and a dedicated job worker are configured');
+  }
 
   for (const name of ['APP_ORIGIN', 'SITE_URL']) {
     if (env[name] && !String(env[name]).startsWith('https://')) {

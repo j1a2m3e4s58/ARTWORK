@@ -10,6 +10,7 @@ export default function Register() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileRequired = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY);
 
   const submit = async event => {
     event.preventDefault();
@@ -50,7 +51,7 @@ export default function Register() {
         ))}
         <p className="text-xs text-ivory/40">Passwords require at least 12 characters, uppercase and lowercase letters, and a number.</p>
         <TurnstileWidget onToken={setTurnstileToken} />
-        <button disabled={loading} className="flex w-full items-center justify-center gap-2 bg-brass py-3.5 text-sm uppercase tracking-wider text-obsidian disabled:opacity-50">
+        <button disabled={loading || (turnstileRequired && !turnstileToken)} className="flex w-full items-center justify-center gap-2 bg-brass py-3.5 text-sm uppercase tracking-wider text-obsidian disabled:cursor-not-allowed disabled:opacity-50">
           {loading && <Loader2 className="animate-spin" size={16} />} Create account
         </button>
       </form>

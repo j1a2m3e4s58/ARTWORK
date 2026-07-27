@@ -13,6 +13,7 @@ export default function ForgotPassword() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
+  const turnstileRequired = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -62,7 +63,7 @@ export default function ForgotPassword() {
             </div>
           </div>
           <TurnstileWidget onToken={setTurnstileToken} />
-          <Button type="submit" className="w-full h-12 font-medium" disabled={loading}>
+          <Button type="submit" className="w-full h-12 font-medium" disabled={loading || (turnstileRequired && !turnstileToken)}>
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />

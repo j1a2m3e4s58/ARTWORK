@@ -1,5 +1,6 @@
 ﻿import { useState } from 'react';
 import { MessageCircle, X, Send, Loader2, Sparkles } from 'lucide-react';
+import { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '@/lib/AuthContext';
 import { guidedReply } from '@/lib/guidedHelpers';
@@ -11,6 +12,14 @@ export default function CommissionGuideChat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = event => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', close);
+    return () => document.removeEventListener('keydown', close);
+  }, [open]);
 
   const startConversation = async () => {
     if (conversation) return;
@@ -69,7 +78,7 @@ export default function CommissionGuideChat() {
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-24 right-4 z-[9000] flex h-[500px] max-h-[calc(100dvh-8rem)] w-[360px] max-w-[calc(100vw-2rem)] flex-col border border-brass/30 glass-panel md:bottom-24 md:right-8">
+        <div role="dialog" aria-modal="true" aria-labelledby="commission-guide-title" className="fixed bottom-24 right-4 z-[9000] flex h-[500px] max-h-[calc(100dvh-8rem)] w-[360px] max-w-[calc(100vw-2rem)] flex-col border border-brass/30 glass-panel md:bottom-24 md:right-8">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-brass/15">
             <div className="flex items-center gap-2">
@@ -77,11 +86,11 @@ export default function CommissionGuideChat() {
                 <Sparkles size={16} className="text-brass" />
               </div>
               <div>
-                <p className="font-display text-sm text-ivory">Commission Guide</p>
+                <p id="commission-guide-title" className="font-display text-sm text-ivory">Commission Guide</p>
                 <p className="text-ivory/40 text-[10px] font-tight">Published studio guidance • Always available</p>
               </div>
             </div>
-            <button onClick={() => setOpen(false)} className="text-ivory/30 hover:text-brass transition-colors">
+            <button onClick={() => setOpen(false)} aria-label="Close commission guide" className="flex h-11 w-11 items-center justify-center text-ivory/30 hover:text-brass transition-colors">
               <X size={18} />
             </button>
           </div>
@@ -125,7 +134,7 @@ export default function CommissionGuideChat() {
               placeholder="Describe your vision..."
               className="flex-1 bg-obsidian border border-brass/20 text-ivory/80 px-3 py-2 text-sm placeholder:text-ivory/25 focus:outline-none focus:border-brass/40 transition-colors"
             />
-            <button onClick={handleSend} disabled={!input.trim() || loading || !conversation}
+            <button onClick={handleSend} disabled={!input.trim() || loading || !conversation} aria-label="Send message to commission guide"
               className="bg-brass text-obsidian px-3 py-2 hover:bg-brass-light transition-all disabled:opacity-30">
               <Send size={16} />
             </button>

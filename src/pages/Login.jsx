@@ -66,9 +66,11 @@ export default function Login() {
           </span>
         </label>}
         {challenge && <label htmlFor="login-code" className="block">
-          <span className="mb-1.5 block text-xs uppercase tracking-widest text-ivory/45">Authenticator code</span>
-          <input id="login-code" name="code" inputMode="numeric" autoComplete="one-time-code" required value={code} onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-            className="w-full border border-brass/15 bg-obsidian px-4 py-3 text-center text-xl tracking-[0.4em] text-ivory outline-none focus:border-brass/50" />
+          <span className="mb-1.5 block text-xs uppercase tracking-widest text-ivory/45">Authenticator or recovery code</span>
+          <input id="login-code" name="code" autoComplete="one-time-code" required value={code}
+            onChange={event => setCode(event.target.value.replace(/[^a-z0-9-]/gi, '').slice(0, 14).toUpperCase())}
+            className="w-full border border-brass/15 bg-obsidian px-4 py-3 text-center text-lg tracking-[0.18em] text-ivory outline-none focus:border-brass/50" />
+          <span className="mt-2 block text-xs normal-case tracking-normal text-ivory/35">Use the six-digit app code or one unused recovery code.</span>
         </label>}
         <button disabled={loading} className="flex w-full items-center justify-center gap-2 bg-brass py-3.5 text-sm uppercase tracking-wider text-obsidian disabled:opacity-50">
           {loading && <Loader2 className="animate-spin" size={16} />} {challenge ? 'Verify code' : 'Log in'}

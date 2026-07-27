@@ -20,6 +20,7 @@ export default function AdminAccessGate({ children }) {
   const [mfaRequired, setMfaRequired] = useState(false);
   const [mfaSetup, setMfaSetup] = useState(null);
   const [mfaCode, setMfaCode] = useState('');
+  const [recoveryCodes, setRecoveryCodes] = useState([]);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -87,12 +88,11 @@ export default function AdminAccessGate({ children }) {
     setSubmitting(true);
     setError('');
     try {
-      await studioClient.mfa.enable(mfaCode);
+      const result = await studioClient.mfa.enable(mfaCode);
       await checkUserAuth();
-      setMfaRequired(false);
+      setRecoveryCodes(result.recoveryCodes || []);
       setMfaSetup(null);
       setMfaCode('');
-      window.requestAnimationFrame(() => passwordRef.current?.focus());
     } catch (enableError) {
       setError(enableError.message);
     } finally {
@@ -128,7 +128,24 @@ export default function AdminAccessGate({ children }) {
           <p className="mt-2 text-sm leading-relaxed text-ivory/55">
             Production administrators must connect an authenticator app before accessing studio records.
           </p>
-          {!mfaSetup ? (
+          {recoveryCodes.length > 0 ? (
+            <div className="mt-6">
+              <p className="text-sm leading-relaxed text-yellow-100">Save these one-time recovery codes now. They will not be shown again.</p>
+              <div className="mt-4 grid grid-cols-2 gap-2 border border-brass/20 bg-obsidian/75 p-4 font-mono text-sm text-brass">
+                {recoveryCodes.map(code => <code key={code}>{code}</code>)}
+              </div>
+              <button
+                onClick={() => {
+                  setRecoveryCodes([]);
+                  setMfaRequired(false);
+                  window.requestAnimationFrame(() => passwordRef.current?.focus());
+                }}
+                className="mt-4 min-h-11 w-full bg-brass px-3 text-sm font-semibold uppercase tracking-wider text-obsidian"
+              >
+                I saved my recovery codes
+              </button>
+            </div>
+          ) : !mfaSetup ? (
             <button onClick={startMfa} className="mt-6 min-h-12 w-full bg-brass px-4 text-sm font-semibold uppercase tracking-wider text-obsidian">
               Set up authenticator
             </button>

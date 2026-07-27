@@ -1,5 +1,6 @@
 ﻿import { useState } from 'react';
 import { ListChecks, Loader2, X, Lightbulb, DollarSign, Clock } from 'lucide-react';
+import { useEffect } from 'react';
 import { buildCommissionBrief, calculateGuidePrice } from '@/lib/guidedHelpers';
 import { useAuth } from '@/lib/AuthContext';
 
@@ -10,6 +11,14 @@ export default function CommissionBriefBuilder({ form, set }) {
   const [vision, setVision] = useState(null);
   const [pricing, setPricing] = useState(null);
   const [pricingLoading, setPricingLoading] = useState(false);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = event => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', close);
+    return () => document.removeEventListener('keydown', close);
+  }, [open]);
 
   const handleAnalyze = async () => {
     if (!form.description) return;
@@ -63,14 +72,14 @@ export default function CommissionBriefBuilder({ form, set }) {
       {open && (
         <div className="fixed inset-0 z-[9900] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-obsidian/90 backdrop-blur-xl" onClick={() => setOpen(false)} />
-          <div className="relative z-10 w-full max-w-lg glass-panel border border-brass/20 max-h-[85vh] overflow-y-auto">
+          <div role="dialog" aria-modal="true" aria-labelledby="brief-builder-title" className="relative z-10 w-full max-w-lg glass-panel border border-brass/20 max-h-[85vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <ListChecks className="text-brass" size={20} />
-                  <h3 className="font-display text-2xl text-ivory">Guided Brief Builder</h3>
+                  <h3 id="brief-builder-title" className="font-display text-2xl text-ivory">Guided Brief Builder</h3>
                 </div>
-                <button onClick={() => setOpen(false)} className="text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>
+                <button onClick={() => setOpen(false)} aria-label="Close guided brief builder" className="flex h-11 w-11 items-center justify-center text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>
               </div>
               <p className="text-ivory/40 text-sm mb-5">Use the studio’s published package rules to prepare a clearer request. This is a planning guide; the artist confirms every quote.</p>
 

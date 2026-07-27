@@ -25,7 +25,7 @@ The current starter-media audit must reach zero unverified assets before product
 
 ## Authentication and email rehearsal
 
-Use fresh test addresses to verify registration, email verification, resend verification, login, logout, forgotten-password reset, staff invitation, invitation acceptance, admin password re-check and MFA. Confirm the Admin inbox receives customer messages and replies produce an email plus an audit record.
+Use fresh test addresses to verify registration, email verification, resend verification, login, logout, forgotten-password reset, staff invitation, invitation acceptance, admin password re-check and MFA. Save the generated one-time recovery codes offline, test one recovery code, and regenerate the remaining set. Confirm the Admin inbox receives customer messages and replies produce an email plus an audit record. Create and verify a second administrator before launch so access does not depend on one account.
 
 ## Payment rehearsal
 
@@ -55,3 +55,5 @@ Record the archive timestamp, restored table inventory and reviewer. Also perfor
 - SMTP, authentication, Admin inbox and Paystack sandbox evidence is retained.
 - Database restore is demonstrated against a disposable target.
 - Rollback owner, incident contact, DNS plan and maintenance window are documented.
+- `WEB_CONCURRENCY=1`; horizontal scaling remains blocked until shared rate limiting, direct transactional repositories and a dedicated job worker are deployed.
+- Exposed Cloudinary, Gmail, Turnstile and administrator credentials have been rotated and the old credentials revoked.

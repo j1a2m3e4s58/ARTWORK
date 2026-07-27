@@ -1,4 +1,4 @@
-const CACHE = 'reigns-atelier-v5';
+const CACHE = 'reigns-atelier-v6';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/brand/reigns-app-icon-192.png', '/brand/reigns-app-icon-512.png'];
 
 self.addEventListener('install', event => {
@@ -22,7 +22,11 @@ self.addEventListener('message', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin || ['/api/', '/uploads/', '/admin', '/account'].some(path => url.pathname.startsWith(path))) return;
+  const privatePaths = [
+    '/api/', '/uploads/', '/admin', '/account', '/login', '/register',
+    '/forgot-password', '/reset-password', '/accept-invite', '/verify-email',
+  ];
+  if (url.origin !== self.location.origin || url.search || privatePaths.some(path => url.pathname.startsWith(path))) return;
   event.respondWith(
     fetch(event.request)
       .then(response => {

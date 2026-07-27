@@ -32,6 +32,7 @@ const SETTING_DEFAULTS = [
   { key: 'site_tagline', label: 'Site Tagline', value: 'Where imagination bleeds onto canvas.', group: 'Branding', icon: 'globe' },
   { key: 'artist_photo', label: 'Artist Photo URL', value: '/brand/reigns-atelier-logo.jpg', group: 'Branding', icon: 'globe', hint: 'Upload or paste URL for the About page artist photo' },
   { key: 'hero_slide_seconds', label: 'Seconds Between Home Banners', value: '7', group: 'Banners', icon: 'globe', hint: 'Use the Home Banners tab to add, edit, arrange or remove slides.' },
+  { key: 'max_hero_slides', label: 'Maximum Active Home Banners', value: '6', group: 'Banners', icon: 'globe', hint: 'Keep this between 4 and 6 for a focused home experience.' },
   { key: 'newsletter_heading', label: 'Newsletter Section Heading', value: 'Newsletter', group: 'Newsletter & Offers', icon: 'mail' },
   { key: 'newsletter_body', label: 'Newsletter Description Text', value: 'Stay inspired — new works, process videos, and exclusive offers.', group: 'Newsletter & Offers', icon: 'mail' },
   { key: 'newsletter_button', label: 'Subscribe Button Label', value: 'Subscribe', group: 'Newsletter & Offers', icon: 'mail' },

@@ -81,6 +81,10 @@ services:
         value: "0"
       - key: METRICS_TOKEN
         generateValue: true
+      - key: ERROR_WEBHOOK_URL
+        sync: false
+      - key: BACKUP_VERIFIED_AT
+        sync: false
       - key: LOG_REQUESTS
         value: "true"
       - key: ALLOW_STARTER_MEDIA

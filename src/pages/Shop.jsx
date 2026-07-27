@@ -11,6 +11,7 @@ import PageTransition from '@/components/PageTransition';
 import { useSettings } from '@/hooks/useSettings';
 import { useCollectionResource } from '@/hooks/useCollectionResource';
 import ResourceFeedback from '@/components/ResourceFeedback';
+import { imageSrcSet, imageVariant } from '@/lib/media';
 
 const typeBadge = { Print: 'bg-brass/10 text-brass', Framed: 'bg-violet/30 text-soft-pink', 'Digital Download': 'bg-art-orange/10 text-art-orange', Original: 'bg-green-500/10 text-green-400' };
 
@@ -161,7 +162,7 @@ export default function Shop() {
                   <motion.div key={product.id} layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ delay: i * 0.06 }}>
                     <div className="group bg-carbon border border-brass/10 hover:border-brass/25 transition-all duration-300 overflow-hidden">
                       <div className="relative aspect-square overflow-hidden">
-                        <img src={product.imageUrl} alt={product.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" loading="lazy" />
+                        <img src={imageVariant(product.imageUrl, 768)} srcSet={imageSrcSet(product.imageUrl, [320, 480, 768])} sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw" alt={product.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" loading="lazy" />
                         <div className="absolute inset-0 bg-obsidian/0 group-hover:bg-obsidian/20 transition-colors duration-300" />
                         {product.isFeatured && <div className="absolute top-4 left-4 bg-brass text-obsidian font-tight text-[10px] px-3 py-1 tracking-widest uppercase">Featured</div>}
                         <button onClick={() => toggleWishlist(product.id)}

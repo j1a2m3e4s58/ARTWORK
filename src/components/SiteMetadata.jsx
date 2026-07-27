@@ -7,7 +7,9 @@ const pageNames = {
   '/shop': 'Original Works & Prints', '/videos': 'Studio Films', '/about': 'About the Artist',
   '/blog': 'Art Journal', '/contact': 'Contact', '/testimonials': 'Collector Stories',
   '/account': 'My Account', '/admin': 'Studio Administration', '/privacy': 'Privacy Policy',
-  '/terms': 'Terms of Service',
+  '/terms': 'Terms of Service', '/login': 'Sign In', '/register': 'Create Account',
+  '/forgot-password': 'Recover Account', '/reset-password': 'Reset Password',
+  '/accept-invite': 'Accept Invitation', '/verify-email': 'Verify Email',
 };
 
 function setMeta(selector, key, name, value) {
@@ -30,7 +32,7 @@ export default function SiteMetadata() {
     const description = settings.seo_description || 'Bespoke fine art portraits, original works and commissioned artwork crafted with devotion.';
     const baseUrl = (settings.site_url || window.location.origin).replace(/\/$/, '');
     const canonicalUrl = `${baseUrl}${location.pathname}`;
-    const privatePage = ['/admin', '/account', '/login', '/register', '/forgot-password', '/reset-password', '/accept-invite'].some(path => location.pathname.startsWith(path));
+    const privatePage = ['/admin', '/account', '/login', '/register', '/forgot-password', '/reset-password', '/accept-invite', '/verify-email'].some(path => location.pathname.startsWith(path));
     document.title = title;
     setMeta('meta[name="description"]', 'name', 'description', description);
     setMeta('meta[name="robots"]', 'name', 'robots', privatePage ? 'noindex,nofollow' : 'index,follow');

@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
-import { X, Heart, Share2, ZoomIn } from 'lucide-react';
+import { X, Heart, Share2 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
@@ -44,6 +44,20 @@ export default function Gallery() {
     const selected = artworks.find(artwork => artwork.id === artworkId);
     if (selected) setLightbox(selected);
   }, [artworks, lightbox, location.search]);
+
+  useEffect(() => {
+    if (!lightbox) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const close = event => {
+      if (event.key === 'Escape') setLightbox(null);
+    };
+    document.addEventListener('keydown', close);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', close);
+    };
+  }, [lightbox]);
 
   const handleGuidedResults = (results) => {
     if (results === null) {
@@ -136,10 +150,7 @@ export default function Gallery() {
                   transition={{ duration: 0.5, delay: i * 0.05 }}
                   className="masonry-item"
                 >
-                  <div
-                    className="group relative overflow-hidden cursor-pointer"
-                    onClick={() => setLightbox(art)}
-                  >
+                  <div className="group relative overflow-hidden">
                     <img
                       src={imageVariant(art.imageUrl, 768)}
                       srcSet={imageSrcSet(art.imageUrl, [320, 480, 768, 1024])}
@@ -149,31 +160,28 @@ export default function Gallery() {
                       loading="lazy"
                     />
                     {/* Overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-obsidian/90 via-obsidian/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-400">
+                    <button
+                      type="button"
+                      onClick={() => setLightbox(art)}
+                      aria-label={`View ${art.title}`}
+                      className="absolute inset-0 bg-gradient-to-t from-obsidian/90 via-obsidian/20 to-transparent text-left opacity-0 transition-all duration-400 group-hover:opacity-100 focus:opacity-100"
+                    >
                       <div className="absolute bottom-0 left-0 right-0 p-5">
                         <p className="font-tight text-[10px] uppercase tracking-widest text-brass/80 mb-1">{art.category}</p>
                         <p className="font-display text-xl text-ivory">{art.title}</p>
                         <p className="font-tight text-xs text-ivory/50 mt-1">{art.medium}</p>
                       </div>
-                      <div className="absolute top-4 right-4 flex gap-2">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); toggleLike(art.id); }}
-                          aria-label={`${likedIds.includes(art.id) ? 'Unlike' : 'Like'} ${art.title}`}
-                          className={`w-9 h-9 flex items-center justify-center border transition-colors duration-200 ${
-                            likedIds.includes(art.id) ? 'border-brass bg-brass/20 text-brass' : 'border-ivory/20 text-ivory/60 hover:border-brass/40'
-                          }`}
-                        >
-                          <Heart size={14} className={likedIds.includes(art.id) ? 'fill-brass' : ''} />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setLightbox(art); }}
-                          aria-label={`Enlarge ${art.title}`}
-                          className="w-9 h-9 flex items-center justify-center border border-ivory/20 text-ivory/60 hover:border-brass/40 transition-colors duration-200"
-                        >
-                          <ZoomIn size={14} />
-                        </button>
-                      </div>
-                    </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleLike(art.id)}
+                      aria-label={`${likedIds.includes(art.id) ? 'Unlike' : 'Like'} ${art.title}`}
+                      className={`absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center border opacity-0 transition-all duration-200 group-hover:opacity-100 focus:opacity-100 ${
+                        likedIds.includes(art.id) ? 'border-brass bg-obsidian/85 text-brass' : 'border-ivory/20 bg-obsidian/75 text-ivory/70 hover:border-brass/40'
+                      }`}
+                    >
+                      <Heart size={15} className={likedIds.includes(art.id) ? 'fill-brass' : ''} />
+                    </button>
                   </div>
                 </motion.div>
               ))}
@@ -188,6 +196,9 @@ export default function Gallery() {
         {lightbox && (
           <motion.div
             className="fixed inset-0 z-[9000] flex items-center justify-center"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${lightbox.title} artwork details`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -222,6 +233,11 @@ export default function Gallery() {
                   <p className="font-tight text-[10px] uppercase tracking-[0.3em] text-brass/60 mb-2">{lightbox.category}</p>
                   <h3 className="font-display text-3xl text-ivory mb-4">{lightbox.title}</h3>
                   <p className="text-ivory/50 text-sm leading-relaxed mb-8">{lightbox.description}</p>
+                  {lightbox.sourceName && lightbox.contentStatus !== 'original' && (
+                    <p className="mb-6 border-l border-brass/30 pl-3 text-xs leading-relaxed text-ivory/35">
+                      Licensed reference media from {lightbox.sourceName}. Original Reigns Atelier works are identified separately.
+                    </p>
+                  )}
                   <div className="space-y-3 border-t border-brass/10 pt-6">
                     {[['Medium', lightbox.medium], ['Dimensions', lightbox.dimensions], ['Year', lightbox.year]].map(([label, val]) => (
                       val && <div key={label} className="flex justify-between">

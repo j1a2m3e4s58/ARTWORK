@@ -200,5 +200,9 @@ export const studioClient = {
     setup: () => request('/api/admin/mfa/setup', { method: 'POST' }),
     enable: code => request('/api/admin/mfa/enable', { method: 'POST', body: JSON.stringify({ code }) }),
     disable: (password, code) => request('/api/admin/mfa/disable', { method: 'POST', body: JSON.stringify({ password, code }) }),
+    regenerateRecoveryCodes: (password, code) => request('/api/admin/mfa/recovery-codes', {
+      method: 'POST',
+      body: JSON.stringify({ password, code }),
+    }),
   },
 };

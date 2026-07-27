@@ -26,6 +26,7 @@ for (const [collection, fields] of Object.entries(collections)) {
         url,
         sourceName: record.sourceName || '',
         licenseUrl: record.licenseUrl || '',
+        licenseUrls: record.licenseUrls || [],
         licenseVerifiedAt: record.licenseVerifiedAt || '',
         status: licensed ? 'verified' : 'unverified',
       });

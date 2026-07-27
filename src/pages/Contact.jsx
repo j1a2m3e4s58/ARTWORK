@@ -8,6 +8,7 @@ import { useSettings } from '@/hooks/useSettings';
 import { usePageContent } from '@/hooks/usePageContent';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
+import { imageSrcSet, imageVariant } from '@/lib/media';
 
 const INSTAGRAM_PREVIEWS = [];
 
@@ -187,7 +188,7 @@ export default function Contact() {
             {INSTAGRAM_PREVIEWS.map((img, i) => (
               <ScrollReveal key={i} delay={i * 0.05}>
                 <a href={settings.instagram_url || 'https://instagram.com'} target="_blank" rel="noopener noreferrer" className="block aspect-square overflow-hidden group">
-                  <img src={img} alt="" className="w-full h-full object-cover grayscale-[40%] group-hover:grayscale-0 transition-all duration-500 scale-105 group-hover:scale-100" loading="lazy" />
+                  <img src={imageVariant(img, 480)} srcSet={imageSrcSet(img, [240, 360, 480])} sizes="25vw" alt="" className="w-full h-full object-cover grayscale-[40%] group-hover:grayscale-0 transition-all duration-500 scale-105 group-hover:scale-100" loading="lazy" />
                 </a>
               </ScrollReveal>
             ))}

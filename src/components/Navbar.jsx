@@ -34,25 +34,6 @@ export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
   const menuButtonRef = useRef(null);
-  const adminHoldTimerRef = useRef(null);
-  const adminHoldTriggeredRef = useRef(false);
-  const isStaff = ['admin', 'editor', 'support'].includes(user?.role);
-  const openAdminPortal = () => {
-    window.location.assign(isStaff ? '/admin' : '/login?redirect=/admin&mode=admin');
-  };
-  const startAdminHold = event => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    adminHoldTriggeredRef.current = false;
-    window.clearTimeout(adminHoldTimerRef.current);
-    adminHoldTimerRef.current = window.setTimeout(() => {
-      adminHoldTriggeredRef.current = true;
-      openAdminPortal();
-    }, 650);
-  };
-  const cancelAdminHold = () => {
-    window.clearTimeout(adminHoldTimerRef.current);
-    adminHoldTimerRef.current = null;
-  };
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 60);
@@ -61,7 +42,6 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => setMenuOpen(false), [location]);
-  useEffect(() => () => window.clearTimeout(adminHoldTimerRef.current), []);
   useEffect(() => {
     document.body.style.overflow = menuOpen ? 'hidden' : '';
     const closeOnEscape = event => {
@@ -92,22 +72,7 @@ export default function Navbar() {
             <Link
               to="/"
               className="flex items-center gap-3"
-              aria-label={`Reigns Atelier home. Press and hold to ${isStaff ? 'open Studio Control' : 'open administrator sign-in'}.`}
-              title={`Home — press and hold to ${isStaff ? 'open Studio Control' : 'open administrator sign-in'}`}
-              onPointerDown={startAdminHold}
-              onPointerUp={cancelAdminHold}
-              onPointerLeave={cancelAdminHold}
-              onPointerCancel={cancelAdminHold}
-              onContextMenu={event => {
-                event.preventDefault();
-                cancelAdminHold();
-                openAdminPortal();
-              }}
-              onClick={event => {
-                if (!adminHoldTriggeredRef.current) return;
-                event.preventDefault();
-                adminHoldTriggeredRef.current = false;
-              }}
+              aria-label="Reigns Atelier home"
             >
               <img src="/brand/reigns-app-icon-192.png" alt="" draggable="false" className="h-11 w-11 rounded-full border border-brass/20 object-cover" />
               <span>

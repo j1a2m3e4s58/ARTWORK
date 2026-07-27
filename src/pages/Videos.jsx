@@ -1,5 +1,6 @@
 ﻿import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useRef } from 'react';
 import { Play, X, Eye, Clock } from 'lucide-react';
 import ResourceFeedback from '@/components/ResourceFeedback';
 import ScrollReveal from '@/components/ScrollReveal';
@@ -7,6 +8,7 @@ import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
 import { usePageContent } from '@/hooks/usePageContent';
 import { useCollectionResource } from '@/hooks/useCollectionResource';
+import { imageSrcSet, imageVariant } from '@/lib/media';
 
 function formatViews(n) {
   if (!n) return 'New';
@@ -61,11 +63,34 @@ export default function Videos() {
   const { data: dbVideos, loading, error, retry } = useCollectionResource('Video');
   const [activeCategory, setActiveCategory] = useState('All');
   const [playing, setPlaying] = useState(null);
+  const closeButtonRef = useRef(null);
 
   const allVideos = dbVideos;
   const categories = ['All', ...new Set(allVideos.map(video => video.category).filter(Boolean))];
   const filtered = activeCategory === 'All' ? allVideos : allVideos.filter(v => v.category === activeCategory);
   const [featured, ...rest] = filtered;
+
+  useEffect(() => {
+    if (!playing) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    const onKeyDown = event => {
+      if (event.key === 'Escape') setPlaying(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [playing]);
+
+  const keyboardOpen = (event, video) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      setPlaying(video);
+    }
+  };
 
   return (
     <PageTransition>
@@ -107,8 +132,12 @@ export default function Videos() {
               <div
                 className="relative group cursor-pointer overflow-hidden aspect-video bg-carbon border border-brass/10 hover:border-brass/30 transition-all duration-300"
                 onClick={() => setPlaying(featured)}
+                onKeyDown={event => keyboardOpen(event, featured)}
+                role="button"
+                tabIndex={0}
+                aria-label={`Play ${featured.title}`}
               >
-                <img src={featured.thumbnailUrl} alt={featured.title}
+                <img src={imageVariant(featured.thumbnailUrl, 1200)} srcSet={imageSrcSet(featured.thumbnailUrl)} sizes="(min-width: 1280px) 1200px, 100vw" alt={featured.title}
                   className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 grayscale-[20%] group-hover:grayscale-0" />
                 <div className="absolute inset-0 bg-gradient-to-t from-obsidian/90 via-obsidian/30 to-transparent" />
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -142,9 +171,13 @@ export default function Videos() {
                 <div
                   className="group cursor-pointer bg-carbon border border-brass/10 hover:border-brass/30 transition-all duration-300 overflow-hidden"
                   onClick={() => setPlaying(video)}
+                  onKeyDown={event => keyboardOpen(event, video)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Play ${video.title}`}
                 >
                   <div className="relative aspect-video overflow-hidden">
-                    <img src={video.thumbnailUrl} alt={video.title}
+                    <img src={imageVariant(video.thumbnailUrl, 768)} srcSet={imageSrcSet(video.thumbnailUrl, [320, 480, 768])} sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw" alt={video.title}
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 grayscale-[25%] group-hover:grayscale-0" />
                     <div className="absolute inset-0 bg-obsidian/30 group-hover:bg-obsidian/10 transition-colors" />
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
@@ -174,6 +207,9 @@ export default function Videos() {
         {playing && (
           <motion.div
             className="fixed inset-0 z-[9000] flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="studio-video-title"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={() => setPlaying(null)}
           >
@@ -187,9 +223,9 @@ export default function Videos() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <p className="font-tight text-[10px] uppercase tracking-widest text-brass/60">{playing.category}</p>
-                  <h3 className="font-display text-2xl text-ivory">{playing.title}</h3>
+                  <h3 id="studio-video-title" className="font-display text-2xl text-ivory">{playing.title}</h3>
                 </div>
-                <button onClick={() => setPlaying(null)} className="text-ivory/40 hover:text-brass transition-colors">
+                <button ref={closeButtonRef} onClick={() => setPlaying(null)} aria-label="Close video player" className="flex h-11 w-11 items-center justify-center text-ivory/40 hover:text-brass transition-colors">
                   <X size={22} />
                 </button>
               </div>

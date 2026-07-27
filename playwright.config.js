@@ -33,6 +33,8 @@ export default defineConfig({
     { name: 'mobile-chromium', use: { ...devices['iPhone 13'], browserName: 'chromium' } },
     { name: 'tablet-chromium', use: { ...devices['iPad Mini'], browserName: 'chromium' } },
     { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'desktop-firefox', use: { ...devices['Desktop Firefox'] } },
+    { name: 'mobile-webkit', use: { ...devices['iPhone 13'], browserName: 'webkit' } },
   ],
   webServer: externalBaseUrl ? undefined : {
     command: 'npm start',

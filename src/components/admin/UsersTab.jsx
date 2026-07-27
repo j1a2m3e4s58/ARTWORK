@@ -37,7 +37,7 @@ export default function UsersTab({ currentUser }) {
   };
   return (
     <div>
-      <h1 className="font-display text-4xl text-ivory mb-2">Registered Users</h1>
+      <h1 className="font-display text-4xl text-ivory mb-2">People &amp; Access</h1>
       <p className="text-ivory/40 text-sm mb-8">Invite staff or customers securely. Invitees create their own password from a time-limited email link.</p>
       <div className="mb-6 grid gap-3 border border-brass/15 bg-carbon p-4 md:grid-cols-4">
         <input value={draft.full_name} onChange={e => setDraft({ ...draft, full_name: e.target.value })} placeholder="Full name" className="bg-obsidian border border-brass/15 px-3 py-2 text-sm text-ivory" />

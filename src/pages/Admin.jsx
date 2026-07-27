@@ -39,7 +39,7 @@ const allTabs = [
   { id: 'commissions', label: 'Commissions', icon: MessageSquare, group: 'Sales' },
   { id: 'inbox', label: 'Inbox', icon: MessageSquare, group: 'Communication' },
   { id: 'subscribers', label: 'Subscribers', icon: Users, group: 'Communication' },
-  { id: 'users', label: 'Users', icon: Users, group: 'People' },
+  { id: 'users', label: 'People & Access', icon: Users, group: 'People' },
   { id: 'settings', label: 'Settings', icon: Settings, group: 'System' },
   { id: 'system', label: 'System Health', icon: Activity, group: 'System' },
   { id: 'recycle', label: 'Recycle Bin', icon: ArchiveRestore, group: 'System' },
@@ -74,11 +74,11 @@ function EditModal({ item, fields, onSave, onClose, title }) {
     <motion.div className="fixed inset-0 z-[9900] flex items-center justify-center p-4"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="absolute inset-0 bg-obsidian/90 backdrop-blur-xl" onClick={onClose} />
-      <motion.div className="relative z-10 w-full max-w-lg glass-panel p-8 border border-brass/20"
+      <motion.div role="dialog" aria-modal="true" aria-labelledby="admin-edit-title" className="relative z-10 w-full max-w-lg glass-panel p-8 border border-brass/20"
         initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} className="absolute top-5 right-5 text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>
-        <h3 className="font-display text-2xl text-ivory mb-6">{title}</h3>
+        <button onClick={onClose} aria-label={`Close ${title}`} className="absolute top-4 right-4 flex h-11 w-11 items-center justify-center text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>
+        <h3 id="admin-edit-title" className="font-display text-2xl text-ivory mb-6">{title}</h3>
         <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
           {fields.map(f => (
             <div key={f.key}>
@@ -155,12 +155,14 @@ export default function Admin() {
   const [tabLoading, setTabLoading] = useState(false);
   const [tabError, setTabError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [recordLimit, setRecordLimit] = useState(50);
   const [newVideo, setNewVideo] = useState({ title: '', videoUrl: '', thumbnailUrl: '', category: 'Process', description: '', duration: '', isFeatured: false, status: 'draft' });
   const [newArtwork, setNewArtwork] = useState({ title: '', category: 'Portraits', imageUrl: '', medium: '', description: '', price: '', status: 'draft' });
   const pendingMessageCount = messages.filter(message => !['replied', 'archived', 'spam'].includes(message.status)).length;
 
   const selectTab = id => {
     if (!tabs.some(tab => tab.id === id)) return;
+    if (id !== activeTab) setRecordLimit(50);
     setActiveTab(id);
     setSearchParams(current => {
       const next = new URLSearchParams(current);
@@ -211,12 +213,12 @@ export default function Admin() {
         const [gallery, videoItems, commissionItems = [], subscriberItems = []] = await Promise.all(requests);
         setArtworks(gallery); setVideos(videoItems); setCommissions(commissionItems); setSubscribers(subscriberItems);
       },
-      gallery: () => studioClient.entities.Artwork.list('-created_date', 50).then(setArtworks),
-      videos: () => studioClient.entities.Video.list('-created_date', 50).then(setVideos),
-      shop: () => studioClient.entities.ShopProduct.list('-created_date', 50).then(setProducts),
-      commissions: () => studioClient.entities.CommissionRequest.list('-created_date', 50).then(setCommissions),
-      subscribers: () => studioClient.entities.NewsletterSubscriber.list('-created_date', 50).then(setSubscribers),
-      blog: () => studioClient.entities.BlogPost.list('-created_date', 50).then(setBlogPosts),
+      gallery: () => studioClient.entities.Artwork.list('-created_date', recordLimit).then(setArtworks),
+      videos: () => studioClient.entities.Video.list('-created_date', recordLimit).then(setVideos),
+      shop: () => studioClient.entities.ShopProduct.list('-created_date', recordLimit).then(setProducts),
+      commissions: () => studioClient.entities.CommissionRequest.list('-created_date', recordLimit).then(setCommissions),
+      subscribers: () => studioClient.entities.NewsletterSubscriber.list('-created_date', recordLimit).then(setSubscribers),
+      blog: () => studioClient.entities.BlogPost.list('-created_date', recordLimit).then(setBlogPosts),
     };
     const loader = loaders[activeTab];
     if (!loader) {
@@ -238,7 +240,16 @@ export default function Admin() {
     return () => {
       active = false;
     };
-  }, [activeTab, user?.role, reloadKey]);
+  }, [activeTab, user?.role, reloadKey, recordLimit]);
+
+  const pageableCounts = {
+    gallery: artworks.length,
+    videos: videos.length,
+    shop: products.length,
+    commissions: commissions.length,
+    subscribers: subscribers.length,
+    blog: blogPosts.length,
+  };
 
   const handleDelete = async (entity, id, setter) => {
     await studioClient.entities[entity].delete(id);
@@ -707,6 +718,15 @@ export default function Admin() {
           {/* -- SETTINGS -- */}
           {activeTab === 'settings' && <SettingsTab />}
           {activeTab === 'system' && <SystemTab />}
+          {pageableCounts[activeTab] >= recordLimit && (
+            <button
+              onClick={() => setRecordLimit(limit => Math.min(200, limit + 50))}
+              disabled={recordLimit >= 200}
+              className="mt-8 min-h-11 w-full border border-brass/25 px-4 text-sm text-brass disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              {recordLimit >= 200 ? 'Maximum 200 records loaded — use search or exports for larger sets' : 'Load 50 more records'}
+            </button>
+          )}
         </div>
       </div>
 

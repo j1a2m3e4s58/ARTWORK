@@ -16,6 +16,7 @@ export default function Footer() {
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [galleryPreviews, setGalleryPreviews] = useState(FALLBACK_GALLERY);
   const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileRequired = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY);
 
   useEffect(() => {
     studioClient.entities.Artwork.list('-created_date', 6).then(data => {
@@ -147,7 +148,7 @@ export default function Footer() {
                 </label>
                 <TurnstileWidget onToken={setTurnstileToken} />
                 {subscriptionError && <p role="alert" className="text-xs text-red-300">{subscriptionError}</p>}
-                <button type="submit" className="bg-brass text-obsidian text-sm font-tight tracking-wide py-2.5 hover:bg-brass-light transition-colors">
+                <button type="submit" disabled={turnstileRequired && !turnstileToken} className="bg-brass text-obsidian text-sm font-tight tracking-wide py-2.5 hover:bg-brass-light transition-colors disabled:cursor-not-allowed disabled:opacity-50">
                   {settings.newsletter_button || 'Subscribe'}
                 </button>
               </form>

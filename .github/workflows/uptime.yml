@@ -1,0 +1,28 @@
+name: Production readiness monitor
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ready:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check production readiness and security headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          curl --fail --silent --show-error --max-time 90 \
+            --dump-header "$headers" \
+            --output "$body" \
+            https://reigns-atelier.onrender.com/api/ready
+          node -e '
+            const fs = require("fs");
+            const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (payload.ok !== true) process.exit(1);
+          ' "$body"
+          grep -qi '^permissions-policy:' "$headers"
+          grep -qi 'frame-src.*https://challenges.cloudflare.com' "$headers"

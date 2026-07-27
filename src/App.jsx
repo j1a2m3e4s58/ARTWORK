@@ -3,7 +3,6 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { lazy, Suspense, useState } from 'react';
 import LoadingScreen from '@/components/LoadingScreen';
-import CustomCursor from '@/components/CustomCursor';
 import Layout from '@/components/Layout';
 
 import AdminRoute from '@/components/AdminRoute';
@@ -14,6 +13,7 @@ import AdminLayout from '@/components/AdminLayout';
 import AdminAccessGate from '@/components/AdminAccessGate';
 import AccountLayout from '@/components/AccountLayout';
 import FeatureRoute from '@/components/FeatureRoute';
+import SiteMetadata from '@/components/SiteMetadata';
 
 const Home = lazy(() => import('@/pages/Home'));
 const Gallery = lazy(() => import('@/pages/Gallery'));
@@ -92,10 +92,10 @@ function App() {
     <AppErrorBoundary>
     <AuthProvider>
         <Router>
+          <SiteMetadata />
           {!loaded && <LoadingScreen onComplete={finishLoading} />}
           {loaded && (
             <>
-              <CustomCursor />
               <AuthenticatedApp />
             </>
           )}
