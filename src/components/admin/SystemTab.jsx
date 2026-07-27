@@ -69,6 +69,7 @@ export default function SystemTab() {
     <div>
       <h1 className="font-display text-4xl text-ivory">System & Operations</h1>
       <p className="mb-8 mt-2 text-sm text-ivory/40">Environment readiness, backups and administrator audit history.</p>
+      {notice && <p role="status" className="mb-5 border border-brass/25 bg-brass/5 p-3 text-sm text-ivory/75">{notice}</p>}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         {[
           { label: 'API', value: health?.ok ? 'Ready' : health ? 'Needs attention' : 'Checking', icon: Activity, good: health?.ok },
@@ -122,7 +123,6 @@ export default function SystemTab() {
         )}
       </section>
       {health?.counts && <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">{Object.entries(health.counts).map(([key, value]) => <div key={key} className="border border-brass/10 bg-carbon p-3"><p className="text-2xl text-brass">{value}</p><p className="mt-1 break-words text-[10px] uppercase tracking-wider text-ivory/35">{key.replace(/([A-Z])/g, ' $1')}</p></div>)}</div>}
-      {notice && <p className="mt-3 text-sm text-ivory/55">{notice}</p>}
       <section className="mt-8 border border-brass/10 bg-carbon p-5">
         <h2 className="font-display text-2xl">Administrator two-factor authentication</h2>
         <p className="mt-2 text-sm text-ivory/40">{user?.mfaEnabled ? 'Enabled — sign-in requires your authenticator code.' : 'Protect the administrator account with a rotating authenticator code.'}</p>
