@@ -59,6 +59,10 @@ app.use(helmet({
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
+      // Upgrading loopback HTTP assets breaks WebKit-based local and CI checks.
+      // Render terminates TLS before this process, so enable the directive only
+      // for the real HTTPS production environment.
+      upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
     },
   },
 }));

@@ -95,7 +95,7 @@ export default function Contact() {
                       className="min-w-0 w-full bg-carbon border border-brass/15 text-ivory/50 px-5 py-3.5 text-sm" required />
                   </div>
                   <input tabIndex="-1" autoComplete="off" value={form.website} onChange={event => set('website', event.target.value)}
-                    className="absolute -left-[9999px] h-px w-px opacity-0" aria-hidden="true" />
+                    className="pointer-events-none fixed -top-24 left-0 h-px w-px opacity-0" aria-hidden="true" />
                   <label htmlFor="contact-subject" className="sr-only">Subject</label>
                   <input id="contact-subject" name="subject" placeholder="Subject" value={form.subject} onChange={e => set('subject', e.target.value)}
                     className="w-full bg-carbon border border-brass/15 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/40 transition-colors text-sm" />
