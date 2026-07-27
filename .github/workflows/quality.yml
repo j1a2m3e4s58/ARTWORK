@@ -41,3 +41,10 @@ jobs:
         env:
           E2E_ADMIN_EMAIL: e2e-admin@example.com
           E2E_ADMIN_PASSWORD: E2e-Admin-Password-2026!
+      - name: Upload browser test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
