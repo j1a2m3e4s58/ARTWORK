@@ -13,13 +13,40 @@ test.beforeEach(async ({ page }) => {
 for (const route of publicRoutes) {
   test(`${route} renders without overflow or serious accessibility violations`, async ({ page }) => {
     const errors = [];
+    const consoleErrors = [];
+    const requestFailures = [];
     page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => {
+      if (message.type() === 'error') consoleErrors.push(message.text());
+    });
+    page.on('requestfailed', request => {
+      requestFailures.push(`${request.method()} ${request.url()} — ${request.failure()?.errorText || 'failed'}`);
+    });
     await page.goto(route);
-    await expect(page.locator('#root')).not.toBeEmpty();
+    await expect.poll(
+      async () => page.locator('#root').evaluate(element => element.childElementCount),
+      {
+        message: `Application did not mount.\nPage errors: ${errors.join(' | ') || 'none'}\nConsole errors: ${consoleErrors.join(' | ') || 'none'}\nRequest failures: ${requestFailures.join(' | ') || 'none'}`,
+      },
+    ).toBeGreaterThan(0);
     await expect(page.locator('#root').locator('main, nav, form').first()).toBeVisible();
-    await expect.poll(() => page.evaluate(() => (
-      document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1
-    ))).toBe(true);
+    await expect.poll(
+      () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1),
+      {
+        message: await page.evaluate(() => {
+          const viewportWidth = document.documentElement.clientWidth;
+          const offenders = [...document.querySelectorAll('body *')]
+            .map(element => {
+              const rect = element.getBoundingClientRect();
+              return { tag: element.tagName.toLowerCase(), id: element.id, classes: element.className, left: rect.left, right: rect.right, width: rect.width };
+            })
+            .filter(item => item.left < -1 || item.right > viewportWidth + 1)
+            .sort((a, b) => b.width - a.width)
+            .slice(0, 8);
+          return `Horizontal overflow at ${viewportWidth}px: ${JSON.stringify(offenders)}`;
+        }),
+      },
+    ).toBe(true);
     await page.waitForTimeout(1_200);
     const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
     const serious = results.violations.filter(item => ['serious', 'critical'].includes(item.impact));
