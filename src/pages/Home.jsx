@@ -35,6 +35,9 @@ export default function Home() {
   const heroRef = useRef(null);
   const heroTouchStart = useRef(null);
   const reduceMotion = useReducedMotion();
+  // Hero controls are intentional user-facing motion. Keep the carousel
+  // transition consistent on phones; visitors can pause it at any time.
+  const animateHero = true;
 
   useEffect(() => {
     studioClient.entities.Testimonial.filter({ isFeatured: true }).then(data => {
@@ -117,11 +120,11 @@ export default function Home() {
           <motion.div
             key={activeSlide.id || heroIndex}
             className="absolute inset-0"
-            initial={reduceMotion ? { opacity: 1 } : { opacity: 0, scale: 1.06 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: reduceMotion ? 0 : 1.5, ease: [0.16, 1, 0.3, 1] }}
-            style={{ y: reduceMotion ? 0 : heroY }}
+            initial={animateHero ? { opacity: 0, x: 36, scale: 1.045 } : { opacity: 1 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={animateHero ? { opacity: 0, x: -28, scale: 0.99 } : { opacity: 0 }}
+            transition={{ duration: animateHero ? 0.7 : 0, ease: [0.16, 1, 0.3, 1] }}
+            style={{ y: animateHero ? heroY : 0 }}
           >
             <img
               src={imageVariant(activeSlide.imageUrl, 1600)}
