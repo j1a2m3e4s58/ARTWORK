@@ -9,6 +9,8 @@ import PageTransition from '@/components/PageTransition';
 import { usePageContent } from '@/hooks/usePageContent';
 import { useCollectionResource } from '@/hooks/useCollectionResource';
 import { imageSrcSet, imageVariant } from '@/lib/media';
+import { useAuth } from '@/lib/AuthContext';
+import { Link } from 'react-router-dom';
 
 function formatViews(n) {
   if (!n) return 'New';
@@ -60,6 +62,7 @@ function VideoPlayer({ video }) {
 
 export default function Videos() {
   const page = usePageContent('Videos');
+  const { user } = useAuth();
   const { data: dbVideos, loading, error, retry } = useCollectionResource('Video');
   const [activeCategory, setActiveCategory] = useState('All');
   const [playing, setPlaying] = useState(null);
@@ -126,6 +129,11 @@ export default function Videos() {
 
         <div className="max-w-7xl mx-auto px-6 lg:px-12">
           <ResourceFeedback loading={loading} error={error} onRetry={retry} empty={!featured} emptyMessage="Studio films are being prepared. Please check back soon." />
+          {!loading && !error && !featured && ['admin', 'editor'].includes(user?.role) && (
+            <div className="-mt-8 mb-10 text-center">
+              <Link to="/admin?section=videos" className="inline-flex border border-brass/30 px-4 py-2 text-xs uppercase tracking-widest text-brass hover:bg-brass/10">Add a studio film in Admin</Link>
+            </div>
+          )}
           {/* Featured */}
           {featured && (
             <ScrollReveal className="mb-10">

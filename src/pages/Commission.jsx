@@ -28,10 +28,24 @@ const DEFAULT_FAQS = [
 const ARTWORK_TYPES = ['Portrait', 'Digital Art', 'Sketch', 'Pencil Drawing', 'Anime Art', 'Realism', 'Other'];
 const BUDGETS = ['Under GH₵ 1,000', 'GH₵ 1,000–2,500', 'GH₵ 2,500–5,000', 'GH₵ 5,000–10,000', 'GH₵ 10,000+'];
 
+const commissionFormDefaults = { artworkTypes: ARTWORK_TYPES, budgets: BUDGETS, referenceUploadEnabled: true, referenceUploadLabel: 'Upload reference image (optional)' };
+const readCommissionFormOptions = value => {
+  try {
+    const parsed = JSON.parse(value || '');
+    return {
+      artworkTypes: Array.isArray(parsed.artworkTypes) && parsed.artworkTypes.length ? parsed.artworkTypes : ARTWORK_TYPES,
+      budgets: Array.isArray(parsed.budgets) && parsed.budgets.length ? parsed.budgets : BUDGETS,
+      referenceUploadEnabled: parsed.referenceUploadEnabled !== false,
+      referenceUploadLabel: String(parsed.referenceUploadLabel || commissionFormDefaults.referenceUploadLabel),
+    };
+  } catch { return commissionFormDefaults; }
+};
+
 export default function Commission() {
   const settings = useSettings();
   const { user } = useAuth();
   const page = usePageContent('Commission');
+  const commissionFormOptions = readCommissionFormOptions(page.commission_form_options);
   const legacyPackages = [1, 2, 3].map((number, index) => ({
     name: page[`commission_pkg${number}_name`] || DEFAULT_PACKAGES[index].name,
     price: page[`commission_pkg${number}_price`] || DEFAULT_PACKAGES[index].price,
@@ -249,7 +263,7 @@ export default function Commission() {
                     <p className="text-ivory/50 text-sm mb-6">Step 2 of 3 — Artwork details</p>
                     <fieldset className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-2">
                       <legend className="sr-only">Artwork type</legend>
-                      {ARTWORK_TYPES.map(type => (
+                      {commissionFormOptions.artworkTypes.map(type => (
                         <button key={type} onClick={() => set('artworkType', type)}
                           className={`py-3 px-4 border text-sm font-tight tracking-wide text-left transition-all duration-200 ${
                             form.artworkType === type ? 'border-brass bg-brass/10 text-brass' : 'border-brass/15 text-ivory/50 hover:border-brass/30'
@@ -260,7 +274,7 @@ export default function Commission() {
                     </fieldset>
                     <fieldset className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-2 mt-2">
                       <legend className="sr-only">Budget</legend>
-                      {BUDGETS.map(b => (
+                      {commissionFormOptions.budgets.map(b => (
                         <button key={b} onClick={() => set('budget', b)}
                           className={`py-3 px-4 border text-sm font-tight tracking-wide transition-all duration-200 ${
                             form.budget === b ? 'border-brass bg-brass/10 text-brass' : 'border-brass/15 text-ivory/50 hover:border-brass/30'
@@ -293,24 +307,26 @@ export default function Commission() {
                       rows={6}
                       className="w-full bg-obsidian border border-brass/20 text-ivory/80 px-5 py-3.5 placeholder:text-ivory/25 focus:outline-none focus:border-brass/50 transition-colors text-sm resize-none"
                     />
-                    <label htmlFor="commission-reference" className="sr-only">Reference image</label>
-                    <input id="commission-reference" name="referenceImage" ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
-                    <div
-                      className="border border-dashed border-brass/20 p-6 text-center hover:border-brass/40 transition-colors cursor-pointer relative"
-                      onClick={() => !uploading && fileInputRef.current?.click()}
-                    >
-                      {uploading ? (
-                        <Loader2 size={20} className="text-brass/60 mx-auto mb-2 animate-spin" />
-                      ) : form.referenceImageUrl ? (
-                        <img src={form.referenceImageUrl} alt="Reference" className="h-24 mx-auto object-cover mb-2 border border-brass/20" />
-                      ) : (
-                        <Upload size={20} className="text-brass/40 mx-auto mb-2" />
-                      )}
-                      <p className="text-ivory/30 text-xs font-tight tracking-wide">
-                        {form.referenceImageUrl ? 'Image uploaded ✓ (click to change)' : 'Upload reference image (optional)'}
-                      </p>
-                      {!form.referenceImageUrl && <p className="text-ivory/20 text-xs mt-1">JPG, PNG up to 10MB</p>}
-                    </div>
+                    {commissionFormOptions.referenceUploadEnabled && <>
+                      <label htmlFor="commission-reference" className="sr-only">Reference image</label>
+                      <input id="commission-reference" name="referenceImage" ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
+                      <div
+                        className="border border-dashed border-brass/20 p-6 text-center hover:border-brass/40 transition-colors cursor-pointer relative"
+                        onClick={() => !uploading && fileInputRef.current?.click()}
+                      >
+                        {uploading ? (
+                          <Loader2 size={20} className="text-brass/60 mx-auto mb-2 animate-spin" />
+                        ) : form.referenceImageUrl ? (
+                          <img src={form.referenceImageUrl} alt="Reference" className="h-24 mx-auto object-cover mb-2 border border-brass/20" />
+                        ) : (
+                          <Upload size={20} className="text-brass/40 mx-auto mb-2" />
+                        )}
+                        <p className="text-ivory/30 text-xs font-tight tracking-wide">
+                          {form.referenceImageUrl ? 'Image uploaded ✓ (click to change)' : commissionFormOptions.referenceUploadLabel}
+                        </p>
+                        {!form.referenceImageUrl && <p className="text-ivory/20 text-xs mt-1">JPG, PNG up to 10MB</p>}
+                      </div>
+                    </>}
                     <div className="flex gap-3 mt-4">
                       <button onClick={() => setStep(2)} className="flex-1 border border-brass/20 text-ivory/50 py-4 font-tight text-sm tracking-widest uppercase hover:border-brass/40 transition-all">Back</button>
                       <button onClick={handleSubmit} disabled={!form.description || submitting}
