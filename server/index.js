@@ -11,6 +11,7 @@ import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from 'jose';
 import { fileTypeFromBuffer } from 'file-type';
 import {
   db, save, newId, now, backupDatabase, databaseKind, closeDatabase, checkDatabase,
@@ -74,6 +75,7 @@ const allowedOrigins = (process.env.APP_ORIGIN || 'http://127.0.0.1:43127').spli
 const publicOrigin = String(process.env.SITE_URL || allowedOrigins[0]).replace(/\/+$/, '');
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use('/uploads', express.static(uploadDir));
 app.use((req, res, next) => {
@@ -148,6 +150,124 @@ const setRecoveryCodes = user => {
 };
 const secureCookie = process.env.NODE_ENV === 'production';
 const encryptionKey = createHash('sha256').update(jwtSecret).digest();
+const googleJwks = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
+const appleJwks = createRemoteJWKSet(new URL('https://appleid.apple.com/auth/keys'));
+
+function safeLocalPath(value, fallback = '/account?oauth=success') {
+  const candidate = String(value || '');
+  return candidate.startsWith('/') && !candidate.startsWith('//') ? candidate : fallback;
+}
+
+function oauthCallbackUrl(provider) {
+  return `${publicOrigin}/api/auth/oauth/${provider}/callback`;
+}
+
+function oauthConfigured(provider) {
+  if (provider === 'google') return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+  if (provider === 'apple') {
+    return Boolean(process.env.APPLE_CLIENT_ID && process.env.APPLE_TEAM_ID && process.env.APPLE_KEY_ID && process.env.APPLE_PRIVATE_KEY);
+  }
+  return false;
+}
+
+function clearOAuthState(res) {
+  res.clearCookie('atelier_oauth_state', {
+    httpOnly: true,
+    secure: secureCookie,
+    sameSite: secureCookie ? 'none' : 'lax',
+    path: '/api/auth/oauth',
+  });
+}
+
+function beginOAuth(res, provider, returnTo) {
+  const state = jwt.sign({ provider, purpose: 'oauth', returnTo: safeLocalPath(returnTo) }, jwtSecret, { expiresIn: '10m' });
+  res.cookie('atelier_oauth_state', state, {
+    httpOnly: true,
+    secure: secureCookie,
+    sameSite: secureCookie ? 'none' : 'lax',
+    path: '/api/auth/oauth',
+    maxAge: 10 * 60 * 1000,
+  });
+  return state;
+}
+
+function validateOAuthState(req, res, provider) {
+  const received = String(req.query.state || req.body.state || '');
+  const expected = String(req.cookies.atelier_oauth_state || '');
+  clearOAuthState(res);
+  if (!safeEqual(received, expected)) throw new Error('OAuth state did not match this browser session.');
+  const payload = jwt.verify(received, jwtSecret);
+  if (payload.purpose !== 'oauth' || payload.provider !== provider) throw new Error('OAuth provider state is invalid.');
+  return payload;
+}
+
+async function appleClientSecret() {
+  const privateKey = String(process.env.APPLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+  const key = await importPKCS8(privateKey, 'ES256');
+  return new SignJWT({})
+    .setProtectedHeader({ alg: 'ES256', kid: process.env.APPLE_KEY_ID })
+    .setIssuer(process.env.APPLE_TEAM_ID)
+    .setSubject(process.env.APPLE_CLIENT_ID)
+    .setAudience('https://appleid.apple.com')
+    .setIssuedAt()
+    .setExpirationTime('180d')
+    .sign(key);
+}
+
+async function exchangeOAuthCode(provider, code) {
+  const redirectUri = oauthCallbackUrl(provider);
+  if (provider === 'google') {
+    const body = new URLSearchParams({
+      code, client_id: process.env.GOOGLE_CLIENT_ID, client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: redirectUri, grant_type: 'authorization_code',
+    });
+    const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', body, signal: AbortSignal.timeout(12_000) });
+    if (!response.ok) throw new Error('Google could not complete the sign-in request.');
+    const tokens = await response.json();
+    const { payload } = await jwtVerify(tokens.id_token, googleJwks, {
+      audience: process.env.GOOGLE_CLIENT_ID,
+      issuer: ['https://accounts.google.com', 'accounts.google.com'],
+    });
+    return { sub: payload.sub, email: payload.email, emailVerified: payload.email_verified === true, name: payload.name || payload.given_name };
+  }
+
+  const body = new URLSearchParams({
+    code, client_id: process.env.APPLE_CLIENT_ID, client_secret: await appleClientSecret(),
+    redirect_uri: redirectUri, grant_type: 'authorization_code',
+  });
+  const response = await fetch('https://appleid.apple.com/auth/token', { method: 'POST', body, signal: AbortSignal.timeout(12_000) });
+  if (!response.ok) throw new Error('Apple could not complete the sign-in request.');
+  const tokens = await response.json();
+  const { payload } = await jwtVerify(tokens.id_token, appleJwks, {
+    audience: process.env.APPLE_CLIENT_ID,
+    issuer: 'https://appleid.apple.com',
+  });
+  return { sub: payload.sub, email: payload.email, emailVerified: payload.email_verified === true };
+}
+
+async function finishOAuthSignIn(req, res, provider, profile, returnTo) {
+  const email = String(profile.email || '').trim().toLowerCase();
+  let user = db.data.User.find(item => item.oauth?.[provider]?.sub === profile.sub);
+  if (!user && email) user = db.data.User.find(item => item.email === email);
+  if (!user && !email) throw new Error('Apple did not return an email address. Please use the same Apple ID and try again.');
+  if (!user) {
+    user = {
+      id: newId(), email, full_name: String(profile.name || email.split('@')[0]).trim(),
+      passwordHash: await bcrypt.hash(token(), 12), role: 'customer', status: 'active',
+      emailVerified: profile.emailVerified, sessionVersion: 0, created_date: now(), oauth: {},
+    };
+    db.data.User.push(user);
+    await audit(user, 'account.oauth_registered', 'User', user.id, { provider });
+  }
+  if (user.status === 'suspended') throw new Error('This account is suspended.');
+  user.oauth ||= {};
+  user.oauth[provider] = { sub: profile.sub, linkedAt: now() };
+  if (profile.emailVerified) user.emailVerified = true;
+  await audit(user, 'account.oauth_signed_in', 'User', user.id, { provider });
+  await save();
+  setSession(res, user);
+  res.redirect(safeLocalPath(returnTo));
+}
 
 function reserveOrderInventory(order) {
   const reservations = order.items.map((item) => {
@@ -277,7 +397,7 @@ async function deliverEmail(message, { queueOnFailure = true } = {}) {
 
 let outboxProcessing = false;
 async function processEmailOutbox() {
-  if (outboxProcessing || !process.env.SMTP_HOST) return;
+  if (outboxProcessing || !emailConfigured) return;
   outboxProcessing = true;
   try {
     const due = await claimOutboxBatch(10);
@@ -424,7 +544,7 @@ function requireStaff(req, res, next) {
 
 app.use((req, res, next) => {
   if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method) || !req.cookies.atelier_session) return next();
-  const exempt = ['/api/auth/login', '/api/auth/mfa/verify-login', '/api/auth/register', '/api/auth/forgot-password', '/api/auth/reset-password', '/api/auth/accept-invite', '/api/auth/verify-email'];
+  const exempt = ['/api/auth/login', '/api/auth/mfa/verify-login', '/api/auth/register', '/api/auth/forgot-password', '/api/auth/reset-password', '/api/auth/accept-invite', '/api/auth/verify-email', '/api/auth/oauth/apple/callback'];
   if (exempt.includes(req.path)) return next();
   if (!safeEqual(req.cookies.atelier_csrf, req.get('x-csrf-token'))) {
     return res.status(403).json({ error: 'Security token expired. Refresh the page and try again.' });
@@ -1047,6 +1167,71 @@ app.get('/api/auth/me', (req, res) => {
     });
   }
   res.json(user ? hiddenUserFields(user) : null);
+});
+
+app.get('/api/auth/oauth/:provider/start', authLimiter, (req, res) => {
+  const provider = String(req.params.provider || '').toLowerCase();
+  const returnTo = safeLocalPath(req.query.returnTo, '/account?oauth=success');
+  if (!['google', 'apple'].includes(provider) || !oauthConfigured(provider)) {
+    return res.redirect(`/login?oauth=${encodeURIComponent('unavailable')}`);
+  }
+  const state = beginOAuth(res, provider, returnTo);
+  const redirectUri = oauthCallbackUrl(provider);
+  if (provider === 'google') {
+    const query = new URLSearchParams({
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'openid email profile',
+      state,
+      prompt: 'select_account',
+    });
+    return res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${query}`);
+  }
+  const query = new URLSearchParams({
+    client_id: process.env.APPLE_CLIENT_ID,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    response_mode: 'form_post',
+    scope: 'name email',
+    state,
+  });
+  return res.redirect(`https://appleid.apple.com/auth/authorize?${query}`);
+});
+
+async function completeOAuth(req, res, provider) {
+  const state = validateOAuthState(req, res, provider);
+  if (req.query.error || req.body.error) return res.redirect('/login?oauth=cancelled');
+  const code = String(req.query.code || req.body.code || '');
+  if (!code) throw new Error('No authorization code was returned.');
+  const profile = await exchangeOAuthCode(provider, code);
+  if (provider === 'apple' && req.body.user) {
+    try {
+      const name = JSON.parse(req.body.user)?.name;
+      profile.name = [name?.firstName, name?.lastName].filter(Boolean).join(' ') || profile.name;
+    } catch {
+      // Apple only supplies the optional name on the first consent response.
+    }
+  }
+  return finishOAuthSignIn(req, res, provider, profile, state.returnTo);
+}
+
+app.get('/api/auth/oauth/google/callback', authLimiter, async (req, res) => {
+  try {
+    await completeOAuth(req, res, 'google');
+  } catch (error) {
+    reportOperationalError('google_oauth_failed', error);
+    res.redirect('/login?oauth=failed');
+  }
+});
+
+app.post('/api/auth/oauth/apple/callback', authLimiter, async (req, res) => {
+  try {
+    await completeOAuth(req, res, 'apple');
+  } catch (error) {
+    reportOperationalError('apple_oauth_failed', error);
+    res.redirect('/login?oauth=failed');
+  }
 });
 
 app.get('/api/admin/access', requireStaffIdentity, (req, res) => {

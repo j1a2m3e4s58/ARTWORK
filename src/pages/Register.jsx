@@ -4,6 +4,7 @@ import { Loader2, Lock, Mail, User, UserPlus } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import AuthLayout from '@/components/AuthLayout';
 import TurnstileWidget from '@/components/TurnstileWidget';
+import SocialAuthButtons from '@/components/SocialAuthButtons';
 
 export default function Register() {
   const [form, setForm] = useState({ full_name: '', email: '', password: '', confirm: '' });
@@ -54,6 +55,7 @@ export default function Register() {
         <button disabled={loading || (turnstileRequired && !turnstileToken)} className="flex w-full items-center justify-center gap-2 bg-brass py-3.5 text-sm uppercase tracking-wider text-obsidian disabled:cursor-not-allowed disabled:opacity-50">
           {loading && <Loader2 className="animate-spin" size={16} />} Create account
         </button>
+        <SocialAuthButtons />
       </form>
     </AuthLayout>
   );

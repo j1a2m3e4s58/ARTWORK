@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Eye, EyeOff, Loader2, Lock, LogIn, Mail, ShieldCheck } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import AuthLayout from '@/components/AuthLayout';
+import SocialAuthButtons from '@/components/SocialAuthButtons';
 
 export default function Login() {
   const adminMode = new URLSearchParams(window.location.search).get('mode') === 'admin'
@@ -15,6 +16,14 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [challenge, setChallenge] = useState('');
   const [code, setCode] = useState('');
+  const oauthStatus = new URLSearchParams(window.location.search).get('oauth');
+  const oauthError = oauthStatus === 'unavailable'
+    ? 'This sign-in option is not connected yet. Please use email and password for now.'
+    : oauthStatus === 'cancelled'
+      ? 'The sign-in was cancelled. You can try again whenever you are ready.'
+      : oauthStatus === 'failed'
+        ? 'The provider could not complete sign-in. Please try again or use email and password.'
+        : '';
 
   const submit = async event => {
     event.preventDefault();
@@ -47,7 +56,7 @@ export default function Login() {
   return (
     <AuthLayout icon={adminMode ? Lock : LogIn} title={adminMode ? 'Studio administrator' : 'Welcome back'} subtitle={adminMode ? 'Sign in with your administrator account to continue to Studio Control.' : 'Sign in to continue your studio experience.'}
       footer={<>New to the atelier? <Link to="/register" className="text-brass hover:underline">Create an account</Link></>}>
-      {error && <div role="alert" className="mb-4 border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
+      {(error || oauthError) && <div role="alert" className="mb-4 border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{error || oauthError}</div>}
       <form onSubmit={submit} className="space-y-4">
         {!challenge && <label htmlFor="login-email" className="block">
           <span className="mb-1.5 block text-xs uppercase tracking-widest text-ivory/45">Email address</span>
@@ -80,6 +89,7 @@ export default function Login() {
             <ShieldCheck size={15} /> Administrator sign-in
           </button>
         )}
+        {!challenge && <SocialAuthButtons />}
       </form>
     </AuthLayout>
   );

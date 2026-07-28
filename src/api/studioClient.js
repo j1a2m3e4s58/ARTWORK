@@ -154,7 +154,10 @@ export const studioClient = {
       method: 'POST', body: JSON.stringify({ token: verificationToken }),
     }),
     resendVerification: () => request('/api/auth/resend-verification', { method: 'POST' }),
-    loginWithProvider: async () => { throw new Error('Social sign-in is not configured yet.'); },
+    loginWithProvider: provider => {
+      const returnTo = new URLSearchParams(window.location.search).get('redirect') || '/account?oauth=success';
+      window.location.assign(`/api/auth/oauth/${encodeURIComponent(provider)}/start?returnTo=${encodeURIComponent(returnTo)}`);
+    },
     resendOtp: async () => ({ success: true }),
     verifyOtp: async () => ({ success: true }),
     setToken() {},

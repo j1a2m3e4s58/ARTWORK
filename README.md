@@ -29,7 +29,7 @@ Production should configure:
 
 - `DATABASE_URL` for the relational PostgreSQL entity tables
 - `STORAGE_PROVIDER=cloudinary` with signed Cloudinary API credentials
-- SMTP credentials for invitations, resets and customer replies
+- an email provider for invitations, resets and customer replies. Render free web services block SMTP ports, so use `EMAIL_PROVIDER=resend` with `RESEND_API_KEY` and a verified `EMAIL_FROM` domain, or use SMTP only after upgrading the Render web service.
 - `PAYMENT_PROVIDER=paystack` and Paystack credentials when online checkout is enabled
 - `APP_ORIGIN` and `SITE_URL` using the final HTTPS domain
 - long, unique administrator and JWT secrets, plus administrator MFA

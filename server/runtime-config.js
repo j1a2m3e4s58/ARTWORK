@@ -8,9 +8,6 @@ const productionRequirements = [
   'CLOUDINARY_CLOUD_NAME',
   'CLOUDINARY_API_KEY',
   'CLOUDINARY_API_SECRET',
-  'SMTP_HOST',
-  'SMTP_USER',
-  'SMTP_PASS',
   'EMAIL_FROM',
   'TURNSTILE_SECRET_KEY',
   'VITE_TURNSTILE_SITE_KEY',
@@ -25,6 +22,12 @@ export function validateRuntimeConfiguration(env = process.env) {
   const problems = productionRequirements
     .filter(name => !env[name] || isPlaceholder(env[name]))
     .map(name => `${name} is missing or still contains a placeholder value`);
+
+  const usingResend = env.EMAIL_PROVIDER === 'resend';
+  const emailRequirements = usingResend ? ['RESEND_API_KEY'] : ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS'];
+  for (const name of emailRequirements) {
+    if (!env[name] || isPlaceholder(env[name])) problems.push(`${name} is missing or still contains a placeholder value`);
+  }
 
   if (env.TRUST_PROXY !== 'true') problems.push('TRUST_PROXY must be true behind Render');
   if (env.STORAGE_PROVIDER !== 'cloudinary') problems.push('STORAGE_PROVIDER must be cloudinary in production');
