@@ -10,6 +10,7 @@
   try {
     response = await fetch(url, {
       credentials: 'include',
+      cache: 'no-store',
       ...options,
       headers: {
         ...(!isForm ? { 'Content-Type': 'application/json' } : {}),

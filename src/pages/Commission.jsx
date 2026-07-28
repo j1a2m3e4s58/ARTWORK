@@ -1,6 +1,6 @@
 ﻿import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, Check, ChevronDown, Upload, Sparkles, Loader2 } from 'lucide-react';
+import { ArrowRight, CalendarDays, Check, ChevronDown, Upload, Sparkles, Loader2 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
@@ -84,6 +84,13 @@ export default function Commission() {
   const fileInputRef = useRef(null);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const selectedArtworkTypes = String(form.artworkType || '').split(',').map(item => item.trim()).filter(Boolean);
+  const toggleArtworkType = type => {
+    const next = selectedArtworkTypes.includes(type)
+      ? selectedArtworkTypes.filter(item => item !== type)
+      : [...selectedArtworkTypes, type];
+    set('artworkType', next.join(', '));
+  };
 
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -226,10 +233,10 @@ export default function Commission() {
         </div>
 
         {/* Form */}
-        <div className="max-w-3xl mx-auto px-6 lg:px-12 mb-24">
+        <div className="mx-auto mb-24 max-w-3xl px-3 sm:px-6 lg:px-12">
           <ScrollReveal>
-            <div className="glass-panel p-10">
-              <h2 className="font-display text-3xl text-ivory mb-2">{page.commission_form_title || 'Commission Request'}</h2>
+            <div className="glass-panel p-4 sm:p-7 md:p-10">
+              <h2 className="font-display text-2xl text-ivory mb-2 sm:text-3xl">{page.commission_form_title || 'Commission Request'}</h2>
               <p className="text-ivory/40 text-sm mb-8">{page.commission_form_subtitle || 'Fill in the details below to begin our collaboration.'}</p>
               {error && <p role="alert" className="mb-5 border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-300">{error}</p>}
 
@@ -260,19 +267,20 @@ export default function Commission() {
                 )}
                 {step === 2 && (
                   <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
-                    <p className="text-ivory/50 text-sm mb-6">Step 2 of 3 — Artwork details</p>
-                    <fieldset className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-2">
-                      <legend className="sr-only">Artwork type</legend>
+                    <p className="text-ivory/50 text-sm mb-2">Step 2 of 3 — Artwork details</p>
+                    <p className="mb-5 text-xs leading-relaxed text-ivory/35">Select one or more artwork types that match your idea.</p>
+                    <fieldset className="grid grid-cols-1 min-[390px]:grid-cols-2 gap-2">
+                      <legend className="sr-only">Artwork types — select one or more</legend>
                       {commissionFormOptions.artworkTypes.map(type => (
-                        <button key={type} onClick={() => set('artworkType', type)}
-                          className={`py-3 px-4 border text-sm font-tight tracking-wide text-left transition-all duration-200 ${
-                            form.artworkType === type ? 'border-brass bg-brass/10 text-brass' : 'border-brass/15 text-ivory/50 hover:border-brass/30'
+                        <button type="button" key={type} onClick={() => toggleArtworkType(type)} aria-pressed={selectedArtworkTypes.includes(type)}
+                          className={`flex min-h-12 items-center justify-between gap-3 border px-4 py-3 text-left font-tight text-sm tracking-wide transition-all duration-200 ${
+                            selectedArtworkTypes.includes(type) ? 'border-brass bg-brass/10 text-brass' : 'border-brass/15 text-ivory/50 hover:border-brass/30'
                           }`}>
-                          {type}
+                          <span>{type}</span>{selectedArtworkTypes.includes(type) && <Check size={15} />}
                         </button>
                       ))}
                     </fieldset>
-                    <fieldset className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-2 mt-2">
+                    <fieldset className="grid grid-cols-1 min-[390px]:grid-cols-2 gap-2 mt-3">
                       <legend className="sr-only">Budget</legend>
                       {commissionFormOptions.budgets.map(b => (
                         <button key={b} onClick={() => set('budget', b)}
@@ -283,10 +291,14 @@ export default function Commission() {
                         </button>
                       ))}
                     </fieldset>
-                    <label htmlFor="commission-deadline" className="sr-only">Preferred deadline</label>
-                    <input id="commission-deadline" name="deadline" type="date" value={form.deadline} onChange={e => set('deadline', e.target.value)}
-                      className="w-full bg-obsidian border border-brass/20 text-ivory/60 px-5 py-3.5 focus:outline-none focus:border-brass/50 transition-colors text-sm" />
-                    <div className="flex gap-3 mt-4">
+                    <label htmlFor="commission-deadline" className="mt-4 block text-xs uppercase tracking-[0.18em] text-ivory/45">Preferred completion date <span className="normal-case tracking-normal text-ivory/25">(optional)</span></label>
+                    <div className="relative mt-2">
+                      <input id="commission-deadline" name="deadline" type="date" value={form.deadline} onChange={e => set('deadline', e.target.value)}
+                        style={{ colorScheme: 'dark' }}
+                        className="commission-date-input min-h-12 w-full appearance-none border border-brass/20 bg-obsidian px-4 py-3 pr-12 text-sm text-ivory/70 focus:border-brass/50 focus:outline-none" />
+                      <CalendarDays size={18} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-brass/70" />
+                    </div>
+                    <div className="mt-5 flex flex-col gap-3 min-[390px]:flex-row">
                       <button onClick={() => setStep(1)} className="flex-1 border border-brass/20 text-ivory/50 py-4 font-tight text-sm tracking-widest uppercase hover:border-brass/40 transition-all">Back</button>
                       <button onClick={() => setStep(3)} disabled={!form.artworkType || !form.budget}
                         className="flex-1 flex items-center justify-center gap-2 bg-brass text-obsidian py-4 font-tight text-sm tracking-widest uppercase hover:bg-brass-light transition-all disabled:opacity-30 disabled:cursor-not-allowed">

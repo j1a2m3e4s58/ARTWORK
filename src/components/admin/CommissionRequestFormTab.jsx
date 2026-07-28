@@ -32,7 +32,11 @@ export default function CommissionRequestFormTab() {
 
   useEffect(() => {
     studioClient.entities.SiteContent.filter({ key: 'commission_form_options', page: 'Commission' })
-      .then(items => { setRecord(items[0] || null); setOptions(parseOptions(items[0]?.value)); })
+      .then(items => {
+        const existing = items.at(-1) || null;
+        setRecord(existing);
+        setOptions(parseOptions(existing?.value));
+      })
       .catch(loadError => setError(loadError.message || 'Unable to load commission form settings.'))
       .finally(() => setLoading(false));
   }, []);

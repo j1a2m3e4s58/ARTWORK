@@ -284,6 +284,13 @@
   *, *::before, *::after {
     scroll-behavior: auto !important;
   }
+
+  .commission-date-input::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0;
+    width: 2.5rem;
+    height: 2.5rem;
+  }
 }
 
 /* Keep secondary copy comfortably above WCAG AA contrast on the studio's dark surfaces. */
