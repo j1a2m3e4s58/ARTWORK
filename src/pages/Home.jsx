@@ -33,6 +33,7 @@ export default function Home() {
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [heroPaused, setHeroPaused] = useState(false);
   const heroRef = useRef(null);
+  const heroTouchStart = useRef(null);
   const reduceMotion = useReducedMotion();
 
   useEffect(() => {
@@ -87,10 +88,28 @@ export default function Home() {
     return () => clearInterval(t);
   }, [slides.length, settings.hero_slide_seconds, reduceMotion, heroPaused]);
 
+  const beginHeroSwipe = event => {
+    if (event.pointerType === 'mouse' || event.target.closest('a, button, input, textarea, select')) return;
+    heroTouchStart.current = { x: event.clientX, y: event.clientY };
+  };
+
+  const endHeroSwipe = event => {
+    const start = heroTouchStart.current;
+    heroTouchStart.current = null;
+    if (!start || slides.length < 2) return;
+    const deltaX = event.clientX - start.x;
+    const deltaY = event.clientY - start.y;
+    if (Math.abs(deltaX) < 44 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+    setHeroIndex(index => deltaX < 0
+      ? (index + 1) % slides.length
+      : (index - 1 + slides.length) % slides.length);
+  };
+
   return (
     <PageTransition>
       {/* -- HERO -- */}
-      <section ref={heroRef} className="relative flex min-h-[100svh] items-center overflow-hidden pb-24 pt-20 md:min-h-[720px] md:pb-0">
+      <section ref={heroRef} onPointerDown={beginHeroSwipe} onPointerUp={endHeroSwipe} onPointerCancel={() => { heroTouchStart.current = null; }}
+        className="relative flex min-h-[100svh] touch-pan-y items-center overflow-hidden pb-24 pt-20 md:min-h-[720px] md:pb-0">
         {/* Background images */}
         <AnimatePresence mode="wait">
           <motion.div
