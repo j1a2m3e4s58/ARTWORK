@@ -34,12 +34,41 @@ export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
   const menuButtonRef = useRef(null);
+  const logoPressTimer = useRef(null);
+  const logoLongPressTriggered = useRef(false);
+
+  const clearLogoPress = () => {
+    if (logoPressTimer.current) window.clearTimeout(logoPressTimer.current);
+    logoPressTimer.current = null;
+  };
+
+  const startLogoPress = event => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    clearLogoPress();
+    logoLongPressTriggered.current = false;
+    logoPressTimer.current = window.setTimeout(() => {
+      logoLongPressTriggered.current = true;
+      window.navigator.vibrate?.(25);
+      const destination = ['admin', 'editor', 'support'].includes(user?.role)
+        ? '/admin'
+        : '/login?redirect=/admin&mode=admin';
+      window.location.assign(destination);
+    }, 650);
+  };
+
+  const handleLogoClick = event => {
+    if (!logoLongPressTriggered.current) return;
+    event.preventDefault();
+    logoLongPressTriggered.current = false;
+  };
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 60);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  useEffect(() => () => clearLogoPress(), []);
 
   useEffect(() => setMenuOpen(false), [location]);
   useEffect(() => {
@@ -73,6 +102,12 @@ export default function Navbar() {
               to="/"
               className="flex items-center gap-3"
               aria-label="Reigns Atelier home"
+              onPointerDown={startLogoPress}
+              onPointerUp={clearLogoPress}
+              onPointerLeave={clearLogoPress}
+              onPointerCancel={clearLogoPress}
+              onContextMenu={event => event.preventDefault()}
+              onClick={handleLogoClick}
             >
               <img src="/brand/reigns-app-icon-192.png" alt="" draggable="false" className="h-11 w-11 rounded-full border border-brass/20 object-cover" />
               <span>
