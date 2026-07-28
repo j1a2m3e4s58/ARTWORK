@@ -1,8 +1,7 @@
-import { FaApple, FaGoogle } from 'react-icons/fa';
+import { FaGoogle } from 'react-icons/fa';
 
 const providerLabels = {
   google: 'Continue with Google',
-  apple: 'Continue with Apple',
 };
 
 export default function SocialAuthButtons() {
@@ -16,8 +15,8 @@ export default function SocialAuthButtons() {
       <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.2em] text-ivory/35" aria-hidden="true">
         <span className="h-px flex-1 bg-brass/15" /> Or continue with <span className="h-px flex-1 bg-brass/15" />
       </div>
-      {['google', 'apple'].map(provider => {
-        const Icon = provider === 'google' ? FaGoogle : FaApple;
+      {['google'].map(provider => {
+        const Icon = FaGoogle;
         return (
           <button key={provider} type="button" onClick={() => continueWith(provider)}
             className="flex w-full items-center justify-center gap-2 border border-brass/25 bg-obsidian/40 py-3 text-sm text-ivory transition-colors hover:border-brass/60 hover:bg-brass/10">
@@ -26,7 +25,7 @@ export default function SocialAuthButtons() {
           </button>
         );
       })}
-      <p className="text-center text-xs leading-5 text-ivory/40">Google and Apple sign-in are available once the studio connects each provider.</p>
+      <p className="text-center text-xs leading-5 text-ivory/40">Google sign-in is available once the studio connects the provider.</p>
     </div>
   );
 }
