@@ -192,7 +192,7 @@ function beginOAuth(res, provider, returnTo) {
 }
 
 function validateOAuthState(req, res, provider) {
-  const received = String(req.query.state || req.body.state || '');
+  const received = String(req.query?.state || req.body?.state || '');
   const expected = String(req.cookies.atelier_oauth_state || '');
   clearOAuthState(res);
   if (!safeEqual(received, expected)) throw new Error('OAuth state did not match this browser session.');
@@ -1201,11 +1201,11 @@ app.get('/api/auth/oauth/:provider/start', authLimiter, (req, res) => {
 
 async function completeOAuth(req, res, provider) {
   const state = validateOAuthState(req, res, provider);
-  if (req.query.error || req.body.error) return res.redirect('/login?oauth=cancelled');
-  const code = String(req.query.code || req.body.code || '');
+  if (req.query?.error || req.body?.error) return res.redirect('/login?oauth=cancelled');
+  const code = String(req.query?.code || req.body?.code || '');
   if (!code) throw new Error('No authorization code was returned.');
   const profile = await exchangeOAuthCode(provider, code);
-  if (provider === 'apple' && req.body.user) {
+  if (provider === 'apple' && req.body?.user) {
     try {
       const name = JSON.parse(req.body.user)?.name;
       profile.name = [name?.firstName, name?.lastName].filter(Boolean).join(' ') || profile.name;
