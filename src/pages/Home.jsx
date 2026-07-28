@@ -83,7 +83,9 @@ export default function Home() {
 
   useEffect(() => {
     const seconds = Math.max(4, Number(settings.hero_slide_seconds) || 7);
-    if (reduceMotion || heroPaused || slides.length < 2) return undefined;
+    // Keep rotation available on touch devices even when the device requests
+    // reduced motion; the user can always pause it with the visible control.
+    if (heroPaused || slides.length < 2) return undefined;
     const t = setInterval(() => setHeroIndex(i => (i + 1) % slides.length), seconds * 1000);
     return () => clearInterval(t);
   }, [slides.length, settings.hero_slide_seconds, reduceMotion, heroPaused]);
