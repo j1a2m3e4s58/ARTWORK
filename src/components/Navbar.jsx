@@ -10,6 +10,7 @@ const navLinks = [
   { label: 'Home', path: '/' },
   { label: 'Gallery', path: '/gallery' },
   { label: 'Commission', path: '/commission' },
+  { label: 'Internships', path: '/internships', settingKey: 'show_internships' },
   { label: 'Available Works', path: '/shop', settingKey: 'show_shop' },
   { label: 'About', path: '/about' },
   { label: 'Contact', path: '/contact' },
@@ -24,7 +25,7 @@ export default function Navbar() {
   const { user, logout } = useAuth();
   const isVisible = link => {
     const key = link.settingKey || `show_${link.label.toLowerCase()}`;
-    if (['show_videos', 'show_blog'].includes(key)) return settings[key] === 'true';
+    if (['show_videos', 'show_blog', 'show_internships'].includes(key)) return settings[key] === 'true';
     return settings[key] !== 'false';
   };
   const visiblePrimaryLinks = navLinks.filter(isVisible);

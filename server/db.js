@@ -12,7 +12,7 @@ await mkdir(backupDir, { recursive: true });
 const databasePath = path.join(dataDir, 'db.json');
 
 const entityNames = [
-  'Artwork', 'ArtworkLike', 'AuditLog', 'BlogPost', 'CommissionRequest', 'HeroSlide', 'Message', 'NewsletterSubscriber',
+  'Artwork', 'ArtworkLike', 'AuditLog', 'BlogPost', 'CommissionRequest', 'InternshipApplication', 'HeroSlide', 'Message', 'NewsletterSubscriber',
   'Media', 'Notification', 'Order', 'Outbox', 'PaymentEvent', 'Quote', 'ShopProduct', 'SiteContent',
   'Testimonial', 'User', 'Video',
 ];
@@ -24,6 +24,7 @@ const tableNames = {
   AuditLog: 'audit_logs',
   BlogPost: 'blog_posts',
   CommissionRequest: 'commission_requests',
+  InternshipApplication: 'internship_applications',
   HeroSlide: 'hero_slides',
   Message: 'messages',
   Media: 'media_assets',

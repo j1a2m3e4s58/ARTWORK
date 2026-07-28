@@ -19,6 +19,7 @@ import PointerAccent from '@/components/PointerAccent';
 const Home = lazy(() => import('@/pages/Home'));
 const Gallery = lazy(() => import('@/pages/Gallery'));
 const Commission = lazy(() => import('@/pages/Commission'));
+const Internships = lazy(() => import('@/pages/Internships'));
 const Shop = lazy(() => import('@/pages/Shop'));
 const About = lazy(() => import('@/pages/About'));
 const Blog = lazy(() => import('@/pages/Blog'));
@@ -54,6 +55,7 @@ const AuthenticatedApp = () => {
         <Route path="/" element={<Home />} />
         <Route path="/gallery" element={<Gallery />} />
         <Route path="/commission" element={<Commission />} />
+        <Route path="/internships" element={<FeatureRoute setting="show_internships" defaultEnabled={false}><Internships /></FeatureRoute>} />
         <Route path="/shop" element={<FeatureRoute setting="show_shop"><Shop /></FeatureRoute>} />
         <Route path="/about" element={<About />} />
         <Route path="/blog" element={<FeatureRoute setting="show_blog" defaultEnabled={false}><Blog /></FeatureRoute>} />

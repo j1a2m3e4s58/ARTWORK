@@ -25,6 +25,7 @@ import MediaLibraryTab from '@/components/admin/MediaLibraryTab';
 import RecycleBinTab from '@/components/admin/RecycleBinTab';
 import CommissionPackagesTab from '@/components/admin/CommissionPackagesTab';
 import CommissionRequestFormTab from '@/components/admin/CommissionRequestFormTab';
+import InternshipsTab from '@/components/admin/InternshipsTab';
 
 const allTabs = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard, group: 'Dashboard' },
@@ -41,6 +42,7 @@ const allTabs = [
   { id: 'commissions', label: 'Commissions', icon: MessageSquare, group: 'Sales' },
   { id: 'commission-packages', label: 'Commission Packages', icon: PackageCheck, group: 'Sales' },
   { id: 'commission-form', label: 'Commission Form', icon: FileText, group: 'Sales' },
+  { id: 'internships', label: 'Internships', icon: Users, group: 'People' },
   { id: 'inbox', label: 'Inbox', icon: MessageSquare, group: 'Communication' },
   { id: 'subscribers', label: 'Subscribers', icon: Users, group: 'Communication' },
   { id: 'users', label: 'People & Access', icon: Users, group: 'People' },
@@ -132,7 +134,7 @@ export default function Admin() {
   const [searchParams, setSearchParams] = useSearchParams();
   const roleTabs = {
     admin: allTabs.map(tab => tab.id),
-    editor: ['overview', 'gallery', 'banners', 'media', 'recycle', 'videos', 'shop', 'testimonials', 'quotes', 'pages', 'blog', 'commission-packages', 'commission-form'],
+    editor: ['overview', 'gallery', 'banners', 'media', 'recycle', 'videos', 'shop', 'testimonials', 'quotes', 'pages', 'blog', 'commission-packages', 'commission-form', 'internships'],
     support: ['overview', 'inbox', 'commissions', 'orders'],
   };
   const tabs = allTabs.filter(tab => roleTabs[user?.role || 'support'].includes(tab.id));
@@ -649,6 +651,7 @@ export default function Admin() {
           {activeTab === 'pages' && <PagesTab />}
           {activeTab === 'commission-packages' && <CommissionPackagesTab />}
           {activeTab === 'commission-form' && <CommissionRequestFormTab />}
+          {activeTab === 'internships' && <InternshipsTab />}
 
           {/* -- BLOG -- */}
           {activeTab === 'blog' && (

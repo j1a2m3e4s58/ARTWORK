@@ -98,7 +98,7 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHea
 const mutationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 120, standardHeaders: true });
 const publicFormLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 20, standardHeaders: true });
 const limitPublicForms = (req, res, next) => (
-  ['Message', 'CommissionRequest', 'NewsletterSubscriber', 'Order'].includes(req.params.name)
+  ['Message', 'CommissionRequest', 'InternshipApplication', 'NewsletterSubscriber', 'Order'].includes(req.params.name)
     ? publicFormLimiter(req, res, next)
     : next()
 );
@@ -128,10 +128,10 @@ async function verifyHuman(req, res, next) {
 }
 
 const publicRead = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
-const authenticatedCreate = new Set(['CommissionRequest', 'Message', 'Order']);
+const authenticatedCreate = new Set(['CommissionRequest', 'InternshipApplication', 'Message', 'Order']);
 const staffRoles = new Set(['admin', 'editor', 'support']);
 const contentEntities = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'Media', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
-const supportEntities = new Set(['CommissionRequest', 'Message', 'Order']);
+const supportEntities = new Set(['CommissionRequest', 'InternshipApplication', 'Message', 'Order']);
 const hiddenUserFields = ({
   passwordHash, mfaSecret, pendingMfaSecret, mfaRecoveryCodeHashes,
   managedPasswordFingerprint, ...user
@@ -587,6 +587,7 @@ async function ensureSeeds() {
     ['show_blog', 'false', 'Show Blog Navigation'],
     ['show_testimonials', 'false', 'Enable Testimonials Page'],
     ['show_contact_map', 'false', 'Show Contact Map'],
+    ['show_internships', 'false', 'Show Internships Navigation'],
   ];
   for (const [key, value, label] of operationalDefaults) {
     if (db.data.SiteContent.some(item => item.page === 'Settings' && item.key === key && !item.deleted_at)) continue;
@@ -1472,7 +1473,7 @@ app.get('/api/entities/:name', async (req, res) => {
   if (blocksEntityReadForPendingMfa(user, publicAccess)) {
     return res.status(403).json({ error: 'Enable multi-factor authentication before accessing studio records.', code: 'mfa_required' });
   }
-  const ownData = ['CommissionRequest', 'Message', 'Notification', 'Order'].includes(name);
+  const ownData = ['CommissionRequest', 'InternshipApplication', 'Message', 'Notification', 'Order'].includes(name);
   const staffAccess = !pendingAdminMfa && canManage(user, name) && hasAdminAccess(req, user);
   if (!publicAccess && !staffAccess && !(user && ownData)) {
     return res.status(403).json({ error: 'You do not have access to these records.' });
@@ -1593,6 +1594,10 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
     record.statusHistory = [{ status: 'pending', at: now(), actorId: user.id }];
     record.expiresAt = new Date(Date.now() + (record.channel === 'paystack' ? 30 : 24 * 60) * 60 * 1000).toISOString();
   }
+  if (name === 'InternshipApplication') {
+    record.status = 'received';
+    record.statusHistory = [{ status: 'received', at: now(), actorId: user.id }];
+  }
   if (name === 'Order') {
     record.status = 'pending';
     record.paymentStatus = 'unpaid';
@@ -1611,6 +1616,13 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
       to: record.email,
       subject: 'Your commission request — Reigns Atelier',
       text: `Hi ${record.name},\n\nYour commission request has been received. The studio will review it and respond with next steps.\n\nArtwork type: ${record.artworkType}\nBudget: ${record.budget}\n\nReigns Atelier`,
+    });
+  }
+  if (name === 'InternshipApplication') {
+    record.confirmationDelivery = await deliverEmail({
+      to: record.email,
+      subject: 'Internship application received — Reigns Atelier',
+      text: `Hi ${record.name},\n\nWe received your internship application and will review it with care. We will contact you about next steps.\n\nReigns Atelier`,
     });
   }
   await audit(user, `${name.toLowerCase()}.created`, name, record.id);

@@ -33,6 +33,12 @@ export const schemas = {
     package: optionalText(120),
     referenceImageUrl: safeUrl.optional().default(''),
   }),
+  InternshipApplication: z.object({
+    name: text(120), email: email, phone: optionalText(40),
+    school: optionalText(180), programme: optionalText(180), availability: optionalText(160),
+    interests: text(3000).min(20), notice: optionalText(3000),
+    hasLetter: z.boolean().optional().default(false), letterUrl: safeUrl.optional().default(''),
+  }),
   NewsletterSubscriber: z.object({
     email,
     consent: z.boolean().optional().default(true),
