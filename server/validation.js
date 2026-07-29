@@ -54,7 +54,9 @@ export const schemas = {
     })).min(1).max(50),
     total: z.coerce.number().nonnegative().max(10000000),
     channel: z.enum(['whatsapp', 'manual', 'paystack']).default('whatsapp'),
+    paymentMethod: z.enum(['mobile_money', 'bank_transfer', 'pay_on_delivery']).optional().default('mobile_money'),
     deliveryMethod: z.enum(['digital', 'pickup', 'delivery']).default('delivery'),
+    deliveryZoneId: optionalText(100),
     shippingAddress: z.object({
       recipientName: text(160),
       phone: text(40),
@@ -66,6 +68,12 @@ export const schemas = {
       postalCode: optionalText(30),
     }).optional(),
     customerNote: optionalText(2000),
+    status: z.enum(['pending', 'confirmed', 'in_progress', 'ready', 'shipped', 'fulfilled', 'completed', 'cancelled']).optional(),
+    paymentStatus: z.enum([
+      'unpaid', 'awaiting_payment', 'initialized', 'payment_submitted',
+      'pay_on_delivery', 'paid', 'failed', 'refunded',
+    ]).optional(),
+    proofStatus: z.enum(['not_submitted', 'submitted', 'approved', 'rejected']).optional(),
   }),
   Artwork: z.object({
     title: text(200), category: optionalText(100), imageUrl: safeUrl,

@@ -11,12 +11,12 @@ const navLinks = [
   { label: 'Gallery', path: '/gallery' },
   { label: 'Commission', path: '/commission' },
   { label: 'Internships', path: '/internships', settingKey: 'show_internships' },
-  { label: 'Available Works', path: '/shop', settingKey: 'show_shop' },
+  { label: 'Art Shop', path: '/shop', settingKey: 'show_shop' },
   { label: 'About', path: '/about' },
   { label: 'Contact', path: '/contact' },
 ];
 const secondaryLinks = [
-  { label: 'Videos', path: '/videos', settingKey: 'show_videos' },
+  { label: 'Art Films', path: '/videos', settingKey: 'show_videos' },
   { label: 'Journal', path: '/blog', settingKey: 'show_blog' },
 ];
 

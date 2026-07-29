@@ -19,6 +19,12 @@ export default function FileUploadField({ label, value, onChange, accept = 'imag
 
   const handleFile = async (file) => {
     if (!file) return;
+    const isVideo = file.type.startsWith('video/');
+    const maxBytes = isVideo ? 75 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      setError(`${isVideo ? 'Videos' : 'Images'} must be ${isVideo ? '75 MB' : '10 MB'} or smaller.`);
+      return;
+    }
     setUploading(true);
     setError('');
     try {
@@ -60,7 +66,7 @@ export default function FileUploadField({ label, value, onChange, accept = 'imag
       {uploading ? (
         <div className="w-full bg-obsidian border border-brass/20 px-4 py-2.5 flex items-center gap-2 text-sm text-ivory/40">
           <Loader2 size={14} className="animate-spin text-brass" />
-          <span>Uploading...</span>
+          <span>Uploading securely. Large films can take a few minutes…</span>
         </div>
       ) : (
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
@@ -92,6 +98,11 @@ export default function FileUploadField({ label, value, onChange, accept = 'imag
       {/* Preview */}
       {value && (accept.includes('image') || !accept.includes('video')) && (
         <img src={value} alt="" className="mt-2 h-20 w-auto object-cover border border-brass/10 opacity-70" onError={e => e.target.style.display = 'none'} />
+      )}
+      {value && accept.includes('video') && (
+        <video src={value} controls preload="metadata" className="mt-3 aspect-video w-full border border-brass/10 bg-black object-contain">
+          Your browser does not support this video preview.
+        </video>
       )}
       {error && <p role="alert" className="mt-2 text-xs text-red-300">{error}</p>}
     </div>

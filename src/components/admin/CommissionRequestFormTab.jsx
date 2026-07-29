@@ -163,7 +163,7 @@ export default function CommissionRequestFormTab({ onStudioOptionsSaved }) {
 
       <section className="border border-brass/15 bg-carbon p-4 sm:p-5">
         <h2 className="mb-1 font-display text-2xl text-ivory">Studio content choices</h2>
-        <p className="mb-5 text-xs text-ivory/35">These lists control the Add and Edit panels in Gallery, Videos and Available Works.</p>
+          <p className="mb-5 text-xs text-ivory/35">These lists control the Add and Edit panels in Gallery, Art Films, and the Art Shop.</p>
         <div className="grid gap-5 md:grid-cols-3">
           <ManagedList
             label="Gallery categories"

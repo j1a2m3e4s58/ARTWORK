@@ -199,6 +199,10 @@ export const studioClient = {
   },
   orders: {
     cancel: id => request(`/api/orders/${id}/cancel`, { method: 'POST' }),
+    submitPaymentProof: (id, proof) => request(`/api/orders/${id}/payment-proof`, {
+      method: 'POST',
+      body: JSON.stringify(proof),
+    }),
   },
   mfa: {
     setup: () => request('/api/admin/mfa/setup', { method: 'POST' }),

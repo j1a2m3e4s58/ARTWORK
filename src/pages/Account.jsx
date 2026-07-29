@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, Download, Lock, MessageSquare, Package, Palette, Save, Trash2 } from 'lucide-react';
+import { Bell, Download, Lock, MessageSquare, Package, Palette, Save, Trash2, Upload } from 'lucide-react';
 import PageTransition from '@/components/PageTransition';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
@@ -10,6 +10,10 @@ const statusClass = status => ({
   completed: 'text-green-300 bg-green-300/10',
   in_progress: 'text-purple-300 bg-purple-300/10',
 }[status] || 'text-brass bg-brass/10');
+const formatMoney = (value, currency = 'GHS') => new Intl.NumberFormat('en-GH', {
+  style: 'currency',
+  currency,
+}).format(Number(value) || 0);
 
 export default function Account() {
   const { user, checkUserAuth, logout } = useAuth();
@@ -19,6 +23,7 @@ export default function Account() {
   const [closePassword, setClosePassword] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [uploadingOrderId, setUploadingOrderId] = useState('');
 
   useEffect(() => {
     Promise.all([
@@ -95,6 +100,31 @@ export default function Account() {
     await studioClient.account.logoutAll();
     window.location.assign('/login');
   };
+  const uploadPaymentProof = async (order, file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024) {
+      setError('Choose a JPG, PNG, WebP, or AVIF screenshot no larger than 10 MB.');
+      return;
+    }
+    setUploadingOrderId(order.id);
+    setError('');
+    try {
+      const { file_url, media } = await studioClient.integrations.Core.UploadFile({ file });
+      const updated = await studioClient.orders.submitPaymentProof(order.id, {
+        paymentProofUrl: file_url,
+        mediaId: media?.id,
+      });
+      setData(current => ({
+        ...current,
+        orders: current.orders.map(item => item.id === order.id ? updated : item),
+      }));
+      setNotice(`Payment proof received for ${updated.trackingCode || 'your order'}.`);
+    } catch (uploadError) {
+      setError(uploadError.message);
+    } finally {
+      setUploadingOrderId('');
+    }
+  };
 
   const cards = [
     { label: 'Messages', value: data.messages.length, icon: MessageSquare },
@@ -160,6 +190,43 @@ export default function Account() {
                     <article key={item.id} className="border border-ivory/5 bg-obsidian p-4">
                       <div className="flex justify-between gap-2"><strong>{item.artworkType}</strong><span className={`px-2 py-1 text-[10px] uppercase ${statusClass(item.status)}`}>{item.status}</span></div>
                       <p className="mt-2 text-sm text-ivory/45">{item.package || item.budget}</p>
+                    </article>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border border-brass/10 bg-carbon p-5">
+                <h2 className="font-display text-2xl">Art Shop Orders</h2>
+                <p className="mt-1 text-xs text-ivory/35">Keep your tracking code for WhatsApp, payment, and delivery updates.</p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {!data.orders.length && <p className="text-sm text-ivory/35">No shop orders yet.</p>}
+                  {data.orders.map(order => (
+                    <article key={order.id} className="min-w-0 border border-ivory/5 bg-obsidian p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <span className="text-[10px] uppercase tracking-wider text-ivory/30">Tracking code</span>
+                          <strong className="block font-display text-xl tracking-wide text-brass">{order.trackingCode || order.id.slice(0, 8)}</strong>
+                        </div>
+                        <span className={`px-2 py-1 text-[10px] uppercase ${statusClass(order.status)}`}>{String(order.status || 'pending').replaceAll('_', ' ')}</span>
+                      </div>
+                      <div className="mt-3 space-y-1 text-xs text-ivory/45">
+                        <p>{(order.items || []).map(item => `${item.title} × ${item.qty}`).join(', ')}</p>
+                        <p>Delivery: {order.deliveryZone?.name || order.deliveryMethod || 'To be confirmed'}</p>
+                        <p>Payment: {String(order.paymentStatus || 'awaiting_payment').replaceAll('_', ' ')}</p>
+                      </div>
+                      <strong className="mt-3 block font-display text-xl text-ivory">{formatMoney(order.total, order.currency)}</strong>
+                      {['mobile_money', 'bank_transfer'].includes(order.paymentMethod) && !['paid', 'refunded'].includes(order.paymentStatus) && (
+                        <label className="mt-3 flex min-h-10 cursor-pointer items-center justify-center gap-2 border border-brass/20 px-3 text-xs text-brass">
+                          <Upload size={13} /> {uploadingOrderId === order.id ? 'Uploading…' : order.proofStatus === 'submitted' ? 'Replace payment proof' : 'Upload payment proof'}
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,image/avif"
+                            className="hidden"
+                            disabled={uploadingOrderId === order.id}
+                            onChange={event => uploadPaymentProof(order, event.target.files?.[0])}
+                          />
+                        </label>
+                      )}
                     </article>
                   ))}
                 </div>

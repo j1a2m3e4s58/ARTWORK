@@ -37,7 +37,11 @@ export async function storeFile({ buffer, mime, extension, uploadDir, id }) {
       form.append('upload_preset', process.env.CLOUDINARY_UPLOAD_PRESET);
     }
     form.append('file', new Blob([buffer], { type: mime }), `${id}.${extension}`);
-    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, { method: 'POST', body: form });
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(resourceType === 'video' ? 180000 : 60000),
+    });
     const result = await response.json();
     if (!response.ok || !result.secure_url) throw new Error(result.error?.message || 'Cloud upload failed.');
     return { url: result.secure_url, publicId: result.public_id, resourceType };

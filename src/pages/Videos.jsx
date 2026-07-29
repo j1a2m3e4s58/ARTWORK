@@ -60,6 +60,28 @@ function VideoPlayer({ video }) {
   );
 }
 
+function FilmCover({ video, className = '' }) {
+  if (video.thumbnailUrl) {
+    return (
+      <img
+        src={imageVariant(video.thumbnailUrl, 1200)}
+        srcSet={imageSrcSet(video.thumbnailUrl)}
+        sizes="(min-width: 1280px) 1200px, 100vw"
+        alt={video.title}
+        className={className}
+      />
+    );
+  }
+  return (
+    <div className={`flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_50%_35%,rgba(201,169,110,0.16),transparent_42%),linear-gradient(135deg,#191817,#080808)] ${className}`} aria-hidden="true">
+      <div className="text-center">
+        <Play size={34} className="mx-auto text-brass/60" />
+        <span className="mt-3 block text-[10px] uppercase tracking-[0.3em] text-brass/45">Reigns Atelier Film</span>
+      </div>
+    </div>
+  );
+}
+
 export default function Videos() {
   const page = usePageContent('Videos');
   const { user } = useAuth();
@@ -102,7 +124,7 @@ export default function Videos() {
 
         {/* Header */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12 mb-16">
-          <ScrollReveal><SectionLabel>{page.videos_label || 'Video Portal'}</SectionLabel></ScrollReveal>
+          <ScrollReveal><SectionLabel>{page.videos_label || 'Atelier Film Archive'}</SectionLabel></ScrollReveal>
           <ScrollReveal delay={0.1}>
             <h1 className="font-display text-5xl md:text-7xl text-ivory mt-2">
               {page.videos_title || 'Art in Motion'}
@@ -145,8 +167,7 @@ export default function Videos() {
                 tabIndex={0}
                 aria-label={`Play ${featured.title}`}
               >
-                <img src={imageVariant(featured.thumbnailUrl, 1200)} srcSet={imageSrcSet(featured.thumbnailUrl)} sizes="(min-width: 1280px) 1200px, 100vw" alt={featured.title}
-                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 grayscale-[20%] group-hover:grayscale-0" />
+                <FilmCover video={featured} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105 grayscale-[20%] group-hover:grayscale-0" />
                 <div className="absolute inset-0 bg-gradient-to-t from-obsidian/90 via-obsidian/30 to-transparent" />
                 <div className="absolute inset-0 flex items-center justify-center">
                   <motion.div
@@ -185,8 +206,7 @@ export default function Videos() {
                   aria-label={`Play ${video.title}`}
                 >
                   <div className="relative aspect-video overflow-hidden">
-                    <img src={imageVariant(video.thumbnailUrl, 768)} srcSet={imageSrcSet(video.thumbnailUrl, [320, 480, 768])} sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw" alt={video.title}
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 grayscale-[25%] group-hover:grayscale-0" />
+                    <FilmCover video={video} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105 grayscale-[25%] group-hover:grayscale-0" />
                     <div className="absolute inset-0 bg-obsidian/30 group-hover:bg-obsidian/10 transition-colors" />
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                       <div className="w-14 h-14 border border-brass/50 rounded-full flex items-center justify-center bg-obsidian/50">

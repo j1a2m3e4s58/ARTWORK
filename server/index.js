@@ -104,7 +104,7 @@ const limitPublicForms = (req, res, next) => (
 );
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 75 * 1024 * 1024 },
 });
 const turnstileConfigured = Boolean(process.env.TURNSTILE_SECRET_KEY);
 async function verifyHuman(req, res, next) {
@@ -297,6 +297,47 @@ function releaseOrderInventory(order) {
   }
   order.inventoryReleasedAt = now();
   order.inventoryReserved = false;
+}
+
+const defaultCommerceSettings = {
+  deliveryZones: [
+    { id: 'accra', name: 'Accra', fee: 25, eta: '1–3 working days', active: true },
+    { id: 'tema', name: 'Tema', fee: 30, eta: '1–3 working days', active: true },
+    { id: 'kasoa', name: 'Kasoa', fee: 35, eta: '2–4 working days', active: true },
+    { id: 'other-ghana', name: 'Other Ghana locations', fee: 50, eta: 'Arranged after confirmation', active: true },
+  ],
+  paymentMethods: { mobile_money: true, bank_transfer: true, pay_on_delivery: true },
+  mobileMoney: { network: 'MTN MoMo', number: '', accountName: '', instructions: '' },
+  bankTransfer: { bankName: '', accountName: '', accountNumber: '', branch: '', instructions: '' },
+  payOnDeliveryNote: 'Pay on delivery is subject to confirmation for the selected location and order value.',
+};
+
+function commerceSettings() {
+  const latest = db.data.SiteContent
+    .filter(item => item.key === 'commerce_settings' && item.page === 'Commerce' && !item.deleted_at)
+    .sort((a, b) => new Date(a.updated_date || a.created_date || 0) - new Date(b.updated_date || b.created_date || 0))
+    .at(-1);
+  try {
+    const parsed = latest?.value ? JSON.parse(latest.value) : {};
+    return {
+      ...defaultCommerceSettings,
+      ...parsed,
+      paymentMethods: { ...defaultCommerceSettings.paymentMethods, ...(parsed.paymentMethods || {}) },
+      mobileMoney: { ...defaultCommerceSettings.mobileMoney, ...(parsed.mobileMoney || {}) },
+      bankTransfer: { ...defaultCommerceSettings.bankTransfer, ...(parsed.bankTransfer || {}) },
+      deliveryZones: Array.isArray(parsed.deliveryZones) ? parsed.deliveryZones : defaultCommerceSettings.deliveryZones,
+    };
+  } catch {
+    return defaultCommerceSettings;
+  }
+}
+
+function createOrderTrackingCode() {
+  let code;
+  do {
+    code = `RA-${randomBytes(4).toString('hex').toUpperCase()}`;
+  } while (db.data.Order.some(order => order.trackingCode === code));
+  return code;
 }
 
 async function confirmPaidOrder(order, payment, providerEventId) {
@@ -1573,10 +1614,28 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
       return { productId: product.id, title: product.title, price: Number(product.price), qty: item.qty };
     });
     clean.subtotal = clean.items.reduce((sum, item) => sum + item.price * item.qty, 0);
+    const commerce = commerceSettings();
+    if (commerce.paymentMethods?.[clean.paymentMethod] === false) {
+      return res.status(400).json({ error: 'That payment method is not currently available.' });
+    }
     if (clean.deliveryMethod === 'delivery' && !clean.shippingAddress) {
       return res.status(400).json({ error: 'Enter a delivery address or choose studio pickup.' });
     }
-    clean.shipping = clean.deliveryMethod === 'delivery' ? Math.max(0, Number(process.env.SHIPPING_FLAT_RATE || 0)) : 0;
+    if (clean.deliveryMethod === 'delivery') {
+      const zone = commerce.deliveryZones.find(candidate => (
+        candidate.active !== false && String(candidate.id) === String(clean.deliveryZoneId)
+      ));
+      if (!zone) return res.status(400).json({ error: 'Choose an available delivery zone.' });
+      clean.deliveryZone = {
+        id: String(zone.id),
+        name: String(zone.name || ''),
+        fee: Math.max(0, Number(zone.fee) || 0),
+        eta: String(zone.eta || ''),
+      };
+      clean.shipping = clean.deliveryZone.fee;
+    } else {
+      clean.shipping = 0;
+    }
     clean.total = clean.subtotal + clean.shipping;
   }
   const record = { ...clean, id: newId(), created_date: now() };
@@ -1600,10 +1659,13 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
   }
   if (name === 'Order') {
     record.status = 'pending';
-    record.paymentStatus = 'unpaid';
+    record.paymentStatus = record.paymentMethod === 'pay_on_delivery' ? 'pay_on_delivery' : 'awaiting_payment';
+    record.proofStatus = 'not_submitted';
     record.currency = paymentStatus.currency;
+    record.trackingCode = createOrderTrackingCode();
     record.idempotencyKey = String(req.get('idempotency-key') || '').trim().slice(0, 120) || null;
     record.statusHistory = [{ status: 'pending', at: now(), actorId: user.id }];
+    record.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     try {
       reserveOrderInventory(record);
     } catch (error) {
@@ -1696,6 +1758,35 @@ app.post('/api/orders/:id/cancel', requireVerifiedUser, mutationLimiter, async (
   res.json(order);
 });
 
+app.post('/api/orders/:id/payment-proof', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const order = db.data.Order.find(item => item.id === req.params.id && item.userId === req.user.id && !item.deleted_at);
+  if (!order) return res.status(404).json({ error: 'Order not found.' });
+  if (order.paymentStatus === 'paid' || order.status === 'cancelled') {
+    return res.status(409).json({ error: 'Payment proof can no longer be changed for this order.' });
+  }
+  if (!['mobile_money', 'bank_transfer'].includes(order.paymentMethod)) {
+    return res.status(400).json({ error: 'Payment proof is not required for this order.' });
+  }
+  const media = db.data.Media.find(item => (
+    item.id === String(req.body.mediaId || '')
+    && item.userId === req.user.id
+    && item.mime?.startsWith('image/')
+    && !item.deleted_at
+  ));
+  if (!media) return res.status(400).json({ error: 'Upload a payment screenshot from this account first.' });
+  const paymentProofUrl = String(req.body.paymentProofUrl || '').trim();
+  if (paymentProofUrl !== media.url) return res.status(400).json({ error: 'The payment screenshot does not match the uploaded file.' });
+  order.paymentProofUrl = paymentProofUrl;
+  order.paymentProofMediaId = media.id;
+  order.proofStatus = 'submitted';
+  order.paymentStatus = 'payment_submitted';
+  order.proofSubmittedAt = now();
+  order.updated_date = now();
+  await audit(req.user, 'order.payment_proof_submitted', 'Order', order.id);
+  await save();
+  res.json(order);
+});
+
 app.post('/api/email/send', requireVerifiedUser, async (req, res) => {
   const subject = String(req.body.subject || 'Reigns Atelier').slice(0, 160);
   const text = String(req.body.text || req.body.body || '').slice(0, 10000);
@@ -1730,6 +1821,17 @@ app.patch('/api/entities/:name/:id', requireStaff, mutationLimiter, async (req, 
   if (req.params.name === 'User' && record.role === 'admin' && (changes.role && changes.role !== 'admin' || changes.status === 'suspended')) {
     const activeAdmins = db.data.User.filter(item => item.role === 'admin' && item.status === 'active' && !item.deleted_at);
     if (activeAdmins.length <= 1) return res.status(409).json({ error: 'The final active administrator cannot be demoted or suspended.' });
+  }
+  if (req.params.name === 'Order' && changes.paymentStatus && changes.paymentStatus !== record.paymentStatus) {
+    if (changes.paymentStatus === 'paid') {
+      changes.proofStatus = record.paymentProofUrl ? 'approved' : record.proofStatus;
+      changes.status = record.status === 'pending' ? 'confirmed' : record.status;
+      record.paidAt ||= now();
+    } else if (changes.paymentStatus === 'failed' && record.paymentProofUrl) {
+      changes.proofStatus = 'rejected';
+    } else if (changes.paymentStatus === 'payment_submitted') {
+      changes.proofStatus = 'submitted';
+    }
   }
   if (['CommissionRequest', 'Order'].includes(req.params.name) && changes.status && changes.status !== record.status) {
     record.statusHistory ||= [];
@@ -1825,7 +1927,15 @@ app.post('/api/artworks/:id/like', requireUser, mutationLimiter, async (req, res
   res.json({ liked: !existing, likes: artwork.likes });
 });
 
-app.post('/api/upload', requireVerifiedUser, mutationLimiter, upload.single('file'), async (req, res) => {
+app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) => {
+  upload.single('file')(req, res, error => {
+    if (error?.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'This file is too large. Videos must be 75 MB or smaller.' });
+    }
+    if (error) return res.status(400).json({ error: error.message || 'The file could not be uploaded.' });
+    next();
+  });
+}, async (req, res) => {
   if (staffRoles.has(req.user.role) && !hasAdminAccess(req, req.user)) {
     return res.status(403).json({ error: 'Re-enter your password to unlock Studio Control.', code: 'admin_unlock_required' });
   }

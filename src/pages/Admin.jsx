@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Image, ShoppingBag, MessageSquare, BookOpen,
-  Users, Plus, Trash2, Pencil, Video, FileText, X, Check, Settings, Star, Download, MoreHorizontal, PackageCheck, Activity, PanelsTopLeft, Library, ArchiveRestore
+  Users, Plus, Trash2, Pencil, Video, FileText, X, Check, Settings, Star, Download, MoreHorizontal, PackageCheck, Activity, PanelsTopLeft, Library, ArchiveRestore, Truck
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import PageTransition from '@/components/PageTransition';
@@ -26,6 +26,7 @@ import RecycleBinTab from '@/components/admin/RecycleBinTab';
 import CommissionPackagesTab from '@/components/admin/CommissionPackagesTab';
 import CommissionRequestFormTab from '@/components/admin/CommissionRequestFormTab';
 import InternshipsTab from '@/components/admin/InternshipsTab';
+import CommerceSettingsTab from '@/components/admin/CommerceSettingsTab';
 import ResponsiveSelect from '@/components/ResponsiveSelect';
 import { DEFAULT_STUDIO_OPTIONS, parseStudioOptions } from '@/lib/studioOptions';
 
@@ -34,13 +35,14 @@ const allTabs = [
   { id: 'gallery', label: 'Gallery', icon: Image, group: 'Content' },
   { id: 'banners', label: 'Home Banners', icon: PanelsTopLeft, group: 'Content' },
   { id: 'media', label: 'Media Library', icon: Library, group: 'Content' },
-  { id: 'videos', label: 'Videos', icon: Video, group: 'Content' },
+  { id: 'videos', label: 'Art Films', icon: Video, group: 'Content' },
   { id: 'testimonials', label: 'Testimonials', icon: Star, group: 'Content' },
   { id: 'quotes', label: 'Art Quotes', icon: FileText, group: 'Content' },
   { id: 'pages', label: 'Page Content', icon: FileText, group: 'Content' },
   { id: 'blog', label: 'Blog', icon: BookOpen, group: 'Content' },
-  { id: 'shop', label: 'Available Works', icon: ShoppingBag, group: 'Sales' },
+  { id: 'shop', label: 'Art Shop', icon: ShoppingBag, group: 'Sales' },
   { id: 'orders', label: 'Orders', icon: PackageCheck, group: 'Sales' },
+  { id: 'commerce', label: 'Delivery & Payments', icon: Truck, group: 'Sales' },
   { id: 'commissions', label: 'Commissions', icon: MessageSquare, group: 'Sales' },
   { id: 'commission-packages', label: 'Commission Packages', icon: PackageCheck, group: 'Sales' },
   { id: 'commission-form', label: 'Forms & Categories', icon: FileText, group: 'Sales' },
@@ -163,7 +165,8 @@ export default function Admin() {
   const [reloadKey, setReloadKey] = useState(0);
   const [recordLimit, setRecordLimit] = useState(50);
   const [studioOptions, setStudioOptions] = useState(DEFAULT_STUDIO_OPTIONS);
-  const [newVideo, setNewVideo] = useState({ title: '', videoUrl: '', thumbnailUrl: '', category: DEFAULT_STUDIO_OPTIONS.videoCategories[0], description: '', duration: '', isFeatured: false, status: 'draft' });
+  const [newVideo, setNewVideo] = useState({ title: '', videoUrl: '', thumbnailUrl: '', category: DEFAULT_STUDIO_OPTIONS.videoCategories[0], description: '', duration: '', isFeatured: false, status: 'published' });
+  const [videoError, setVideoError] = useState('');
   const [newArtwork, setNewArtwork] = useState({ title: '', category: DEFAULT_STUDIO_OPTIONS.artworkCategories[0], imageUrl: '', medium: '', description: '', price: '', status: 'draft' });
   const pendingMessageCount = messages.filter(message => !['replied', 'archived', 'spam'].includes(message.status)).length;
 
@@ -297,10 +300,15 @@ export default function Admin() {
   };
 
   const addVideo = async () => {
-    const v = await studioClient.entities.Video.create(newVideo);
-    setVideos(prev => [v, ...prev]);
-    setShowAddVideo(false);
-    setNewVideo({ title: '', videoUrl: '', thumbnailUrl: '', category: studioOptions.videoCategories[0] || '', description: '', duration: '', isFeatured: false, status: 'draft' });
+    setVideoError('');
+    try {
+      const v = await studioClient.entities.Video.create(newVideo);
+      setVideos(prev => [v, ...prev]);
+      setShowAddVideo(false);
+      setNewVideo({ title: '', videoUrl: '', thumbnailUrl: '', category: studioOptions.videoCategories[0] || '', description: '', duration: '', isFeatured: false, status: 'published' });
+    } catch (error) {
+      setVideoError(error.message);
+    }
   };
 
   const addArtwork = async () => {
@@ -517,10 +525,10 @@ export default function Admin() {
           {activeTab === 'videos' && (
             <div>
               <div className="flex items-center justify-between mb-8">
-                <h1 className="font-display text-4xl text-ivory">Videos</h1>
+                <h1 className="font-display text-4xl text-ivory">Art Films</h1>
                 <button onClick={() => setShowAddVideo(true)}
                   className="flex min-h-10 shrink-0 items-center gap-1.5 bg-brass px-3 py-2 font-tight text-xs tracking-wide text-obsidian transition-all hover:bg-brass-light sm:text-sm">
-                  <Plus size={14} /> <span className="hidden min-[360px]:inline">Add Video</span><span className="min-[360px]:hidden">Add</span>
+                  <Plus size={14} /> <span className="hidden min-[360px]:inline">Add Film</span><span className="min-[360px]:hidden">Add</span>
                 </button>
               </div>
               {videos.length === 0 ? (
@@ -668,6 +676,7 @@ export default function Admin() {
           {activeTab === 'quotes' && <QuotesTab />}
           {activeTab === 'inbox' && <InboxTab messages={messages} setMessages={setMessages} />}
           {activeTab === 'orders' && <OrdersTab />}
+          {activeTab === 'commerce' && <CommerceSettingsTab />}
           {activeTab === 'users' && <UsersTab currentUser={user} />}
 
           {/* -- PAGE CONTENT -- */}
@@ -840,7 +849,7 @@ export default function Admin() {
               initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
               onClick={e => e.stopPropagation()}>
               <button onClick={() => setShowAddVideo(false)} className="absolute top-5 right-5 text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>
-              <h3 className="mb-5 pr-12 font-display text-2xl text-ivory">Add Video</h3>
+              <h3 className="mb-5 pr-12 font-display text-2xl text-ivory">Add Art Film</h3>
               <div className="min-w-0 space-y-3 overflow-x-hidden sm:overflow-y-auto sm:pr-1">
                 <div>
                   <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">Title *</label>
@@ -871,9 +880,10 @@ export default function Admin() {
                 </label>
                 <ResponsiveSelect label="Publishing status" value={newVideo.status} onChange={status => setNewVideo(current => ({ ...current, status }))} options={[{ value: 'draft', label: 'Save as draft' }, { value: 'published', label: 'Publish now' }]} />
               </div>
+              {videoError && <p role="alert" className="mt-4 border border-red-400/20 bg-red-400/5 p-3 text-sm text-red-300">{videoError}</p>}
               <button onClick={addVideo} disabled={!newVideo.title || !newVideo.videoUrl}
                 className="w-full flex items-center justify-center gap-2 bg-brass text-obsidian py-3 font-tight text-sm tracking-widest uppercase hover:bg-brass-light transition-all mt-6 disabled:opacity-30">
-                <Plus size={14} /> Add Video
+                <Plus size={14} /> Add Art Film
               </button>
             </motion.div>
           </motion.div>

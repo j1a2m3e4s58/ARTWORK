@@ -16,7 +16,28 @@ test('orders require positive quantities', () => {
   assert.throws(() => validateEntity('Order', {
     items: [{ productId: 'one', title: 'Print', price: 10, qty: 0 }],
     total: 0, channel: 'whatsapp',
-  }));
+}));
+});
+
+test('manual commerce orders accept managed delivery and payment fields', () => {
+  const order = validateEntity('Order', {
+    items: [{ productId: 'one', title: 'Original painting', price: 800, qty: 1 }],
+    total: 825,
+    channel: 'whatsapp',
+    paymentMethod: 'mobile_money',
+    deliveryMethod: 'delivery',
+    deliveryZoneId: 'accra',
+    shippingAddress: {
+      recipientName: 'Collector',
+      phone: '+233000000000',
+      addressLine1: 'Studio Road',
+      city: 'Accra',
+      country: 'Ghana',
+    },
+  });
+  assert.equal(order.paymentMethod, 'mobile_money');
+  assert.equal(order.deliveryZoneId, 'accra');
+  assert.throws(() => validateEntity('Order', { paymentStatus: 'invented' }, { partial: true }));
 });
 
 test('published blog slugs are URL safe', () => {

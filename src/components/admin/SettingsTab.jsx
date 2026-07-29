@@ -17,7 +17,7 @@ const SETTING_DEFAULTS = [
   { key: 'quote_interval_seconds', label: 'Quote Rotation (seconds)', value: '8', group: 'SEO & App', icon: 'globe' },
   { key: 'show_gallery', label: 'Show Gallery Navigation', value: 'true', group: 'Navigation', icon: 'globe' },
   { key: 'show_shop', label: 'Show Shop Navigation', value: 'false', group: 'Navigation', icon: 'globe', hint: 'Enable after at least one product is published and ordering has been rehearsed.' },
-  { key: 'show_videos', label: 'Show Videos Navigation', value: 'true', group: 'Navigation', icon: 'globe' },
+  { key: 'show_videos', label: 'Show Art Films Navigation', value: 'true', group: 'Navigation', icon: 'globe' },
   { key: 'show_internships', label: 'Show Internships Navigation', value: 'false', group: 'Navigation', icon: 'globe', hint: 'Enable when the internship programme is accepting applications.' },
   { key: 'show_blog', label: 'Show Blog Navigation', value: 'false', group: 'Navigation', icon: 'globe' },
   { key: 'show_testimonials', label: 'Enable Testimonials Page', value: 'false', group: 'Navigation', icon: 'globe' },

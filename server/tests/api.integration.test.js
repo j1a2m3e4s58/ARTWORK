@@ -193,6 +193,8 @@ test('API keeps public reads open while blocking unverified customer mutations',
     const secondOrder = await secondOrderResponse.json();
     assert.equal(firstOrder.id, secondOrder.id);
     assert.equal(firstOrder.total, 250);
+    assert.match(firstOrder.trackingCode, /^RA-[A-F0-9]{8}$/);
+    assert.equal(firstOrder.paymentStatus, 'awaiting_payment');
 
     const cancelResponse = await fetch(`${baseUrl}/api/orders/${firstOrder.id}/cancel`, { method: 'POST', headers: securedHeaders });
     assert.equal(cancelResponse.status, 200);

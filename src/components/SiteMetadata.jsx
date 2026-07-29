@@ -4,7 +4,7 @@ import { useSettings } from '@/hooks/useSettings';
 
 const pageNames = {
   '/': 'Fine Art Studio', '/gallery': 'Gallery', '/commission': 'Bespoke Commissions',
-  '/shop': 'Original Works & Prints', '/videos': 'Studio Films', '/about': 'About the Artist',
+  '/shop': 'Art Shop — Originals & Studio Supplies', '/videos': 'Art Films', '/about': 'About the Artist',
   '/blog': 'Art Journal', '/contact': 'Contact', '/testimonials': 'Collector Stories',
   '/account': 'My Account', '/admin': 'Studio Administration', '/privacy': 'Privacy Policy',
   '/terms': 'Terms of Service', '/login': 'Sign In', '/register': 'Create Account',

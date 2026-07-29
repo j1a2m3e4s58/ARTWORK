@@ -414,12 +414,16 @@ export default function Home() {
                   className={index === 0 ? 'md:col-span-7' : 'md:col-span-5'}
                 >
                   <Link to="/videos" className="group relative block overflow-hidden border border-brass/10 bg-obsidian aspect-video">
-                    <img
-                      src={video.thumbnailUrl}
-                      alt={video.title}
-                      className="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700"
-                      loading="lazy"
-                    />
+                    {video.thumbnailUrl ? (
+                      <img
+                        src={video.thumbnailUrl}
+                        alt={video.title}
+                        className="w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="h-full w-full bg-[radial-gradient(circle_at_50%_35%,rgba(201,169,110,0.18),transparent_42%),linear-gradient(135deg,#191817,#080808)]" aria-hidden="true" />
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-t from-obsidian via-obsidian/20 to-transparent" />
                     <motion.div
                       className="absolute inset-0 flex items-center justify-center"

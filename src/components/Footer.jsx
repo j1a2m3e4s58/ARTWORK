@@ -99,7 +99,8 @@ export default function Footer() {
               {[
                 settings.show_gallery !== 'false' && ['Gallery', '/gallery'],
                 ['Commission', '/commission'],
-                settings.show_shop !== 'false' && ['Available Works', '/shop'],
+                settings.show_shop !== 'false' && ['Art Shop', '/shop'],
+                settings.show_videos === 'true' && ['Art Films', '/videos'],
                 ['About', '/about'],
               ].filter(Boolean).map(([label, path]) => (
                 <Link key={path} to={path} className="text-ivory/40 hover:text-ivory text-sm transition-colors flex items-center gap-1 group">
