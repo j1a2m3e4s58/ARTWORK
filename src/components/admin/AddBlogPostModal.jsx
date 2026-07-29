@@ -9,15 +9,15 @@ export default function AddBlogPostModal({ onAdd, onClose }) {
   const autoSlug = (title) => title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
   return (
-    <motion.div className="fixed inset-0 z-[9900] flex items-center justify-center p-4"
+    <motion.div className="fixed inset-0 z-[9900] flex items-start justify-center overflow-y-auto overflow-x-hidden p-2 py-4 sm:items-center sm:p-4"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="absolute inset-0 bg-obsidian/90 backdrop-blur-xl" onClick={onClose} />
-      <motion.div className="relative z-10 w-full max-w-lg glass-panel p-8 border border-brass/20"
+      <motion.div className="relative z-10 flex w-full max-w-lg min-w-0 flex-col border border-brass/20 p-4 glass-panel sm:max-h-[calc(100svh-2rem)] sm:overflow-hidden sm:p-8"
         initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}>
         <button onClick={onClose} className="absolute top-5 right-5 text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>
         <h3 className="font-display text-2xl text-ivory mb-6">Add Blog Post</h3>
-        <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+        <div className="min-w-0 space-y-3 overflow-x-hidden sm:overflow-y-auto sm:pr-1">
           <div>
             <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">Title *</label>
             <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value, slug: autoSlug(e.target.value) }))}
@@ -35,7 +35,7 @@ export default function AddBlogPostModal({ onAdd, onClose }) {
             <textarea value={form.excerpt} onChange={e => setForm(p => ({ ...p, excerpt: e.target.value }))}
               rows={2} className="w-full bg-obsidian border border-brass/20 text-ivory/80 px-4 py-2.5 text-sm focus:outline-none focus:border-brass/40 resize-none transition-colors" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">Published Date</label>
               <input type="date" value={form.publishedDate} onChange={e => setForm(p => ({ ...p, publishedDate: e.target.value }))}

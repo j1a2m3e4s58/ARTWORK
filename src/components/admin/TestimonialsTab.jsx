@@ -2,6 +2,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Trash2, Pencil, Star, X, Check } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
+import ResponsiveSelect from '@/components/ResponsiveSelect';
 import FileUploadField from './FileUploadField';
 
 function ConfirmDelete({ onConfirm, onCancel }) {
@@ -18,15 +19,15 @@ const BLANK = { clientName: '', rating: 5, review: '', artworkType: '', location
 function TestimonialModal({ item, onSave, onClose, title }) {
   const [form, setForm] = useState({ ...BLANK, ...item });
   return (
-    <motion.div className="fixed inset-0 z-[9900] flex items-center justify-center p-4"
+    <motion.div className="fixed inset-0 z-[9900] flex items-start justify-center overflow-y-auto overflow-x-hidden p-2 py-4 sm:items-center sm:p-4"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="absolute inset-0 bg-obsidian/90 backdrop-blur-xl" onClick={onClose} />
-      <motion.div className="relative z-10 w-full max-w-lg glass-panel p-8 border border-brass/20"
+      <motion.div className="relative z-10 flex w-full max-w-lg min-w-0 flex-col border border-brass/20 p-4 glass-panel sm:max-h-[calc(100svh-2rem)] sm:overflow-hidden sm:p-8"
         initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}>
         <button onClick={onClose} className="absolute top-5 right-5 text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>
         <h3 className="font-display text-2xl text-ivory mb-6">{title}</h3>
-        <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+        <div className="min-w-0 space-y-3 overflow-x-hidden sm:overflow-y-auto sm:pr-1">
           {[['Client Name *', 'clientName'], ['Artwork Type', 'artworkType'], ['Location', 'location']].map(([label, key]) => (
             <div key={key}>
               <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">{label}</label>
@@ -50,12 +51,16 @@ function TestimonialModal({ item, onSave, onClose, title }) {
           </div>
           <FileUploadField label="Artwork Image" value={form.artworkImageUrl}
             onChange={url => setForm(p => ({ ...p, artworkImageUrl: url }))} accept="image/*" placeholder="Paste URL or upload image" />
-          <label className="block text-xs uppercase tracking-widest text-ivory/40">Publication status
-            <select value={form.status} onChange={event => setForm(current => ({ ...current, status: event.target.value }))}
-              className="mt-1 w-full border border-brass/20 bg-obsidian px-4 py-2.5 text-sm text-ivory">
-              <option value="pending">Pending review</option><option value="approved">Approved</option><option value="rejected">Rejected</option>
-            </select>
-          </label>
+          <ResponsiveSelect
+            label="Publication status"
+            value={form.status}
+            onChange={status => setForm(current => ({ ...current, status }))}
+            options={[
+              { value: 'pending', label: 'Pending review' },
+              { value: 'approved', label: 'Approved' },
+              { value: 'rejected', label: 'Rejected' },
+            ]}
+          />
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={!!form.isFeatured} onChange={e => setForm(p => ({ ...p, isFeatured: e.target.checked }))} className="accent-brass" />
             <span className="text-ivory/60 text-sm">Show as featured</span>
@@ -100,11 +105,11 @@ export default function TestimonialsTab() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8">
+      <div className="mb-8 flex items-center justify-between gap-3">
         <h1 className="font-display text-4xl text-ivory">Testimonials</h1>
         <button onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 bg-brass text-obsidian px-4 py-2 font-tight text-sm tracking-wide hover:bg-brass-light transition-all">
-          <Plus size={15} /> Add Testimonial
+          className="flex min-h-10 shrink-0 items-center gap-2 bg-brass px-3 py-2 text-xs text-obsidian transition-all hover:bg-brass-light sm:px-4 sm:text-sm">
+          <Plus size={15} /> <span className="hidden min-[390px]:inline">Add Testimonial</span><span className="min-[390px]:hidden">Add</span>
         </button>
       </div>
 

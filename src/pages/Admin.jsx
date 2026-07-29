@@ -26,6 +26,7 @@ import RecycleBinTab from '@/components/admin/RecycleBinTab';
 import CommissionPackagesTab from '@/components/admin/CommissionPackagesTab';
 import CommissionRequestFormTab from '@/components/admin/CommissionRequestFormTab';
 import InternshipsTab from '@/components/admin/InternshipsTab';
+import ResponsiveSelect from '@/components/ResponsiveSelect';
 
 const allTabs = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard, group: 'Dashboard' },
@@ -77,15 +78,15 @@ function ConfirmDelete({ onConfirm, onCancel }) {
 function EditModal({ item, fields, onSave, onClose, title }) {
   const [form, setForm] = useState({ ...item });
   return (
-    <motion.div className="fixed inset-0 z-[9900] flex items-center justify-center p-4"
+    <motion.div className="fixed inset-0 z-[9900] flex items-start justify-center overflow-y-auto overflow-x-hidden p-2 py-4 sm:items-center sm:p-4"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="absolute inset-0 bg-obsidian/90 backdrop-blur-xl" onClick={onClose} />
-      <motion.div role="dialog" aria-modal="true" aria-labelledby="admin-edit-title" className="relative z-10 w-full max-w-lg glass-panel p-8 border border-brass/20"
+      <motion.div role="dialog" aria-modal="true" aria-labelledby="admin-edit-title" className="glass-panel relative z-10 flex w-full max-w-lg min-w-0 flex-col border border-brass/20 p-4 sm:max-h-[calc(100svh-2rem)] sm:overflow-hidden sm:p-7"
         initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
         onClick={e => e.stopPropagation()}>
         <button onClick={onClose} aria-label={`Close ${title}`} className="absolute top-4 right-4 flex h-11 w-11 items-center justify-center text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>
         <h3 id="admin-edit-title" className="font-display text-2xl text-ivory mb-6">{title}</h3>
-        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+        <div className="min-w-0 space-y-3 overflow-x-hidden sm:overflow-y-auto sm:pr-1">
           {fields.map(f => (
             <div key={f.key}>
               {f.type === 'upload' ? (
@@ -100,10 +101,7 @@ function EditModal({ item, fields, onSave, onClose, title }) {
               ) : f.type === 'select' ? (
                 <>
                   <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">{f.label}</label>
-                  <select value={form[f.key] || ''} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
-                    className="w-full bg-obsidian border border-brass/20 text-ivory/80 px-4 py-2.5 text-sm focus:outline-none focus:border-brass/40 transition-colors">
-                    {f.options.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
+                  <ResponsiveSelect label={`Choose ${f.label.toLowerCase()}`} value={form[f.key] || ''} onChange={value => setForm(p => ({ ...p, [f.key]: value }))} options={f.options} />
                 </>
               ) : f.type === 'checkbox' ? (
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -445,8 +443,8 @@ export default function Admin() {
                     <Download size={13} /> Import CSV
                   </button>
                   <button onClick={() => setShowAddArtwork(true)}
-                    className="flex items-center gap-2 bg-brass text-obsidian px-4 py-2 font-tight text-sm tracking-wide hover:bg-brass-light transition-all">
-                    <Plus size={15} /> Add Artwork
+                    className="flex min-h-10 shrink-0 items-center gap-1.5 bg-brass px-3 py-2 font-tight text-xs tracking-wide text-obsidian transition-all hover:bg-brass-light sm:text-sm">
+                    <Plus size={14} /> <span className="hidden min-[360px]:inline">Add Artwork</span><span className="min-[360px]:hidden">Add</span>
                   </button>
                 </div>
               </div>
@@ -492,8 +490,8 @@ export default function Admin() {
               <div className="flex items-center justify-between mb-8">
                 <h1 className="font-display text-4xl text-ivory">Videos</h1>
                 <button onClick={() => setShowAddVideo(true)}
-                  className="flex items-center gap-2 bg-brass text-obsidian px-4 py-2 font-tight text-sm tracking-wide hover:bg-brass-light transition-all">
-                  <Plus size={15} /> Add Video
+                  className="flex min-h-10 shrink-0 items-center gap-1.5 bg-brass px-3 py-2 font-tight text-xs tracking-wide text-obsidian transition-all hover:bg-brass-light sm:text-sm">
+                  <Plus size={14} /> <span className="hidden min-[360px]:inline">Add Video</span><span className="min-[360px]:hidden">Add</span>
                 </button>
               </div>
               {videos.length === 0 ? (
@@ -543,8 +541,8 @@ export default function Admin() {
                     <Download size={13} /> Import CSV
                   </button>
                   <button onClick={() => setShowAddProduct(true)}
-                    className="flex items-center gap-2 bg-brass text-obsidian px-4 py-2 font-tight text-sm tracking-wide hover:bg-brass-light transition-all">
-                    <Plus size={15} /> Add Product
+                    className="flex min-h-10 shrink-0 items-center gap-1.5 bg-brass px-3 py-2 font-tight text-xs tracking-wide text-obsidian transition-all hover:bg-brass-light sm:text-sm">
+                    <Plus size={14} /> <span className="hidden min-[360px]:inline">Add Product</span><span className="min-[360px]:hidden">Add</span>
                   </button>
                 </div>
               </div>
@@ -605,11 +603,7 @@ export default function Admin() {
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className={`font-tight text-xs px-2 py-0.5 uppercase tracking-widest ${STATUS_COLORS[c.status] || 'text-ivory/40 bg-ivory/5'}`}>{c.status}</span>
-                          <select value={c.status}
-                            onChange={e => handleUpdate('CommissionRequest', c.id, { status: e.target.value }, setCommissions)}
-                            className="bg-obsidian border border-brass/20 text-ivory/60 text-xs px-2 py-1 focus:outline-none">
-                            {['pending','reviewing','accepted','in_progress','completed','declined'].map(s => <option key={s} value={s}>{s}</option>)}
-                          </select>
+                          <div className="w-40"><ResponsiveSelect label="Choose status" value={c.status} onChange={status => handleUpdate('CommissionRequest', c.id, { status }, setCommissions)} options={['pending','reviewing','accepted','in_progress','completed','declined']} className="text-xs" /></div>
                           {confirmDel === c.id ? (
                             <ConfirmDelete onConfirm={() => handleDelete('CommissionRequest', c.id, setCommissions)} onCancel={() => setConfirmDel(null)} />
                           ) : (
@@ -659,8 +653,8 @@ export default function Admin() {
               <div className="flex items-center justify-between mb-8">
                 <h1 className="font-display text-4xl text-ivory">Blog Posts</h1>
                 <button onClick={() => setShowAddBlog(true)}
-                  className="flex items-center gap-2 bg-brass text-obsidian px-4 py-2 font-tight text-sm tracking-wide hover:bg-brass-light transition-all">
-                  <Plus size={15} /> Add Post
+                  className="flex min-h-10 shrink-0 items-center gap-1.5 bg-brass px-3 py-2 font-tight text-xs tracking-wide text-obsidian transition-all hover:bg-brass-light sm:text-sm">
+                  <Plus size={14} /> <span className="hidden min-[360px]:inline">Add Post</span><span className="min-[360px]:hidden">Add</span>
                 </button>
               </div>
               {blogPosts.length === 0 ? (
@@ -810,15 +804,15 @@ export default function Admin() {
 
         {/* Add Video */}
         {showAddVideo && (
-          <motion.div className="fixed inset-0 z-[9900] flex items-center justify-center p-4"
+          <motion.div className="fixed inset-0 z-[9900] flex items-start justify-center overflow-y-auto overflow-x-hidden p-2 py-4 sm:items-center sm:p-4"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className="absolute inset-0 bg-obsidian/90 backdrop-blur-xl" onClick={() => setShowAddVideo(false)} />
-            <motion.div className="relative z-10 w-full max-w-lg glass-panel p-8 border border-brass/20"
+            <motion.div className="glass-panel relative z-10 flex w-full max-w-lg min-w-0 flex-col border border-brass/20 p-4 sm:max-h-[calc(100svh-2rem)] sm:overflow-hidden sm:p-7"
               initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
               onClick={e => e.stopPropagation()}>
               <button onClick={() => setShowAddVideo(false)} className="absolute top-5 right-5 text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>
-              <h3 className="font-display text-2xl text-ivory mb-6">Add Video</h3>
-              <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+              <h3 className="mb-5 pr-12 font-display text-2xl text-ivory">Add Video</h3>
+              <div className="min-w-0 space-y-3 overflow-x-hidden sm:overflow-y-auto sm:pr-1">
                 <div>
                   <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">Title *</label>
                   <input value={newVideo.title} onChange={e => setNewVideo(p => ({ ...p, title: e.target.value }))}
@@ -835,10 +829,7 @@ export default function Admin() {
                 </div>
                 <div>
                   <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">Category</label>
-                  <select value={newVideo.category} onChange={e => setNewVideo(p => ({ ...p, category: e.target.value }))}
-                    className="w-full bg-obsidian border border-brass/20 text-ivory/80 px-4 py-2.5 text-sm focus:outline-none focus:border-brass/40 transition-colors">
-                    {VIDEO_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  <ResponsiveSelect label="Choose category" value={newVideo.category} onChange={category => setNewVideo(p => ({ ...p, category }))} options={VIDEO_CATEGORIES} />
                 </div>
                 <div>
                   <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">Description</label>
@@ -849,9 +840,7 @@ export default function Admin() {
                   <input type="checkbox" checked={newVideo.isFeatured} onChange={e => setNewVideo(p => ({ ...p, isFeatured: e.target.checked }))} className="accent-brass" />
                   <span className="text-ivory/60 text-sm">Mark as featured</span>
                 </label>
-                <select value={newVideo.status} onChange={event => setNewVideo(current => ({ ...current, status: event.target.value }))} className="w-full border border-brass/20 bg-obsidian px-4 py-3 text-sm text-ivory">
-                  <option value="draft">Save as draft</option><option value="published">Publish now</option>
-                </select>
+                <ResponsiveSelect label="Publishing status" value={newVideo.status} onChange={status => setNewVideo(current => ({ ...current, status }))} options={[{ value: 'draft', label: 'Save as draft' }, { value: 'published', label: 'Publish now' }]} />
               </div>
               <button onClick={addVideo} disabled={!newVideo.title || !newVideo.videoUrl}
                 className="w-full flex items-center justify-center gap-2 bg-brass text-obsidian py-3 font-tight text-sm tracking-widest uppercase hover:bg-brass-light transition-all mt-6 disabled:opacity-30">
@@ -863,15 +852,15 @@ export default function Admin() {
 
         {/* Add Artwork */}
         {showAddArtwork && (
-          <motion.div className="fixed inset-0 z-[9900] flex items-center justify-center p-4"
+          <motion.div className="fixed inset-0 z-[9900] flex items-start justify-center overflow-y-auto overflow-x-hidden p-2 py-4 sm:items-center sm:p-4"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className="absolute inset-0 bg-obsidian/90 backdrop-blur-xl" onClick={() => setShowAddArtwork(false)} />
-            <motion.div className="relative z-10 w-full max-w-lg glass-panel p-8 border border-brass/20"
+            <motion.div className="glass-panel relative z-10 flex w-full max-w-lg min-w-0 flex-col border border-brass/20 p-4 sm:max-h-[calc(100svh-2rem)] sm:overflow-hidden sm:p-7"
               initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
               onClick={e => e.stopPropagation()}>
               <button onClick={() => setShowAddArtwork(false)} className="absolute top-5 right-5 text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>
-              <h3 className="font-display text-2xl text-ivory mb-6">Add Artwork</h3>
-              <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+              <h3 className="mb-5 pr-12 font-display text-2xl text-ivory">Add Artwork</h3>
+              <div className="min-w-0 space-y-3 overflow-x-hidden sm:overflow-y-auto sm:pr-1">
                 {[['Title *', 'title'], ['Medium', 'medium'], ['Dimensions', 'dimensions'], ['Year', 'year'], ['Price (GHS)', 'price']].map(([label, key]) => (
                   <div key={key}>
                     <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">{label}</label>
@@ -883,14 +872,9 @@ export default function Admin() {
                   onChange={url => setNewArtwork(p => ({ ...p, imageUrl: url }))} accept="image/*" placeholder="Paste URL or upload image" />
                 <div>
                   <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">Category</label>
-                  <select value={newArtwork.category} onChange={e => setNewArtwork(p => ({ ...p, category: e.target.value }))}
-                    className="w-full bg-obsidian border border-brass/20 text-ivory/80 px-4 py-2.5 text-sm focus:outline-none focus:border-brass/40 transition-colors">
-                    {ARTWORK_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  <ResponsiveSelect label="Choose category" value={newArtwork.category} onChange={category => setNewArtwork(p => ({ ...p, category }))} options={ARTWORK_CATEGORIES} />
                 </div>
-                <select value={newArtwork.status} onChange={event => setNewArtwork(current => ({ ...current, status: event.target.value }))} className="w-full border border-brass/20 bg-obsidian px-4 py-3 text-sm text-ivory">
-                  <option value="draft">Save as draft</option><option value="published">Publish now</option>
-                </select>
+                <ResponsiveSelect label="Publishing status" value={newArtwork.status} onChange={status => setNewArtwork(current => ({ ...current, status }))} options={[{ value: 'draft', label: 'Save as draft' }, { value: 'published', label: 'Publish now' }]} />
                 <div>
                   <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">Description</label>
                   <textarea value={newArtwork.description} onChange={e => setNewArtwork(p => ({ ...p, description: e.target.value }))}

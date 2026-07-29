@@ -1,6 +1,9 @@
 ﻿import { useEffect, useState } from 'react';
 import { MailPlus, RefreshCw, Shield, Users } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
+import ResponsiveSelect from '@/components/ResponsiveSelect';
+
+const ROLE_OPTIONS = ['customer', 'support', 'editor', 'admin'];
 
 export default function UsersTab({ currentUser }) {
   const [users, setUsers] = useState([]);
@@ -42,9 +45,7 @@ export default function UsersTab({ currentUser }) {
       <div className="mb-6 grid gap-3 border border-brass/15 bg-carbon p-4 md:grid-cols-4">
         <input value={draft.full_name} onChange={e => setDraft({ ...draft, full_name: e.target.value })} placeholder="Full name" className="bg-obsidian border border-brass/15 px-3 py-2 text-sm text-ivory" />
         <input value={draft.email} onChange={e => setDraft({ ...draft, email: e.target.value })} placeholder="Email" type="email" className="bg-obsidian border border-brass/15 px-3 py-2 text-sm text-ivory" />
-        <select value={draft.role} onChange={e => setDraft({ ...draft, role: e.target.value })} className="bg-obsidian border border-brass/15 px-3 py-2 text-sm text-ivory">
-          {['customer', 'support', 'editor', 'admin'].map(role => <option key={role}>{role}</option>)}
-        </select>
+        <ResponsiveSelect label="Choose role" value={draft.role} onChange={role => setDraft({ ...draft, role })} options={ROLE_OPTIONS} />
         <button onClick={addUser} className="flex items-center justify-center gap-2 bg-brass px-4 py-2 text-sm text-obsidian"><MailPlus size={15} /> Send invitation</button>
         {error && <p className="md:col-span-4 text-xs text-red-400">{error}</p>}
       </div>
@@ -54,7 +55,7 @@ export default function UsersTab({ currentUser }) {
           <tbody>
             {users.map(user => <tr key={user.id} className="border-t border-brass/10 text-ivory/60">
               <td className="p-4">{user.full_name || '—'}</td><td className="p-4">{user.email}</td><td className="p-4">{new Date(user.created_date).toLocaleDateString()}</td>
-              <td className="p-4"><select disabled={user.id === currentUser?.id} value={user.role} onChange={e => updateUser(user, { role: e.target.value })} className="bg-obsidian border border-brass/15 p-2 text-xs disabled:opacity-40">{['customer', 'editor', 'support', 'admin'].map(role => <option key={role}>{role}</option>)}</select></td>
+              <td className="p-4"><ResponsiveSelect disabled={user.id === currentUser?.id} label="Choose role" value={user.role} onChange={role => updateUser(user, { role })} options={ROLE_OPTIONS} className="text-xs" /></td>
               <td className="p-4">
                 {user.status === 'invited'
                   ? <button onClick={() => resendInvite(user)} className="flex items-center gap-1 text-brass"><RefreshCw size={12} /> Resend</button>
@@ -74,9 +75,7 @@ export default function UsersTab({ currentUser }) {
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <label className="text-[10px] uppercase tracking-wider text-ivory/35">Role
-                <select disabled={user.id === currentUser?.id} value={user.role} onChange={e => updateUser(user, { role: e.target.value })} className="mt-1 w-full border border-brass/15 bg-obsidian p-2 text-xs text-ivory">
-                  {['customer', 'editor', 'support', 'admin'].map(role => <option key={role}>{role}</option>)}
-                </select>
+                <div className="mt-1"><ResponsiveSelect disabled={user.id === currentUser?.id} label="Choose role" value={user.role} onChange={role => updateUser(user, { role })} options={ROLE_OPTIONS} className="text-xs" /></div>
               </label>
               <div className="flex items-end">
                 {user.status === 'invited'

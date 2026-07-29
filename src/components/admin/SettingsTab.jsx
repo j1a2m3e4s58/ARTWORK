@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect } from 'react';
-import { Check, Plus, Phone, Mail, Instagram, Twitter, Youtube, Globe, MessageCircle } from 'lucide-react';
+import { Check, Pencil, Plus, Phone, Mail, Instagram, Twitter, Youtube, Globe, MessageCircle } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 
 const SETTING_DEFAULTS = [
@@ -53,7 +53,7 @@ function SettingRow({ setting, onSave }) {
   const changed = val !== setting.value;
 
   return (
-    <div className="bg-carbon border border-brass/10 p-4 flex items-start gap-4">
+    <div className="flex min-w-0 items-start gap-3 border border-brass/10 bg-carbon p-3 sm:gap-4 sm:p-4">
       <div className="w-8 h-8 flex items-center justify-center bg-brass/10 flex-shrink-0 mt-0.5">
         <Icon size={14} className="text-brass/60" />
       </div>
@@ -61,7 +61,7 @@ function SettingRow({ setting, onSave }) {
         <p className="text-ivory/50 font-tight text-xs uppercase tracking-widest mb-0.5">{setting.label}</p>
         {setting.hint && <p className="text-ivory/25 text-xs mb-2">{setting.hint}</p>}
         {editing ? (
-          <div className="flex gap-2 mt-1">
+          <div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
             <input value={val} onChange={e => setVal(e.target.value)}
               className="flex-1 bg-obsidian border border-brass/30 text-ivory/80 px-3 py-2 text-sm focus:outline-none focus:border-brass/50 transition-colors" />
             <button onClick={() => { onSave(val); setEditing(false); }}
@@ -75,8 +75,8 @@ function SettingRow({ setting, onSave }) {
           </div>
         ) : (
           <div className="flex items-center justify-between gap-3">
-            <p className="text-ivory/70 text-sm truncate">{val || <span className="text-ivory/25 italic">Not set</span>}</p>
-            <button onClick={() => setEditing(true)} className="text-ivory/30 hover:text-brass text-xs font-tight transition-colors flex-shrink-0">Edit</button>
+            <p className="min-w-0 break-words text-sm text-ivory/70">{val || <span className="text-ivory/25 italic">Not set</span>}</p>
+            <button onClick={() => setEditing(true)} className="flex min-h-10 shrink-0 items-center gap-1 border border-brass/20 px-3 text-xs font-tight text-brass transition-colors hover:bg-brass/10"><Pencil size={12} /> Edit</button>
           </div>
         )}
       </div>

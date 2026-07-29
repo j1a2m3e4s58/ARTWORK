@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, Plus } from 'lucide-react';
 import FileUploadField from './FileUploadField';
+import ResponsiveSelect from '@/components/ResponsiveSelect';
 
 const PRODUCT_TYPES = ['Print', 'Framed', 'Digital Download', 'Original'];
 
@@ -9,15 +10,15 @@ export default function AddProductModal({ onAdd, onClose }) {
   const [form, setForm] = useState({ title: '', type: 'Print', imageUrl: '', price: '', inventory: 1, dimensions: '', description: '', isFeatured: false, status: 'draft' });
 
   return (
-    <motion.div className="fixed inset-0 z-[9900] flex items-center justify-center p-4"
+    <motion.div className="fixed inset-0 z-[9900] flex items-start justify-center overflow-y-auto overflow-x-hidden p-2 py-4 sm:items-center sm:p-4"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="absolute inset-0 bg-obsidian/90 backdrop-blur-xl" onClick={onClose} />
-      <motion.div className="relative z-10 w-full max-w-lg glass-panel p-8 border border-brass/20"
+      <motion.div className="glass-panel relative z-10 flex w-full max-w-lg min-w-0 flex-col border border-brass/20 p-4 sm:max-h-[calc(100svh-2rem)] sm:overflow-hidden sm:p-7"
         initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}>
         <button onClick={onClose} className="absolute top-5 right-5 text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>
         <h3 className="font-display text-2xl text-ivory mb-6">Add Product</h3>
-        <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+        <div className="min-w-0 space-y-3 overflow-x-hidden sm:overflow-y-auto sm:pr-1">
           {[['Title *', 'title'], ['Price (GHS)', 'price'], ['Inventory', 'inventory'], ['Dimensions', 'dimensions']].map(([label, key]) => (
             <div key={key}>
               <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">{label}</label>
@@ -27,14 +28,9 @@ export default function AddProductModal({ onAdd, onClose }) {
           ))}
           <div>
             <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">Type</label>
-            <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}
-              className="w-full bg-obsidian border border-brass/20 text-ivory/80 px-4 py-2.5 text-sm focus:outline-none focus:border-brass/40 transition-colors">
-              {PRODUCT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+            <ResponsiveSelect label="Choose product type" value={form.type} onChange={type => setForm(p => ({ ...p, type }))} options={PRODUCT_TYPES} />
           </div>
-          <select value={form.status} onChange={event => setForm(current => ({ ...current, status: event.target.value }))} className="w-full border border-brass/20 bg-obsidian px-4 py-3 text-sm text-ivory">
-            <option value="draft">Save as draft</option><option value="published">Publish now</option>
-          </select>
+          <ResponsiveSelect label="Publishing status" value={form.status} onChange={status => setForm(current => ({ ...current, status }))} options={[{ value: 'draft', label: 'Save as draft' }, { value: 'published', label: 'Publish now' }]} />
           <FileUploadField label="Product Image" value={form.imageUrl}
             onChange={url => setForm(p => ({ ...p, imageUrl: url }))} accept="image/*" placeholder="Paste URL or upload image" />
           <div>

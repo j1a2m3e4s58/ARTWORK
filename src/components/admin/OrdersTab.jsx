@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { PackageCheck } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
+import ResponsiveSelect from '@/components/ResponsiveSelect';
 
 const statuses = ['pending', 'confirmed', 'in_progress', 'ready', 'completed', 'cancelled'];
 
@@ -29,9 +30,7 @@ export default function OrdersTab() {
             <article key={order.id} className="border border-brass/10 bg-carbon p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div><p className="text-sm text-brass">{order.accountEmail}</p><p className="mt-1 text-xs text-ivory/30">{new Date(order.created_date).toLocaleString()}</p></div>
-                <select value={order.status} onChange={event => update(order, event.target.value)} className="border border-brass/20 bg-obsidian p-2 text-xs text-ivory">
-                  {statuses.map(status => <option key={status}>{status}</option>)}
-                </select>
+                <div className="w-40"><ResponsiveSelect label="Order status" value={order.status} onChange={status => update(order, status)} options={statuses} className="text-xs" /></div>
               </div>
               <div className="my-4 space-y-2">
                 {order.items.map(item => <div key={item.productId} className="flex justify-between gap-3 text-sm text-ivory/55"><span>{item.title} × {item.qty}</span><span>{order.currency || 'GHS'} {(item.price * item.qty).toLocaleString()}</span></div>)}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, Eye, EyeOff, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import FileUploadField from './FileUploadField';
+import ResponsiveSelect from '@/components/ResponsiveSelect';
 
 const EMPTY_SLIDE = {
   eyebrow: 'Reigns Atelier',
@@ -113,9 +114,7 @@ function SlideForm({ initialValue, onSave, onCancel, saving }) {
       </label>
       <div className="grid gap-4 md:grid-cols-2">
         <label className="space-y-2"><span className="font-tight text-[10px] uppercase tracking-widest text-ivory/40">Publishing status</span>
-          <select value={form.status || 'published'} onChange={event => set('status', event.target.value)} className="w-full border border-brass/20 bg-obsidian px-4 py-3 text-sm text-ivory">
-            <option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option>
-          </select>
+          <ResponsiveSelect label="Publishing status" value={form.status || 'published'} onChange={value => set('status', value)} options={['draft', 'published', 'archived']} />
         </label>
         <label className="space-y-2"><span className="font-tight text-[10px] uppercase tracking-widest text-ivory/40">Publish after</span>
           <input type="datetime-local" value={form.scheduledAt || ''} onChange={event => set('scheduledAt', event.target.value)} className="w-full border border-brass/20 bg-obsidian px-4 py-3 text-sm text-ivory" />
@@ -199,7 +198,7 @@ export default function HeroSlidesTab() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
+      <div className="mb-8 flex items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-4xl text-ivory">Home Banners</h1>
           <p className="text-sm text-ivory/35 mt-2">Add, arrange, hide or replace every slide in the animated home hero.</p>
@@ -207,9 +206,9 @@ export default function HeroSlidesTab() {
         <button
           type="button"
           onClick={() => setEditing({ ...EMPTY_SLIDE, sortOrder: slides.length + 1 })}
-          className="bg-brass text-obsidian px-5 py-3 font-tight text-xs uppercase tracking-widest flex items-center justify-center gap-2"
+          className="flex min-h-10 shrink-0 items-center justify-center gap-2 bg-brass px-3 py-2 text-xs uppercase tracking-wider text-obsidian sm:px-5 sm:py-3 sm:tracking-widest"
         >
-          <Plus size={15} /> Add banner
+          <Plus size={15} /> <span className="hidden min-[390px]:inline">Add banner</span><span className="min-[390px]:hidden">Add</span>
         </button>
       </div>
 

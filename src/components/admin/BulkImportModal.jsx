@@ -54,10 +54,10 @@ export default function BulkImportModal({ type, onClose, onImported }) {
   };
 
   return (
-    <motion.div className="fixed inset-0 z-[9900] flex items-center justify-center p-4"
+    <motion.div className="fixed inset-0 z-[9900] flex items-start justify-center overflow-y-auto overflow-x-hidden p-2 py-4 sm:items-center sm:p-4"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="absolute inset-0 bg-obsidian/90 backdrop-blur-xl" onClick={onClose} />
-      <motion.div className="relative z-10 w-full max-w-md glass-panel p-8 border border-brass/20"
+      <motion.div className="relative z-10 flex w-full max-w-md min-w-0 flex-col overflow-x-hidden border border-brass/20 p-4 glass-panel sm:max-h-[calc(100svh-2rem)] sm:overflow-y-auto sm:p-8"
         initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={e => e.stopPropagation()}>
         <button onClick={onClose} className="absolute top-5 right-5 text-ivory/30 hover:text-brass transition-colors"><X size={16} /></button>

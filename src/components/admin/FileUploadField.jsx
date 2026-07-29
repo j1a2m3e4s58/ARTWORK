@@ -63,19 +63,19 @@ export default function FileUploadField({ label, value, onChange, accept = 'imag
           <span>Uploading...</span>
         </div>
       ) : (
-        <div className="flex gap-2">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
           <input
             type="text"
             value={value || ''}
             onChange={e => onChange(e.target.value)}
             placeholder={placeholder}
-            className="flex-1 bg-obsidian border border-brass/20 text-ivory/80 px-4 py-2.5 text-sm focus:outline-none focus:border-brass/40 transition-colors"
+            className="min-w-0 flex-1 bg-obsidian border border-brass/20 text-ivory/80 px-3 py-2.5 text-sm focus:outline-none focus:border-brass/40 transition-colors"
           />
           {/* Upload button */}
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            className="flex items-center gap-1.5 border border-brass/30 text-brass/70 px-3 py-2.5 text-xs font-tight hover:border-brass hover:text-brass transition-colors whitespace-nowrap"
+            className="flex min-h-11 items-center justify-center gap-1.5 border border-brass/30 px-3 py-2.5 text-xs font-tight text-brass/70 transition-colors hover:border-brass hover:text-brass sm:w-auto"
           >
             <Upload size={13} /> From PC
           </button>

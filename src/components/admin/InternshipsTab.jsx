@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink, Save } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
+import ResponsiveSelect from '@/components/ResponsiveSelect';
 
 const fields = [
   ['internship_title', 'Page title', 'Learn inside the atelier'],
@@ -10,11 +11,131 @@ const fields = [
   ['internship_letterLabel', 'Letter upload label', 'Upload internship letter (optional)'],
 ];
 
+const statusOptions = [
+  { value: 'received', label: 'Received' },
+  { value: 'reviewing', label: 'Reviewing' },
+  { value: 'shortlisted', label: 'Shortlisted' },
+  { value: 'accepted', label: 'Accepted' },
+  { value: 'declined', label: 'Declined' },
+];
+
 export default function InternshipsTab() {
-  const [applications, setApplications] = useState([]); const [records, setRecords] = useState([]); const [values, setValues] = useState(Object.fromEntries(fields.map(([key,,value]) => [key, value]))); const [notice, setNotice] = useState('');
-  const load = async () => { const [apps, content] = await Promise.all([studioClient.entities.InternshipApplication.list('-created_date', 100), studioClient.entities.SiteContent.filter({ page: 'Internships' })]); setApplications(apps); setRecords(content); setValues(current => ({ ...current, ...Object.fromEntries(content.map(item => [item.key, item.value])) })); };
-  useEffect(() => { load().catch(() => setNotice('Unable to load internship records.')); }, []);
-  const save = async () => { await Promise.all(fields.map(async ([key, label]) => { const existing = records.find(item => item.key === key); const payload = { key, label, value: values[key], page: 'Internships', group: 'Internships' }; return existing ? studioClient.entities.SiteContent.update(existing.id, payload) : studioClient.entities.SiteContent.create(payload); })); setNotice('Programme text saved.'); window.dispatchEvent(new Event('atelier:content-updated')); await load(); };
-  const updateStatus = async (application, status) => { const saved = await studioClient.entities.InternshipApplication.update(application.id, { status }); setApplications(current => current.map(item => item.id === saved.id ? saved : item)); };
-  return <div><h1 className="mb-2 font-display text-4xl text-ivory">Internships</h1><p className="mb-7 text-sm text-ivory/45">Manage the public programme and review every application, including optional internship letters.</p>{notice && <p className="mb-4 text-sm text-brass">{notice}</p>}<section className="mb-10 grid gap-4 border border-brass/15 bg-carbon p-5">{fields.map(([key,label]) => <label key={key} className="text-xs uppercase tracking-wider text-ivory/45">{label}<textarea value={values[key] || ''} onChange={event => setValues(current => ({ ...current, [key]: event.target.value }))} rows={key === 'internship_title' || key === 'internship_letterLabel' ? 2 : 4} className="mt-2 w-full border border-brass/15 bg-obsidian p-3 text-sm normal-case tracking-normal text-ivory" /></label>)}<button onClick={save} className="flex w-fit items-center gap-2 bg-brass px-5 py-3 text-sm text-obsidian"><Save size={15} /> Save internship page</button></section><h2 className="mb-4 font-display text-3xl text-ivory">Applications</h2>{!applications.length ? <p className="border border-brass/10 p-8 text-center text-sm text-ivory/40">No internship applications yet.</p> : <div className="space-y-4">{applications.map(item => <article key={item.id} className="border border-brass/15 bg-carbon p-5"><div className="flex flex-wrap justify-between gap-4"><div><h3 className="font-display text-xl text-ivory">{item.name}</h3><p className="text-sm text-ivory/45">{item.email}{item.phone ? ` · ${item.phone}` : ''}</p><p className="mt-2 text-sm text-ivory/65">{item.school || 'Independent applicant'}{item.programme ? ` · ${item.programme}` : ''}{item.availability ? ` · ${item.availability}` : ''}</p></div><select value={item.status || 'received'} onChange={event => updateStatus(item,event.target.value)} className="h-fit border border-brass/20 bg-obsidian px-3 py-2 text-sm text-ivory"><option value="received">Received</option><option value="reviewing">Reviewing</option><option value="shortlisted">Shortlisted</option><option value="accepted">Accepted</option><option value="declined">Declined</option></select></div><p className="mt-4 text-sm leading-relaxed text-ivory/60">{item.interests}</p>{item.notice && <p className="mt-3 border-l border-brass/40 pl-3 text-sm text-ivory/50">{item.notice}</p>}{item.letterUrl && <a href={item.letterUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-sm text-brass hover:underline">Open uploaded letter <ExternalLink size={14} /></a>}</article>)}</div>}</div>;
+  const [applications, setApplications] = useState([]);
+  const [records, setRecords] = useState([]);
+  const [values, setValues] = useState(Object.fromEntries(fields.map(([key, , value]) => [key, value])));
+  const [notice, setNotice] = useState('');
+
+  const load = async () => {
+    const [apps, content] = await Promise.all([
+      studioClient.entities.InternshipApplication.list('-created_date', 100),
+      studioClient.entities.SiteContent.filter({ page: 'Internships' }),
+    ]);
+    setApplications(apps);
+    setRecords(content);
+    setValues(current => ({
+      ...current,
+      ...Object.fromEntries(content.map(item => [item.key, item.value])),
+    }));
+  };
+
+  useEffect(() => {
+    load().catch(() => setNotice('Unable to load internship records.'));
+  }, []);
+
+  const save = async () => {
+    await Promise.all(fields.map(async ([key, label]) => {
+      const existing = records.find(item => item.key === key);
+      const payload = { key, label, value: values[key], page: 'Internships', group: 'Internships' };
+      return existing
+        ? studioClient.entities.SiteContent.update(existing.id, payload)
+        : studioClient.entities.SiteContent.create(payload);
+    }));
+    setNotice('Programme text saved.');
+    window.dispatchEvent(new Event('atelier:content-updated'));
+    await load();
+  };
+
+  const updateStatus = async (application, status) => {
+    const saved = await studioClient.entities.InternshipApplication.update(application.id, { status });
+    setApplications(current => current.map(item => item.id === saved.id ? saved : item));
+  };
+
+  return (
+    <div className="min-w-0">
+      <h1 className="mb-2 font-display text-3xl text-ivory sm:text-4xl">Internships</h1>
+      <p className="mb-7 text-sm text-ivory/45">
+        Manage the public programme and review every application, including optional internship letters.
+      </p>
+      {notice && <p className="mb-4 text-sm text-brass">{notice}</p>}
+
+      <section className="mb-10 grid min-w-0 gap-4 border border-brass/15 bg-carbon p-4 sm:p-5">
+        {fields.map(([key, label]) => (
+          <label key={key} className="min-w-0 text-xs uppercase tracking-wider text-ivory/45">
+            {label}
+            <textarea
+              value={values[key] || ''}
+              onChange={event => setValues(current => ({ ...current, [key]: event.target.value }))}
+              rows={key === 'internship_title' || key === 'internship_letterLabel' ? 2 : 4}
+              className="mt-2 w-full min-w-0 border border-brass/15 bg-obsidian p-3 text-sm normal-case tracking-normal text-ivory"
+            />
+          </label>
+        ))}
+        <button
+          onClick={save}
+          className="flex min-h-10 w-full items-center justify-center gap-2 bg-brass px-4 py-2.5 text-sm text-obsidian sm:w-fit"
+        >
+          <Save size={15} /> Save internship page
+        </button>
+      </section>
+
+      <h2 className="mb-4 font-display text-3xl text-ivory">Applications</h2>
+      {!applications.length ? (
+        <p className="border border-brass/10 p-8 text-center text-sm text-ivory/40">
+          No internship applications yet.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {applications.map(item => (
+            <article key={item.id} className="min-w-0 border border-brass/15 bg-carbon p-4 sm:p-5">
+              <div className="grid min-w-0 gap-4 sm:grid-cols-[minmax(0,1fr)_12rem]">
+                <div className="min-w-0">
+                  <h3 className="font-display text-xl text-ivory">{item.name}</h3>
+                  <p className="break-words text-sm text-ivory/45">
+                    {item.email}{item.phone ? ` · ${item.phone}` : ''}
+                  </p>
+                  <p className="mt-2 break-words text-sm text-ivory/65">
+                    {item.school || 'Independent applicant'}
+                    {item.programme ? ` · ${item.programme}` : ''}
+                    {item.availability ? ` · ${item.availability}` : ''}
+                  </p>
+                </div>
+                <ResponsiveSelect
+                  label="Application status"
+                  value={item.status || 'received'}
+                  onChange={status => updateStatus(item, status)}
+                  options={statusOptions}
+                />
+              </div>
+              <p className="mt-4 break-words text-sm leading-relaxed text-ivory/60">{item.interests}</p>
+              {item.notice && (
+                <p className="mt-3 break-words border-l border-brass/40 pl-3 text-sm text-ivory/50">
+                  {item.notice}
+                </p>
+              )}
+              {item.letterUrl && (
+                <a
+                  href={item.letterUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-flex items-center gap-2 text-sm text-brass hover:underline"
+                >
+                  Open uploaded letter <ExternalLink size={14} />
+                </a>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }

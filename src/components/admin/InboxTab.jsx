@@ -1,6 +1,7 @@
 ﻿import { useState } from 'react';
 import { Archive, MailOpen, Search, Send, ShieldAlert, Trash2 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
+import ResponsiveSelect from '@/components/ResponsiveSelect';
 
 export default function InboxTab({ messages, setMessages }) {
   const [replies, setReplies] = useState({});
@@ -69,9 +70,7 @@ export default function InboxTab({ messages, setMessages }) {
           <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search messages"
             className="w-full border border-brass/15 bg-carbon py-2.5 pl-9 pr-3 text-sm text-ivory" />
         </label>
-        <select value={filter} onChange={event => setFilter(event.target.value)} className="border border-brass/15 bg-carbon px-3 py-2.5 text-sm text-ivory">
-          <option value="open">Needs reply</option><option value="all">All messages</option><option value="replied">Replied</option><option value="archived">Archived</option><option value="spam">Spam</option>
-        </select>
+        <div className="w-full sm:w-48"><ResponsiveSelect label="Filter messages" value={filter} onChange={setFilter} options={[{ value: 'open', label: 'Needs reply' }, { value: 'all', label: 'All messages' }, 'replied', 'archived', 'spam']} /></div>
       </div>
       <div className="space-y-4">
         {visibleMessages.length === 0 && <p className="border border-brass/10 p-8 text-center text-ivory/30">No messages in this view.</p>}

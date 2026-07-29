@@ -135,7 +135,7 @@ export default function CommissionPackagesTab() {
         ))}
       </div>
       <div className="mt-6 flex flex-wrap gap-3">
-        <button type="button" onClick={() => { setPackages(current => [...current, createPackage()]); setMessage(''); }} className="flex items-center gap-2 border border-brass/30 px-4 py-3 text-sm text-brass hover:bg-brass/10"><Plus size={16} /> Add package</button>
+        <button type="button" onClick={() => { setPackages(current => [...current, createPackage()]); setMessage(''); }} className="flex min-h-10 shrink-0 items-center gap-2 border border-brass/30 px-3 py-2 text-xs text-brass hover:bg-brass/10 sm:px-4 sm:py-3 sm:text-sm"><Plus size={16} /> <span className="hidden min-[390px]:inline">Add package</span><span className="min-[390px]:hidden">Add</span></button>
         <button type="button" disabled={saving || activeCount === 0} onClick={save} className="flex items-center gap-2 bg-brass px-5 py-3 text-sm text-obsidian disabled:opacity-50"><Save size={16} /> {saving ? 'Saving…' : 'Save package changes'}</button>
       </div>
     </div>
