@@ -1615,7 +1615,7 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
     record.confirmationDelivery = await deliverEmail({
       to: record.email,
       subject: 'Your commission request — Reigns Atelier',
-      text: `Hi ${record.name},\n\nYour commission request has been received. The studio will review it and respond with next steps.\n\nArtwork type: ${record.artworkType}\nBudget: ${record.budget}\n\nReigns Atelier`,
+      text: `Hi ${record.name},\n\nYour commission request has been received. The studio will review it and respond with next steps.\n\nArtwork type: ${record.artworkType}${record.otherArtworkType ? ` (${record.otherArtworkType})` : ''}\nBudget: ${record.budget}\n\nReigns Atelier`,
     });
   }
   if (name === 'InternshipApplication') {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -27,6 +27,7 @@ import CommissionPackagesTab from '@/components/admin/CommissionPackagesTab';
 import CommissionRequestFormTab from '@/components/admin/CommissionRequestFormTab';
 import InternshipsTab from '@/components/admin/InternshipsTab';
 import ResponsiveSelect from '@/components/ResponsiveSelect';
+import { DEFAULT_STUDIO_OPTIONS, parseStudioOptions } from '@/lib/studioOptions';
 
 const allTabs = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard, group: 'Dashboard' },
@@ -42,7 +43,7 @@ const allTabs = [
   { id: 'orders', label: 'Orders', icon: PackageCheck, group: 'Sales' },
   { id: 'commissions', label: 'Commissions', icon: MessageSquare, group: 'Sales' },
   { id: 'commission-packages', label: 'Commission Packages', icon: PackageCheck, group: 'Sales' },
-  { id: 'commission-form', label: 'Commission Form', icon: FileText, group: 'Sales' },
+  { id: 'commission-form', label: 'Forms & Categories', icon: FileText, group: 'Sales' },
   { id: 'internships', label: 'Internships', icon: Users, group: 'People' },
   { id: 'inbox', label: 'Inbox', icon: MessageSquare, group: 'Communication' },
   { id: 'subscribers', label: 'Subscribers', icon: Users, group: 'Communication' },
@@ -63,8 +64,11 @@ const STATUS_COLORS = {
   declined: 'text-red-400 bg-red-400/10',
 };
 
-const VIDEO_CATEGORIES = ['Process', 'Time-lapse', 'Tutorial', 'Behind the Scenes', 'Commission Reveal', 'Other'];
-const ARTWORK_CATEGORIES = ['Portraits', 'Sketches', 'Digital Art', 'Pencil Drawings', 'Anime Art', 'Realism'];
+const ROLE_TABS = {
+  admin: allTabs.map(tab => tab.id),
+  editor: ['overview', 'gallery', 'banners', 'media', 'recycle', 'videos', 'shop', 'testimonials', 'quotes', 'pages', 'blog', 'commission-packages', 'commission-form', 'internships'],
+  support: ['overview', 'inbox', 'commissions', 'orders'],
+};
 
 function ConfirmDelete({ onConfirm, onCancel }) {
   return (
@@ -130,12 +134,10 @@ function EditModal({ item, fields, onSave, onClose, title }) {
 export default function Admin() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const roleTabs = {
-    admin: allTabs.map(tab => tab.id),
-    editor: ['overview', 'gallery', 'banners', 'media', 'recycle', 'videos', 'shop', 'testimonials', 'quotes', 'pages', 'blog', 'commission-packages', 'commission-form', 'internships'],
-    support: ['overview', 'inbox', 'commissions', 'orders'],
-  };
-  const tabs = allTabs.filter(tab => roleTabs[user?.role || 'support'].includes(tab.id));
+  const tabs = useMemo(() => {
+    const permitted = ROLE_TABS[user?.role || 'support'] || ROLE_TABS.support;
+    return allTabs.filter(tab => permitted.includes(tab.id));
+  }, [user?.role]);
   const requestedSection = searchParams.get('section');
   const initialSection = tabs.some(tab => tab.id === requestedSection) ? requestedSection : 'overview';
   const [activeTab, setActiveTab] = useState(initialSection);
@@ -160,8 +162,9 @@ export default function Admin() {
   const [tabError, setTabError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [recordLimit, setRecordLimit] = useState(50);
-  const [newVideo, setNewVideo] = useState({ title: '', videoUrl: '', thumbnailUrl: '', category: 'Process', description: '', duration: '', isFeatured: false, status: 'draft' });
-  const [newArtwork, setNewArtwork] = useState({ title: '', category: 'Portraits', imageUrl: '', medium: '', description: '', price: '', status: 'draft' });
+  const [studioOptions, setStudioOptions] = useState(DEFAULT_STUDIO_OPTIONS);
+  const [newVideo, setNewVideo] = useState({ title: '', videoUrl: '', thumbnailUrl: '', category: DEFAULT_STUDIO_OPTIONS.videoCategories[0], description: '', duration: '', isFeatured: false, status: 'draft' });
+  const [newArtwork, setNewArtwork] = useState({ title: '', category: DEFAULT_STUDIO_OPTIONS.artworkCategories[0], imageUrl: '', medium: '', description: '', price: '', status: 'draft' });
   const pendingMessageCount = messages.filter(message => !['replied', 'archived', 'spam'].includes(message.status)).length;
 
   const selectTab = id => {
@@ -178,12 +181,38 @@ export default function Admin() {
 
   useEffect(() => {
     const nextSection = searchParams.get('section');
-    if (tabs.some(tab => tab.id === nextSection)) {
-      if (nextSection !== activeTab) setActiveTab(nextSection);
-    } else if (activeTab !== 'overview') {
-      setActiveTab('overview');
-    }
-  }, [searchParams, tabs, activeTab]);
+    const targetSection = tabs.some(tab => tab.id === nextSection) ? nextSection : 'overview';
+    setActiveTab(current => current === targetSection ? current : targetSection);
+  }, [searchParams, tabs]);
+
+  useEffect(() => {
+    let active = true;
+    const loadChoices = () => studioClient.entities.SiteContent
+      .filter({ key: 'studio_choice_options', page: 'Settings' })
+      .then(records => {
+        if (!active) return;
+        const latest = [...records].sort((a, b) => (
+          new Date(a.updated_date || a.created_date || 0) - new Date(b.updated_date || b.created_date || 0)
+        )).at(-1);
+        setStudioOptions(parseStudioOptions(latest?.value));
+      })
+      .catch(() => {});
+    loadChoices();
+    window.addEventListener('atelier:content-updated', loadChoices);
+    return () => {
+      active = false;
+      window.removeEventListener('atelier:content-updated', loadChoices);
+    };
+  }, []);
+
+  useEffect(() => {
+    setNewArtwork(current => studioOptions.artworkCategories.includes(current.category)
+      ? current
+      : { ...current, category: studioOptions.artworkCategories[0] || '' });
+    setNewVideo(current => studioOptions.videoCategories.includes(current.category)
+      ? current
+      : { ...current, category: studioOptions.videoCategories[0] || '' });
+  }, [studioOptions]);
 
   useEffect(() => {
     if (user?.role === 'editor') return undefined;
@@ -271,14 +300,14 @@ export default function Admin() {
     const v = await studioClient.entities.Video.create(newVideo);
     setVideos(prev => [v, ...prev]);
     setShowAddVideo(false);
-    setNewVideo({ title: '', videoUrl: '', thumbnailUrl: '', category: 'Process', description: '', duration: '', isFeatured: false, status: 'draft' });
+    setNewVideo({ title: '', videoUrl: '', thumbnailUrl: '', category: studioOptions.videoCategories[0] || '', description: '', duration: '', isFeatured: false, status: 'draft' });
   };
 
   const addArtwork = async () => {
     const a = await studioClient.entities.Artwork.create(newArtwork);
     setArtworks(prev => [a, ...prev]);
     setShowAddArtwork(false);
-    setNewArtwork({ title: '', category: 'Portraits', imageUrl: '', medium: '', description: '', price: '', status: 'draft' });
+    setNewArtwork({ title: '', category: studioOptions.artworkCategories[0] || '', imageUrl: '', medium: '', description: '', price: '', status: 'draft' });
   };
 
   const addProduct = async (data) => {
@@ -612,7 +641,7 @@ export default function Admin() {
                         </div>
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs mb-3">
-                        <div><span className="text-ivory/25 uppercase tracking-widest block mb-0.5">Type</span><span className="text-ivory/60">{c.artworkType}</span></div>
+                        <div><span className="text-ivory/25 uppercase tracking-widest block mb-0.5">Type</span><span className="text-ivory/60">{c.artworkType}{c.otherArtworkType ? ` — ${c.otherArtworkType}` : ''}</span></div>
                         <div><span className="text-ivory/25 uppercase tracking-widest block mb-0.5">Budget</span><span className="text-ivory/60">{c.budget}</span></div>
                         <div><span className="text-ivory/25 uppercase tracking-widest block mb-0.5">Deadline</span><span className="text-ivory/60">{c.deadline || 'Open'}</span></div>
                         <div><span className="text-ivory/25 uppercase tracking-widest block mb-0.5">Package</span><span className="text-ivory/60">{c.package || 'None'}</span></div>
@@ -644,7 +673,7 @@ export default function Admin() {
           {/* -- PAGE CONTENT -- */}
           {activeTab === 'pages' && <PagesTab />}
           {activeTab === 'commission-packages' && <CommissionPackagesTab />}
-          {activeTab === 'commission-form' && <CommissionRequestFormTab />}
+          {activeTab === 'commission-form' && <CommissionRequestFormTab onStudioOptionsSaved={setStudioOptions} />}
           {activeTab === 'internships' && <InternshipsTab />}
 
           {/* -- BLOG -- */}
@@ -740,7 +769,7 @@ export default function Admin() {
             onSave={data => handleUpdate('Artwork', editItem.id, data, setArtworks)}
             fields={[
               { key: 'title', label: 'Title' },
-              { key: 'category', label: 'Category', type: 'select', options: ARTWORK_CATEGORIES },
+              { key: 'category', label: 'Category', type: 'select', options: studioOptions.artworkCategories },
               { key: 'imageUrl', label: 'Image', type: 'upload', accept: 'image/*' },
               { key: 'medium', label: 'Medium' },
               { key: 'dimensions', label: 'Dimensions' },
@@ -758,7 +787,7 @@ export default function Admin() {
             onSave={data => handleUpdate('Video', editItem.id, data, setVideos)}
             fields={[
               { key: 'title', label: 'Title' },
-              { key: 'category', label: 'Category', type: 'select', options: VIDEO_CATEGORIES },
+              { key: 'category', label: 'Category', type: 'select', options: studioOptions.videoCategories },
               { key: 'videoUrl', label: 'Video File / Embed URL', type: 'upload', accept: 'video/*' },
               { key: 'thumbnailUrl', label: 'Thumbnail Image', type: 'upload', accept: 'image/*' },
               { key: 'duration', label: 'Duration (e.g. 4:30)' },
@@ -774,7 +803,7 @@ export default function Admin() {
             onSave={data => handleUpdate('ShopProduct', editItem.id, data, setProducts)}
             fields={[
               { key: 'title', label: 'Title' },
-              { key: 'type', label: 'Type', type: 'select', options: ['Print', 'Framed', 'Digital Download', 'Original'] },
+              { key: 'type', label: 'Type', type: 'select', options: studioOptions.productTypes },
               { key: 'imageUrl', label: 'Product Image', type: 'upload', accept: 'image/*' },
               { key: 'price', label: 'Price (GHS)', type: 'number' },
               { key: 'inventory', label: 'Inventory', type: 'number' },
@@ -829,7 +858,7 @@ export default function Admin() {
                 </div>
                 <div>
                   <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">Category</label>
-                  <ResponsiveSelect label="Choose category" value={newVideo.category} onChange={category => setNewVideo(p => ({ ...p, category }))} options={VIDEO_CATEGORIES} />
+                  <ResponsiveSelect label="Choose category" value={newVideo.category} onChange={category => setNewVideo(p => ({ ...p, category }))} options={studioOptions.videoCategories} />
                 </div>
                 <div>
                   <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">Description</label>
@@ -872,7 +901,7 @@ export default function Admin() {
                   onChange={url => setNewArtwork(p => ({ ...p, imageUrl: url }))} accept="image/*" placeholder="Paste URL or upload image" />
                 <div>
                   <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">Category</label>
-                  <ResponsiveSelect label="Choose category" value={newArtwork.category} onChange={category => setNewArtwork(p => ({ ...p, category }))} options={ARTWORK_CATEGORIES} />
+                  <ResponsiveSelect label="Choose category" value={newArtwork.category} onChange={category => setNewArtwork(p => ({ ...p, category }))} options={studioOptions.artworkCategories} />
                 </div>
                 <ResponsiveSelect label="Publishing status" value={newArtwork.status} onChange={status => setNewArtwork(current => ({ ...current, status }))} options={[{ value: 'draft', label: 'Save as draft' }, { value: 'published', label: 'Publish now' }]} />
                 <div>
@@ -890,7 +919,7 @@ export default function Admin() {
         )}
 
         {/* Add Product */}
-        {showAddProduct && <AddProductModal onAdd={addProduct} onClose={() => setShowAddProduct(false)} />}
+        {showAddProduct && <AddProductModal onAdd={addProduct} onClose={() => setShowAddProduct(false)} productTypes={studioOptions.productTypes} />}
 
         {/* Add Blog Post */}
         {showAddBlog && <AddBlogPostModal onAdd={addBlogPost} onClose={() => setShowAddBlog(false)} />}

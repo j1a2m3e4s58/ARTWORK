@@ -11,6 +11,7 @@ import CommissionBriefBuilder from '@/components/CommissionBriefBuilder';
 import CommissionGuideChat from '@/components/CommissionGuideChat';
 import { useAuth } from '@/lib/AuthContext';
 import { Link } from 'react-router-dom';
+import { DEFAULT_COMMISSION_OPTIONS, parseCommissionOptions } from '@/lib/commissionOptions';
 
 const DEFAULT_PACKAGES = [
   { name: 'Sketch Study', price: 'GH₵ 800', duration: '5-7 days', features: ['One subject', 'Pencil / Charcoal', 'Digital delivery', '1 revision', 'A4 size'] },
@@ -25,27 +26,11 @@ const DEFAULT_FAQS = [
   { q: 'How do I pay?', a: 'A 50% deposit is required to begin. The remaining 50% is due upon your approval of the final artwork before delivery.' },
 ];
 
-const ARTWORK_TYPES = ['Portrait', 'Digital Art', 'Sketch', 'Pencil Drawing', 'Anime Art', 'Realism', 'Other'];
-const BUDGETS = ['Under GH₵ 1,000', 'GH₵ 1,000–2,500', 'GH₵ 2,500–5,000', 'GH₵ 5,000–10,000', 'GH₵ 10,000+'];
-
-const commissionFormDefaults = { artworkTypes: ARTWORK_TYPES, budgets: BUDGETS, referenceUploadEnabled: true, referenceUploadLabel: 'Upload reference image (optional)' };
-const readCommissionFormOptions = value => {
-  try {
-    const parsed = JSON.parse(value || '');
-    return {
-      artworkTypes: Array.isArray(parsed.artworkTypes) && parsed.artworkTypes.length ? parsed.artworkTypes : ARTWORK_TYPES,
-      budgets: Array.isArray(parsed.budgets) && parsed.budgets.length ? parsed.budgets : BUDGETS,
-      referenceUploadEnabled: parsed.referenceUploadEnabled !== false,
-      referenceUploadLabel: String(parsed.referenceUploadLabel || commissionFormDefaults.referenceUploadLabel),
-    };
-  } catch { return commissionFormDefaults; }
-};
-
 export default function Commission() {
   const settings = useSettings();
   const { user } = useAuth();
   const page = usePageContent('Commission');
-  const commissionFormOptions = readCommissionFormOptions(page.commission_form_options);
+  const commissionFormOptions = parseCommissionOptions(page.commission_form_options);
   const legacyPackages = [1, 2, 3].map((number, index) => ({
     name: page[`commission_pkg${number}_name`] || DEFAULT_PACKAGES[index].name,
     price: page[`commission_pkg${number}_price`] || DEFAULT_PACKAGES[index].price,
@@ -75,7 +60,7 @@ export default function Commission() {
   })).filter(faq => faq.q && faq.a);
 
   const [step, setStep] = useState(1);
-  const [form, setForm] = useState({ name: user?.full_name || '', email: user?.email || '', phone: '', artworkType: '', budget: '', deadline: '', description: '', package: '', referenceImageUrl: '' });
+  const [form, setForm] = useState({ name: user?.full_name || '', email: user?.email || '', phone: '', artworkType: '', otherArtworkType: '', budget: '', deadline: '', description: '', package: '', referenceImageUrl: '' });
   const [submitted, setSubmitted] = useState(false);
   const [openFaq, setOpenFaq] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -85,11 +70,18 @@ export default function Commission() {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const selectedArtworkTypes = String(form.artworkType || '').split(',').map(item => item.trim()).filter(Boolean);
+  const otherSelected = selectedArtworkTypes.some(item => item.toLowerCase() === 'other');
   const toggleArtworkType = type => {
     const next = selectedArtworkTypes.includes(type)
       ? selectedArtworkTypes.filter(item => item !== type)
       : [...selectedArtworkTypes, type];
-    set('artworkType', next.join(', '));
+    setForm(current => ({
+      ...current,
+      artworkType: next.join(', '),
+      otherArtworkType: type.toLowerCase() === 'other' && selectedArtworkTypes.includes(type)
+        ? ''
+        : current.otherArtworkType,
+    }));
   };
 
   const handleFileUpload = async (e) => {
@@ -155,7 +147,7 @@ export default function Commission() {
               </a> : <Link to="/contact" className="flex items-center justify-center gap-2 border border-brass/30 text-brass py-3 font-tight text-sm tracking-wide hover:border-brass transition-colors">
                 Contact the studio
               </Link>}
-              <button onClick={() => { setSubmitted(false); setForm({ name: user?.full_name || '', email: user?.email || '', phone: '', artworkType: '', budget: '', deadline: '', description: '', package: '', referenceImageUrl: '' }); setStep(1); }}
+              <button onClick={() => { setSubmitted(false); setForm({ name: user?.full_name || '', email: user?.email || '', phone: '', artworkType: '', otherArtworkType: '', budget: '', deadline: '', description: '', package: '', referenceImageUrl: '' }); setStep(1); }}
                 className="border border-brass/20 text-ivory/60 py-3 font-tight text-sm tracking-wide hover:border-brass/40 transition-colors"
               >
                 Submit another request
@@ -280,6 +272,17 @@ export default function Commission() {
                         </button>
                       ))}
                     </fieldset>
+                    {otherSelected && (
+                      <label className="mt-4 block text-xs uppercase tracking-[0.18em] text-ivory/45">
+                        {commissionFormOptions.otherArtworkLabel || DEFAULT_COMMISSION_OPTIONS.otherArtworkLabel}
+                        <input
+                          value={form.otherArtworkType}
+                          onChange={event => set('otherArtworkType', event.target.value)}
+                          placeholder={commissionFormOptions.otherArtworkPlaceholder || DEFAULT_COMMISSION_OPTIONS.otherArtworkPlaceholder}
+                          className="mt-2 min-h-12 w-full border border-brass/20 bg-obsidian px-4 py-3 text-sm normal-case tracking-normal text-ivory placeholder:text-ivory/25 focus:border-brass/50 focus:outline-none"
+                        />
+                      </label>
+                    )}
                     <fieldset className="grid grid-cols-1 min-[390px]:grid-cols-2 gap-2 mt-3">
                       <legend className="sr-only">Budget</legend>
                       {commissionFormOptions.budgets.map(b => (
@@ -300,7 +303,7 @@ export default function Commission() {
                     </div>
                     <div className="mt-5 flex flex-col gap-3 min-[390px]:flex-row">
                       <button onClick={() => setStep(1)} className="flex-1 border border-brass/20 text-ivory/50 py-4 font-tight text-sm tracking-widest uppercase hover:border-brass/40 transition-all">Back</button>
-                      <button onClick={() => setStep(3)} disabled={!form.artworkType || !form.budget}
+                      <button onClick={() => setStep(3)} disabled={!form.artworkType || !form.budget || (otherSelected && !form.otherArtworkType.trim())}
                         className="flex-1 flex items-center justify-center gap-2 bg-brass text-obsidian py-4 font-tight text-sm tracking-widest uppercase hover:bg-brass-light transition-all disabled:opacity-30 disabled:cursor-not-allowed">
                         Continue <ArrowRight size={16} />
                       </button>

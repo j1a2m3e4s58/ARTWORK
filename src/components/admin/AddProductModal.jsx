@@ -3,11 +3,10 @@ import { motion } from 'framer-motion';
 import { X, Plus } from 'lucide-react';
 import FileUploadField from './FileUploadField';
 import ResponsiveSelect from '@/components/ResponsiveSelect';
+import { DEFAULT_STUDIO_OPTIONS } from '@/lib/studioOptions';
 
-const PRODUCT_TYPES = ['Print', 'Framed', 'Digital Download', 'Original'];
-
-export default function AddProductModal({ onAdd, onClose }) {
-  const [form, setForm] = useState({ title: '', type: 'Print', imageUrl: '', price: '', inventory: 1, dimensions: '', description: '', isFeatured: false, status: 'draft' });
+export default function AddProductModal({ onAdd, onClose, productTypes = DEFAULT_STUDIO_OPTIONS.productTypes }) {
+  const [form, setForm] = useState({ title: '', type: productTypes[0] || '', imageUrl: '', price: '', inventory: 1, dimensions: '', description: '', isFeatured: false, status: 'draft' });
 
   return (
     <motion.div className="fixed inset-0 z-[9900] flex items-start justify-center overflow-y-auto overflow-x-hidden p-2 py-4 sm:items-center sm:p-4"
@@ -28,7 +27,7 @@ export default function AddProductModal({ onAdd, onClose }) {
           ))}
           <div>
             <label className="text-ivory/40 text-xs font-tight uppercase tracking-widest block mb-1">Type</label>
-            <ResponsiveSelect label="Choose product type" value={form.type} onChange={type => setForm(p => ({ ...p, type }))} options={PRODUCT_TYPES} />
+            <ResponsiveSelect label="Choose product type" value={form.type} onChange={type => setForm(p => ({ ...p, type }))} options={productTypes} />
           </div>
           <ResponsiveSelect label="Publishing status" value={form.status} onChange={status => setForm(current => ({ ...current, status }))} options={[{ value: 'draft', label: 'Save as draft' }, { value: 'published', label: 'Publish now' }]} />
           <FileUploadField label="Product Image" value={form.imageUrl}

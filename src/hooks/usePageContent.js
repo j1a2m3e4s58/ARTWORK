@@ -6,7 +6,10 @@ export function usePageContent(page) {
   useEffect(() => {
     let active = true;
     const load = () => studioClient.entities.SiteContent.filter({ page }).then(records => {
-      if (active) setContent(Object.fromEntries(records.map(record => [record.key, record.value])));
+      const ordered = [...records].sort((a, b) => (
+        new Date(a.updated_date || a.created_date || 0) - new Date(b.updated_date || b.created_date || 0)
+      ));
+      if (active) setContent(Object.fromEntries(ordered.map(record => [record.key, record.value])));
     }).catch(() => {});
     load();
     window.addEventListener('atelier:content-updated', load);

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { studioClient } from '@/api/studioClient';
 import { useSettings } from '@/hooks/useSettings';
 import TurnstileWidget from './TurnstileWidget';
+import { parseStudioOptions } from '@/lib/studioOptions';
 
 const FALLBACK_GALLERY = [];
 
@@ -17,6 +18,7 @@ export default function Footer() {
   const [galleryPreviews, setGalleryPreviews] = useState(FALLBACK_GALLERY);
   const [turnstileToken, setTurnstileToken] = useState('');
   const turnstileRequired = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY);
+  const managedServices = parseStudioOptions(settings.studio_choice_options).artworkCategories.slice(0, 6);
 
   useEffect(() => {
     studioClient.entities.Artwork.list('-created_date', 6).then(data => {
@@ -112,7 +114,7 @@ export default function Footer() {
           <div>
             <h4 className="font-tight text-xs uppercase tracking-[0.25em] text-brass/60 mb-6">Services</h4>
             <div className="flex flex-col gap-3">
-              {['Portraits', 'Digital Art', 'Sketches', 'Pencil Drawings', 'Anime Art', 'Fine Art Prints'].map((item) => (
+              {managedServices.map((item) => (
                 <span key={item} className="text-ivory/40 text-sm">{item}</span>
               ))}
             </div>
