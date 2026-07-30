@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validateEntity } from '../validation.js';
+import { renderWhatsAppOrderMessage } from '../../src/lib/commerceOptions.js';
 
 test('contact messages are trimmed and bounded', () => {
   const record = validateEntity('Message', { name: '  James  ', subject: 'Hello', message: ' A real message ' });
@@ -38,6 +39,34 @@ test('manual commerce orders accept managed delivery and payment fields', () => 
   assert.equal(order.paymentMethod, 'mobile_money');
   assert.equal(order.deliveryZoneId, 'accra');
   assert.throws(() => validateEntity('Order', { paymentStatus: 'invented' }, { partial: true }));
+});
+
+test('secure online commerce orders accept the Paystack payment method', () => {
+  const order = validateEntity('Order', {
+    items: [{ productId: 'one', title: 'Original painting', price: 800, qty: 1 }],
+    total: 825,
+    channel: 'paystack',
+    paymentMethod: 'paystack',
+    deliveryMethod: 'delivery',
+    deliveryZoneId: 'accra',
+    shippingAddress: {
+      recipientName: 'Collector',
+      phone: '+233000000000',
+      addressLine1: 'Studio Road',
+      city: 'Accra',
+      country: 'Ghana',
+    },
+  });
+  assert.equal(order.paymentMethod, 'paystack');
+  assert.equal(order.channel, 'paystack');
+});
+
+test('WhatsApp order templates replace managed checkout placeholders', () => {
+  const message = renderWhatsAppOrderMessage(
+    'Order {trackingCode}\n{items}\n{customerNote}',
+    { trackingCode: 'RA-1234', items: '• Portrait × 1', customerNote: '' },
+  );
+  assert.equal(message, 'Order RA-1234\n• Portrait × 1');
 });
 
 test('published blog slugs are URL safe', () => {

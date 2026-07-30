@@ -93,6 +93,8 @@ services:
         value: manual
       - key: PAYMENT_CURRENCY
         value: GHS
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
       - key: SHIPPING_FLAT_RATE
         value: "0"
       - key: METRICS_TOKEN

@@ -5,7 +5,7 @@ import {
   Minus, PackageCheck, Plus, ShoppingBag, Truck, Upload, X,
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
-import { paymentMethodLabel } from '@/lib/commerceOptions';
+import { paymentMethodLabel, renderWhatsAppOrderMessage } from '@/lib/commerceOptions';
 
 const fieldClass = 'min-h-12 w-full border border-brass/15 bg-obsidian px-4 text-sm text-ivory placeholder:text-ivory/25 focus:border-brass/45 focus:outline-none';
 
@@ -25,6 +25,8 @@ export default function CommerceCheckout({
   const [proofFile, setProofFile] = useState(null);
   const [proofPreview, setProofPreview] = useState('');
   const [uploadingProof, setUploadingProof] = useState(false);
+  const [paymentConfig, setPaymentConfig] = useState(null);
+  const [orderAttemptKey, setOrderAttemptKey] = useState(() => crypto.randomUUID());
 
   const activeZones = commerce.deliveryZones.filter(zone => zone.active !== false);
   const zone = activeZones.find(item => item.id === zoneId);
@@ -32,12 +34,20 @@ export default function CommerceCheckout({
   const deliveryFee = Number(zone?.fee || 0);
   const total = subtotal + deliveryFee;
   const count = cart.reduce((sum, item) => sum + item.qty, 0);
-  const enabledMethods = useMemo(() => (
-    ['mobile_money', 'bank_transfer', 'pay_on_delivery'].filter(method => commerce.paymentMethods?.[method] !== false)
-  ), [commerce.paymentMethods]);
+  const enabledMethods = useMemo(() => {
+    const manual = ['mobile_money', 'bank_transfer', 'pay_on_delivery']
+      .filter(method => commerce.paymentMethods?.[method] !== false);
+    return paymentConfig?.configured && commerce.paymentMethods?.paystack !== false
+      ? ['paystack', ...manual]
+      : manual;
+  }, [commerce.paymentMethods, paymentConfig]);
+  const whatsappNumber = String(commerce.whatsapp?.number || settings.whatsapp_number || '').replace(/\D/g, '');
 
   useEffect(() => {
     if (!open) return undefined;
+    studioClient.payments.config()
+      .then(setPaymentConfig)
+      .catch(() => setPaymentConfig({ configured: false, provider: 'manual' }));
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const onKeyDown = event => {
@@ -74,24 +84,39 @@ export default function CommerceCheckout({
   };
 
   const whatsappUrl = createdOrder => {
-    const number = String(settings.whatsapp_number || '').replace(/\D/g, '');
-    if (!number) return '';
-    const message = [
-      'Hello Reigns Atelier, I have placed an order.',
-      `Order: ${createdOrder.trackingCode}`,
-      ...createdOrder.items.map(item => `• ${item.title} × ${item.qty}`),
-      `Delivery: ${createdOrder.deliveryZone?.name || 'To be confirmed'}`,
-      `Payment: ${paymentMethodLabel(createdOrder.paymentMethod)}`,
-      `Total: ${formatMoney(createdOrder.total)}`,
-      'Please confirm the order and next steps.',
-    ].join('\n');
-    return `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
+    if (!whatsappNumber) return '';
+    const message = renderWhatsAppOrderMessage(commerce.whatsapp?.orderMessage, {
+      studioName: commerce.storeName || settings.site_name || 'Reigns Atelier',
+      trackingCode: createdOrder.trackingCode,
+      items: createdOrder.items.map(item => `• ${item.title} × ${item.qty}`).join('\n'),
+      deliveryZone: createdOrder.deliveryZone?.name || 'To be confirmed',
+      deliveryAddress: [
+        createdOrder.shippingAddress?.addressLine1,
+        createdOrder.shippingAddress?.addressLine2,
+        createdOrder.shippingAddress?.city,
+        createdOrder.shippingAddress?.region,
+      ].filter(Boolean).join(', '),
+      paymentMethod: paymentMethodLabel(createdOrder.paymentMethod),
+      subtotal: formatMoney(createdOrder.subtotal),
+      deliveryFee: formatMoney(createdOrder.shipping),
+      total: formatMoney(createdOrder.total),
+      customerName: createdOrder.shippingAddress?.recipientName || details.recipientName,
+      customerPhone: createdOrder.shippingAddress?.phone || details.phone,
+      customerNote: createdOrder.customerNote ? `Note: ${createdOrder.customerNote}` : '',
+    });
+    return `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
+  };
+
+  const launchSecurePayment = async createdOrder => {
+    const initialized = await studioClient.payments.initialize(createdOrder.id);
+    if (!initialized.authorizationUrl) throw new Error('The secure payment page could not be opened. Please try again.');
+    window.location.assign(initialized.authorizationUrl);
   };
 
   const placeOrder = async ({ continueToWhatsApp = false } = {}) => {
     if (!validate()) return;
-    if (continueToWhatsApp && !String(settings.whatsapp_number || '').replace(/\D/g, '')) {
-      setError('WhatsApp ordering is not configured yet. Use the second button to record the order, or contact the studio.');
+    if (continueToWhatsApp && !whatsappNumber) {
+      setError('WhatsApp ordering needs a number. Add it in Studio Control → Delivery & Payments → WhatsApp order handoff, or record the order without opening WhatsApp.');
       return;
     }
     setOrdering(true);
@@ -100,7 +125,7 @@ export default function CommerceCheckout({
       const created = await studioClient.entities.Order.create({
         items: cart.map(item => ({ productId: item.id, title: item.title, price: item.price, qty: item.qty })),
         total,
-        channel: 'whatsapp',
+        channel: paymentMethod === 'paystack' ? 'paystack' : continueToWhatsApp ? 'whatsapp' : 'manual',
         paymentMethod,
         deliveryMethod: 'delivery',
         deliveryZoneId: zone.id,
@@ -115,11 +140,20 @@ export default function CommerceCheckout({
           postalCode: details.postalCode,
         },
         customerNote: details.customerNote,
-      }, { idempotencyKey: crypto.randomUUID() });
+      }, { idempotencyKey: orderAttemptKey });
       setOrder(created);
-      setView('confirmed');
       setCart([]);
       onCompleted?.(created);
+      if (paymentMethod === 'paystack') {
+        try {
+          await launchSecurePayment(created);
+          return;
+        } catch (paymentError) {
+          setView('confirmed');
+          throw new Error(`Your order was recorded, but secure payment did not open: ${paymentError.message}`);
+        }
+      }
+      setView('confirmed');
       if (continueToWhatsApp) {
         const url = whatsappUrl(created);
         if (url) window.open(url, '_blank', 'noopener,noreferrer');
@@ -168,6 +202,8 @@ export default function CommerceCheckout({
       if (proofPreview) URL.revokeObjectURL(proofPreview);
       setProofPreview('');
       setError('');
+      setPaymentConfig(null);
+      setOrderAttemptKey(crypto.randomUUID());
     }, 300);
   };
 
@@ -253,7 +289,7 @@ export default function CommerceCheckout({
                       {enabledMethods.map(method => (
                         <button key={method} onClick={() => setPaymentMethod(method)} className={`flex min-h-16 items-center gap-4 border p-4 text-left ${paymentMethod === method ? 'border-brass bg-brass/10' : 'border-ivory/10 bg-carbon'}`}>
                           {method === 'pay_on_delivery' ? <Truck size={19} /> : method === 'bank_transfer' ? <Banknote size={19} /> : <CreditCard size={19} />}
-                          <span><strong className="block text-ivory">{paymentMethodLabel(method)}</strong><small className="text-ivory/35">{method === 'pay_on_delivery' ? commerce.payOnDeliveryNote : 'Order now, then complete and confirm payment manually.'}</small></span>
+                          <span><strong className="block text-ivory">{paymentMethodLabel(method)}</strong><small className="text-ivory/35">{method === 'paystack' ? 'Choose Mobile Money or card securely. Authorize MoMo on your phone; your PIN is never entered on this website.' : method === 'pay_on_delivery' ? commerce.payOnDeliveryNote : 'Order now, then complete and confirm payment manually.'}</small></span>
                           {paymentMethod === method && <Check className="ml-auto text-brass" size={17} />}
                         </button>
                       ))}
@@ -301,8 +337,39 @@ export default function CommerceCheckout({
 
             <footer className="border-t border-brass/10 bg-carbon px-5 py-5 sm:px-7">
               {view === 'bag' && cart.length > 0 && <><div className="mb-4 flex items-end justify-between"><span className="text-sm text-ivory/40">Subtotal</span><strong className="font-display text-3xl text-brass">{formatMoney(subtotal)}</strong></div><button onClick={() => setView('checkout')} className="flex min-h-[52px] w-full items-center justify-center gap-2 bg-brass text-sm uppercase tracking-widest text-obsidian">Continue to checkout <ArrowLeft className="rotate-180" size={16} /></button><button onClick={close} className="mt-2 min-h-11 w-full border border-ivory/10 text-sm text-ivory/50">Continue shopping</button></>}
-              {view === 'checkout' && <><div className="mb-4 grid grid-cols-3 gap-2 border border-ivory/10 p-3 text-center text-xs"><span className="text-ivory/35">Subtotal<strong className="mt-1 block text-ivory">{formatMoney(subtotal)}</strong></span><span className="text-ivory/35">Delivery<strong className="mt-1 block text-ivory">{formatMoney(deliveryFee)}</strong></span><span className="text-ivory/35">Total<strong className="mt-1 block text-brass">{formatMoney(total)}</strong></span></div><button onClick={() => placeOrder({ continueToWhatsApp: true })} disabled={ordering} className="flex min-h-[52px] w-full items-center justify-center gap-2 bg-[#25D366] text-sm uppercase tracking-widest text-white disabled:opacity-50"><MessageCircle size={17} /> {ordering ? 'Recording order…' : 'Place order & continue on WhatsApp'}</button><button onClick={() => placeOrder()} disabled={ordering} className="mt-2 min-h-11 w-full border border-brass/20 text-sm text-brass">Place order without opening WhatsApp</button></>}
-              {view === 'confirmed' && order && <>{whatsappUrl(order) ? <a href={whatsappUrl(order)} target="_blank" rel="noopener noreferrer" className="flex min-h-[52px] w-full items-center justify-center gap-2 bg-[#25D366] text-sm uppercase tracking-widest text-white"><MessageCircle size={17} /> Send order update on WhatsApp</a> : <p className="border border-brass/15 p-3 text-center text-xs text-ivory/45">Your order is safely recorded. The studio will contact you using the details supplied.</p>}<button onClick={close} className="mt-2 min-h-11 w-full border border-brass/20 text-sm text-brass">Continue shopping</button></>}
+              {view === 'checkout' && (
+                <>
+                  <div className="mb-4 grid grid-cols-3 gap-2 border border-ivory/10 p-3 text-center text-xs">
+                    <span className="text-ivory/35">Subtotal<strong className="mt-1 block text-ivory">{formatMoney(subtotal)}</strong></span>
+                    <span className="text-ivory/35">Delivery<strong className="mt-1 block text-ivory">{formatMoney(deliveryFee)}</strong></span>
+                    <span className="text-ivory/35">Total<strong className="mt-1 block text-brass">{formatMoney(total)}</strong></span>
+                  </div>
+                  {paymentMethod === 'paystack' ? (
+                    <button onClick={() => placeOrder()} disabled={ordering} className="flex min-h-[52px] w-full items-center justify-center gap-2 bg-brass text-sm uppercase tracking-widest text-obsidian disabled:opacity-50">
+                      <CreditCard size={17} /> {ordering ? 'Opening secure payment…' : 'Pay securely now'}
+                    </button>
+                  ) : (
+                    <>
+                      <button onClick={() => placeOrder({ continueToWhatsApp: true })} disabled={ordering || (!settings.__loaded && !commerce.whatsapp?.number)} className="flex min-h-[52px] w-full items-center justify-center gap-2 bg-[#25D366] text-sm uppercase tracking-widest text-white disabled:opacity-50">
+                        <MessageCircle size={17} /> {ordering ? 'Recording order…' : !settings.__loaded && !commerce.whatsapp?.number ? 'Loading WhatsApp…' : 'Place order & continue on WhatsApp'}
+                      </button>
+                      <button onClick={() => placeOrder()} disabled={ordering} className="mt-2 min-h-11 w-full border border-brass/20 text-sm text-brass">Place order without opening WhatsApp</button>
+                    </>
+                  )}
+                </>
+              )}
+              {view === 'confirmed' && order && (
+                <>
+                  {order.paymentMethod === 'paystack' && order.paymentStatus !== 'paid' ? (
+                    <button onClick={() => launchSecurePayment(order).catch(paymentError => setError(paymentError.message))} className="flex min-h-[52px] w-full items-center justify-center gap-2 bg-brass text-sm uppercase tracking-widest text-obsidian"><CreditCard size={17} /> Continue secure payment</button>
+                  ) : whatsappUrl(order) ? (
+                    <a href={whatsappUrl(order)} target="_blank" rel="noopener noreferrer" className="flex min-h-[52px] w-full items-center justify-center gap-2 bg-[#25D366] text-sm uppercase tracking-widest text-white"><MessageCircle size={17} /> Send order update on WhatsApp</a>
+                  ) : (
+                    <p className="border border-brass/15 p-3 text-center text-xs text-ivory/45">Your order is safely recorded. The studio will contact you using the details supplied.</p>
+                  )}
+                  <button onClick={close} className="mt-2 min-h-11 w-full border border-brass/20 text-sm text-brass">Continue shopping</button>
+                </>
+              )}
             </footer>
           </motion.aside>
         </>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, Download, Lock, MessageSquare, Package, Palette, Save, Trash2, Upload } from 'lucide-react';
+import { Bell, CreditCard, Download, Lock, MessageSquare, Package, Palette, Save, Trash2, Upload } from 'lucide-react';
 import PageTransition from '@/components/PageTransition';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
@@ -126,6 +126,17 @@ export default function Account() {
     }
   };
 
+  const continueSecurePayment = async order => {
+    setError('');
+    try {
+      const initialized = await studioClient.payments.initialize(order.id);
+      if (!initialized.authorizationUrl) throw new Error('The secure payment page could not be opened.');
+      window.location.assign(initialized.authorizationUrl);
+    } catch (paymentError) {
+      setError(paymentError.message);
+    }
+  };
+
   const cards = [
     { label: 'Messages', value: data.messages.length, icon: MessageSquare },
     { label: 'Commissions', value: data.commissions.length, icon: Palette },
@@ -215,6 +226,11 @@ export default function Account() {
                         <p>Payment: {String(order.paymentStatus || 'awaiting_payment').replaceAll('_', ' ')}</p>
                       </div>
                       <strong className="mt-3 block font-display text-xl text-ivory">{formatMoney(order.total, order.currency)}</strong>
+                      {order.paymentMethod === 'paystack' && !['paid', 'refunded'].includes(order.paymentStatus) && (
+                        <button onClick={() => continueSecurePayment(order)} className="mt-3 flex min-h-10 w-full items-center justify-center gap-2 bg-brass px-3 text-xs text-obsidian">
+                          <CreditCard size={13} /> Continue secure payment
+                        </button>
+                      )}
                       {['mobile_money', 'bank_transfer'].includes(order.paymentMethod) && !['paid', 'refunded'].includes(order.paymentStatus) && (
                         <label className="mt-3 flex min-h-10 cursor-pointer items-center justify-center gap-2 border border-brass/20 px-3 text-xs text-brass">
                           <Upload size={13} /> {uploadingOrderId === order.id ? 'Uploading…' : order.proofStatus === 'submitted' ? 'Replace payment proof' : 'Upload payment proof'}

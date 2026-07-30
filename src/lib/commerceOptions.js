@@ -9,9 +9,27 @@ export const DEFAULT_COMMERCE_OPTIONS = {
     { id: 'other-ghana', name: 'Other Ghana locations', fee: 50, eta: 'Arranged after confirmation', active: true },
   ],
   paymentMethods: {
+    paystack: true,
     mobile_money: true,
     bank_transfer: true,
     pay_on_delivery: true,
+  },
+  whatsapp: {
+    number: '',
+    orderMessage: [
+      'Hello {studioName}, I have placed an order.',
+      'Order: {trackingCode}',
+      '{items}',
+      'Delivery: {deliveryZone}',
+      'Address: {deliveryAddress}',
+      'Payment: {paymentMethod}',
+      'Subtotal: {subtotal}',
+      'Delivery fee: {deliveryFee}',
+      'Total: {total}',
+      'Customer: {customerName} ({customerPhone})',
+      '{customerNote}',
+      'Please confirm the order and next steps.',
+    ].join('\n'),
   },
   mobileMoney: {
     network: 'MTN MoMo',
@@ -26,6 +44,7 @@ export const DEFAULT_COMMERCE_OPTIONS = {
     branch: '',
     instructions: 'The studio will confirm the transfer before dispatch.',
   },
+
   payOnDeliveryNote: 'Pay on delivery is subject to confirmation for the selected location and order value.',
   checkoutNote: 'Your order is recorded securely. The studio will confirm availability, delivery, and payment on WhatsApp.',
 };
@@ -46,6 +65,7 @@ export function parseCommerceOptions(value) {
       ...DEFAULT_COMMERCE_OPTIONS,
       ...parsed,
       paymentMethods: { ...DEFAULT_COMMERCE_OPTIONS.paymentMethods, ...(parsed.paymentMethods || {}) },
+      whatsapp: { ...DEFAULT_COMMERCE_OPTIONS.whatsapp, ...(parsed.whatsapp || {}) },
       mobileMoney: { ...DEFAULT_COMMERCE_OPTIONS.mobileMoney, ...(parsed.mobileMoney || {}) },
       bankTransfer: { ...DEFAULT_COMMERCE_OPTIONS.bankTransfer, ...(parsed.bankTransfer || {}) },
       deliveryZones: Array.isArray(parsed.deliveryZones)
@@ -59,8 +79,22 @@ export function parseCommerceOptions(value) {
 
 export const serializeCommerceOptions = options => JSON.stringify(parseCommerceOptions(options));
 
+
 export const paymentMethodLabel = method => ({
   mobile_money: 'Mobile Money',
   bank_transfer: 'Bank Transfer',
   pay_on_delivery: 'Pay on Delivery',
+  paystack: 'Secure Online Payment',
 }[method] || method);
+
+export function renderWhatsAppOrderMessage(template, values) {
+  const source = String(template || DEFAULT_COMMERCE_OPTIONS.whatsapp.orderMessage);
+  return source
+    .replace(/\{([a-zA-Z]+)\}/g, (match, key) => (
+      Object.prototype.hasOwnProperty.call(values, key) ? String(values[key] ?? '') : match
+    ))
+    .split('\n')
+    .map(line => line.trimEnd())
+    .filter(line => line.trim())
+    .join('\n');
+}

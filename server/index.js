@@ -306,7 +306,8 @@ const defaultCommerceSettings = {
     { id: 'kasoa', name: 'Kasoa', fee: 35, eta: '2–4 working days', active: true },
     { id: 'other-ghana', name: 'Other Ghana locations', fee: 50, eta: 'Arranged after confirmation', active: true },
   ],
-  paymentMethods: { mobile_money: true, bank_transfer: true, pay_on_delivery: true },
+  paymentMethods: { paystack: true, mobile_money: true, bank_transfer: true, pay_on_delivery: true },
+  whatsapp: { number: '', orderMessage: '' },
   mobileMoney: { network: 'MTN MoMo', number: '', accountName: '', instructions: '' },
   bankTransfer: { bankName: '', accountName: '', accountNumber: '', branch: '', instructions: '' },
   payOnDeliveryNote: 'Pay on delivery is subject to confirmation for the selected location and order value.',
@@ -323,6 +324,7 @@ function commerceSettings() {
       ...defaultCommerceSettings,
       ...parsed,
       paymentMethods: { ...defaultCommerceSettings.paymentMethods, ...(parsed.paymentMethods || {}) },
+      whatsapp: { ...defaultCommerceSettings.whatsapp, ...(parsed.whatsapp || {}) },
       mobileMoney: { ...defaultCommerceSettings.mobileMoney, ...(parsed.mobileMoney || {}) },
       bankTransfer: { ...defaultCommerceSettings.bankTransfer, ...(parsed.bankTransfer || {}) },
       deliveryZones: Array.isArray(parsed.deliveryZones) ? parsed.deliveryZones : defaultCommerceSettings.deliveryZones,
@@ -351,6 +353,7 @@ async function confirmPaidOrder(order, payment, providerEventId) {
   order.status = 'confirmed';
   order.paidAt = payment.paid_at || now();
   order.paymentTransactionId = String(payment.id || providerEventId || '');
+  delete order.paymentAuthorizationUrl;
   order.statusHistory ||= [];
   order.statusHistory.push({ status: 'confirmed', at: now(), actorId: 'payment-provider' });
   return true;
@@ -1618,6 +1621,9 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
     if (commerce.paymentMethods?.[clean.paymentMethod] === false) {
       return res.status(400).json({ error: 'That payment method is not currently available.' });
     }
+    if (clean.paymentMethod === 'paystack' && !paymentStatus.configured) {
+      return res.status(503).json({ error: 'Secure online payment is not available yet. Choose another payment method.' });
+    }
     if (clean.deliveryMethod === 'delivery' && !clean.shippingAddress) {
       return res.status(400).json({ error: 'Enter a delivery address or choose studio pickup.' });
     }
@@ -1703,8 +1709,12 @@ app.get('/api/payments/config', (_req, res) => {
 app.post('/api/payments/initialize', requireVerifiedUser, mutationLimiter, async (req, res) => {
   const order = db.data.Order.find(item => item.id === req.body.orderId && item.userId === req.user.id && !item.deleted_at);
   if (!order) return res.status(404).json({ error: 'Order not found.' });
+  if (order.paymentMethod !== 'paystack') return res.status(400).json({ error: 'This order uses a manual payment method.' });
+  if (order.status === 'cancelled') return res.status(409).json({ error: 'This order has been cancelled.' });
   if (order.paymentStatus === 'paid') return res.status(409).json({ error: 'This order is already paid.' });
-  if (order.paymentReference) return res.status(409).json({ error: 'Secure checkout has already been initialized for this order.' });
+  if (order.paymentReference && order.paymentAuthorizationUrl) {
+    return res.json({ authorizationUrl: order.paymentAuthorizationUrl, reference: order.paymentReference, resumed: true });
+  }
   if (!paymentStatus.configured) return res.status(503).json({ error: 'Online payment is not configured. Choose WhatsApp ordering instead.' });
   try {
     const reference = `atelier-${order.id}-${Date.now()}`;
@@ -1719,6 +1729,7 @@ app.post('/api/payments/initialize', requireVerifiedUser, mutationLimiter, async
     order.channel = paymentStatus.provider;
     order.paymentReference = reference;
     order.paymentStatus = 'initialized';
+    order.paymentAuthorizationUrl = initialized.authorization_url;
     await audit(req.user, 'order.payment_initialized', 'Order', order.id, { provider: paymentStatus.provider });
     await save();
     res.json({ authorizationUrl: initialized.authorization_url, reference });

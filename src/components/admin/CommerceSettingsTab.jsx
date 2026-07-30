@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CreditCard, MapPin, Plus, Save, Trash2 } from 'lucide-react';
+import { CreditCard, MapPin, MessageCircle, Plus, Save, Trash2 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { DEFAULT_COMMERCE_OPTIONS, parseCommerceOptions, serializeCommerceOptions } from '@/lib/commerceOptions';
 
@@ -49,7 +49,7 @@ export default function CommerceSettingsTab() {
       setRecord(saved);
       setForm(parseCommerceOptions(saved.value));
       window.dispatchEvent(new Event('atelier:content-updated'));
-      setNotice('Delivery and manual payment settings saved.');
+      setNotice('Delivery, payment, and WhatsApp checkout settings saved.');
     } catch (saveError) {
       setError(saveError.message);
     }
@@ -87,7 +87,27 @@ export default function CommerceSettingsTab() {
       </section>
 
       <section className="mt-6 border border-brass/10 bg-carbon p-4 sm:p-6">
+        <div className="flex items-center gap-3"><MessageCircle className="text-[#25D366]" size={20} /><h2 className="font-display text-2xl text-ivory">WhatsApp order handoff</h2></div>
+        <p className="mt-2 text-sm leading-relaxed text-ivory/40">This number and message are used by the green checkout button. If the number is blank, checkout falls back to the global WhatsApp number in Site Settings.</p>
+        <label className="mt-5 block text-xs uppercase tracking-wider text-ivory/35">Order WhatsApp number
+          <input value={form.whatsapp.number} onChange={event => updateNested('whatsapp', 'number', event.target.value)} placeholder="+233 55 000 0000" className={`${inputClass} mt-1`} />
+        </label>
+        <label className="mt-4 block text-xs uppercase tracking-wider text-ivory/35">Order message template
+          <textarea value={form.whatsapp.orderMessage} onChange={event => updateNested('whatsapp', 'orderMessage', event.target.value)} rows={10} className={`${inputClass} mt-1 py-3 font-mono normal-case tracking-normal`} />
+        </label>
+        <p className="mt-3 break-words text-xs leading-relaxed text-ivory/35">
+          Available placeholders: {'{studioName}'}, {'{trackingCode}'}, {'{items}'}, {'{deliveryZone}'}, {'{deliveryAddress}'}, {'{paymentMethod}'}, {'{subtotal}'}, {'{deliveryFee}'}, {'{total}'}, {'{customerName}'}, {'{customerPhone}'}, {'{customerNote}'}.
+        </p>
+      </section>
+
+      <section className="mt-6 border border-brass/10 bg-carbon p-4 sm:p-6">
         <div className="flex items-center gap-3"><CreditCard className="text-brass" size={20} /><h2 className="font-display text-2xl text-ivory">Manual payment methods</h2></div>
+        <div className="mt-5 border border-brass/15 bg-brass/5 p-4">
+          <label className="flex items-start gap-3 text-sm text-ivory">
+            <input type="checkbox" checked={form.paymentMethods.paystack !== false} onChange={event => updateNested('paymentMethods', 'paystack', event.target.checked)} className="mt-1 accent-brass" />
+            <span><strong className="block text-brass">Show secure online payment when Paystack is connected</strong><small className="mt-1 block leading-relaxed text-ivory/40">Customers choose Mobile Money or card in Paystack’s secure checkout. Their network sends the authorization prompt to their phone; this website never asks for or stores their MoMo PIN.</small></span>
+          </label>
+        </div>
         <div className="mt-5 grid gap-5 lg:grid-cols-2">
           <div className="border border-ivory/5 bg-obsidian/60 p-4">
             <label className="flex items-center gap-2 text-sm text-ivory"><input type="checkbox" checked={form.paymentMethods.mobile_money} onChange={event => updateNested('paymentMethods', 'mobile_money', event.target.checked)} className="accent-brass" /> Accept Mobile Money</label>

@@ -54,7 +54,7 @@ export const schemas = {
     })).min(1).max(50),
     total: z.coerce.number().nonnegative().max(10000000),
     channel: z.enum(['whatsapp', 'manual', 'paystack']).default('whatsapp'),
-    paymentMethod: z.enum(['mobile_money', 'bank_transfer', 'pay_on_delivery']).optional().default('mobile_money'),
+    paymentMethod: z.enum(['paystack', 'mobile_money', 'bank_transfer', 'pay_on_delivery']).optional().default('mobile_money'),
     deliveryMethod: z.enum(['digital', 'pickup', 'delivery']).default('delivery'),
     deliveryZoneId: optionalText(100),
     shippingAddress: z.object({

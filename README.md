@@ -36,6 +36,19 @@ Production should configure:
 
 Without `DATABASE_URL`, the API intentionally uses a local JSON development store. Without cloud storage, uploads use the local filesystem. Neither local fallback should be used for a multi-instance production deployment.
 
+### Paystack checkout
+
+The Art Shop supports Paystack-hosted checkout for Ghana Mobile Money and cards. Keep manual methods enabled until the live account has been approved and a sandbox rehearsal succeeds.
+
+Configure:
+
+- `PAYMENT_PROVIDER=paystack`
+- `PAYMENT_CURRENCY=GHS`
+- `PAYSTACK_SECRET_KEY=sk_test_...` for rehearsal, then the live secret after approval
+- Paystack webhook URL: `https://reigns-atelier.onrender.com/api/payments/webhook`
+
+Customers select Mobile Money or card on Paystack's secure page. Mobile Money authorization and the customer's PIN remain between the customer, Paystack, and the mobile network; this application never requests or stores the PIN.
+
 ## Container deployment
 
 `Dockerfile` builds the frontend and runs the hardened API. `docker-compose.yml` provides a PostgreSQL-backed production-like environment:
@@ -70,6 +83,17 @@ Local development creates rotating JSON backups in `server/data/backups`. Postgr
 ## Email
 
 Invitations never contain passwords. Invitees receive a time-limited link and create their own password. When SMTP is unavailable, replies remain visible in the customer portal and display a pending-delivery warning in the admin Inbox.
+
+## Paystack hosted checkout
+
+Keep `PAYMENT_PROVIDER=manual` until a Paystack test account is ready. To rehearse secure card and Ghana Mobile Money checkout:
+
+1. Add `PAYMENT_PROVIDER=paystack`, `PAYMENT_CURRENCY=GHS` and the Paystack **test** secret as `PAYSTACK_SECRET_KEY` in Render.
+2. Configure the Paystack webhook URL as `https://YOUR-DOMAIN/api/payments/webhook`.
+3. Redeploy, place a test order and verify that the order changes to paid only after Paystack's signed webhook is received.
+4. Complete Paystack compliance and repeat the rehearsal with live credentials before accepting real payments.
+
+Checkout is hosted by Paystack. The website never asks for or stores a customer's Mobile Money PIN.
 
 ## Deployment checklist
 
