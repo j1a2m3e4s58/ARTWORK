@@ -57,6 +57,7 @@ export const schemas = {
     paymentMethod: z.enum(['paystack', 'mobile_money', 'bank_transfer', 'pay_on_delivery']).optional().default('mobile_money'),
     deliveryMethod: z.enum(['digital', 'pickup', 'delivery']).default('delivery'),
     deliveryZoneId: optionalText(100),
+    deliveryQuoteRequested: z.boolean().optional().default(false),
     shippingAddress: z.object({
       recipientName: text(160),
       phone: text(40),
@@ -68,10 +69,10 @@ export const schemas = {
       postalCode: optionalText(30),
     }).optional(),
     customerNote: optionalText(2000),
-    status: z.enum(['pending', 'confirmed', 'in_progress', 'ready', 'shipped', 'fulfilled', 'completed', 'cancelled']).optional(),
+    status: z.enum(['pending', 'delivery_quote_required', 'awaiting_payment', 'confirmed', 'in_progress', 'ready', 'shipped', 'fulfilled', 'completed', 'cancelled', 'refunded']).optional(),
     paymentStatus: z.enum([
       'unpaid', 'awaiting_payment', 'initialized', 'payment_submitted',
-      'pay_on_delivery', 'paid', 'failed', 'refunded',
+      'pay_on_delivery', 'quote_required', 'paid', 'failed', 'refunded',
     ]).optional(),
     proofStatus: z.enum(['not_submitted', 'submitted', 'approved', 'rejected']).optional(),
   }),

@@ -5,9 +5,10 @@ import ResponsiveSelect from '@/components/ResponsiveSelect';
 import { paymentMethodLabel } from '@/lib/commerceOptions';
 import { useSettings } from '@/hooks/useSettings';
 
-const statuses = ['pending', 'confirmed', 'in_progress', 'ready', 'shipped', 'completed', 'cancelled'];
+const statuses = ['delivery_quote_required', 'awaiting_payment', 'pending', 'confirmed', 'in_progress', 'ready', 'shipped', 'fulfilled', 'completed', 'cancelled', 'refunded'];
 const paymentStatuses = [
   { value: 'awaiting_payment', label: 'Awaiting payment' },
+  { value: 'quote_required', label: 'Delivery quote required' },
   { value: 'pay_on_delivery', label: 'Pay on delivery' },
   { value: 'payment_submitted', label: 'Proof submitted' },
   { value: 'paid', label: 'Paid / confirmed' },
@@ -32,6 +33,18 @@ export default function OrdersTab() {
     }
   };
   const formatMoney = (value, currency = 'GHS') => new Intl.NumberFormat('en-GH', { style: 'currency', currency }).format(Number(value) || 0);
+  const applyQuote = async (order, value) => {
+    const shipping = Math.max(0, Number(value) || 0);
+    await update(order, {
+      shipping,
+      total: Number(order.subtotal || 0) + shipping,
+      deliveryZone: { ...(order.deliveryZone || {}), name: 'Custom delivery quote', fee: shipping, eta: 'Confirmed by studio' },
+      deliveryQuoteRequested: false,
+      paymentMethod: 'paystack',
+      paymentStatus: 'awaiting_payment',
+      status: 'awaiting_payment',
+    });
+  };
   const whatsappOrderUrl = order => {
     const number = String(order.shippingAddress?.phone || settings.whatsapp_number || '').replace(/\D/g, '');
     const message = `Hello ${order.shippingAddress?.recipientName || ''}, this is Reigns Atelier about order ${order.trackingCode || order.id}.`;
@@ -78,6 +91,14 @@ export default function OrdersTab() {
                   {order.paymentProofUrl && <a href={order.paymentProofUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-brass"><Image size={13} /> View payment proof <ExternalLink size={11} /></a>}
                 </div>
               </div>
+
+              {order.paymentStatus === 'quote_required' && <div className="mt-3 border border-brass/25 bg-brass/5 p-3">
+                <p className="text-xs text-ivory/55">This customer selected a location outside the published zones. Enter the delivery fee, then the customer can return to their account and continue securely through Paystack.</p>
+                <div className="mt-3 flex flex-col gap-2 min-[390px]:flex-row">
+                  <input id={`quote-${order.id}`} type="number" min="0" step="0.01" placeholder="Delivery fee (GHS)" className="min-h-11 flex-1 border border-brass/20 bg-obsidian px-3 text-sm text-ivory" />
+                  <button onClick={() => applyQuote(order, document.getElementById(`quote-${order.id}`)?.value)} className="min-h-11 bg-brass px-4 text-xs font-medium uppercase tracking-wider text-obsidian">Approve quote</button>
+                </div>
+              </div>}
 
               {order.customerNote && <p className="mt-3 border-l-2 border-brass/30 pl-3 text-xs text-ivory/45">{order.customerNote}</p>}
               <div className="mt-4 flex flex-col gap-3 border-t border-brass/10 pt-4 min-[390px]:flex-row min-[390px]:items-center min-[390px]:justify-between">

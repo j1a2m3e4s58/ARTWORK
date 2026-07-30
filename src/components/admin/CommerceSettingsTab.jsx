@@ -84,6 +84,13 @@ export default function CommerceSettingsTab() {
           ))}
         </div>
         <button type="button" onClick={addZone} className="mt-4 flex min-h-11 items-center gap-2 border border-brass/25 px-4 text-sm text-brass"><Plus size={15} /> Add delivery zone</button>
+        <div className="mt-5 border border-brass/15 bg-brass/5 p-4">
+          <label className="flex items-center gap-2 text-sm text-ivory"><input type="checkbox" checked={form.customLocationEnabled !== false} onChange={event => setForm(current => ({ ...current, customLocationEnabled: event.target.checked }))} className="accent-brass" /> Allow “location not listed” delivery quote requests</label>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <input value={form.customLocationLabel || ''} onChange={event => setForm(current => ({ ...current, customLocationLabel: event.target.value }))} placeholder="Button label" className={inputClass} />
+            <input value={form.customLocationNote || ''} onChange={event => setForm(current => ({ ...current, customLocationNote: event.target.value }))} placeholder="Customer explanation" className={inputClass} />
+          </div>
+        </div>
       </section>
 
       <section className="mt-6 border border-brass/10 bg-carbon p-4 sm:p-6">

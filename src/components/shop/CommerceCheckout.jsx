@@ -14,6 +14,7 @@ export default function CommerceCheckout({
 }) {
   const [view, setView] = useState('bag');
   const [zoneId, setZoneId] = useState('');
+  const [customLocation, setCustomLocation] = useState(false);
   // Secure online checkout is the preferred route. When Paystack is not
   // configured the effect below automatically selects the first enabled
   // manual method instead.
@@ -84,11 +85,11 @@ export default function CommerceCheckout({
       window.location.assign('/login?redirect=/shop');
       return false;
     }
-    if (!zone) return setError('Choose a delivery zone so the correct fee can be added.'), false;
+    if (!zone && !customLocation) return setError('Choose a delivery zone, or select “My location is not listed”.'), false;
     if (!details.recipientName || !details.phone || !details.addressLine1 || !details.city) {
       return setError('Enter your name, phone number, delivery address, and city.'), false;
     }
-    if (!enabledMethods.includes(paymentMethod)) return setError('Choose an available payment method.'), false;
+    if (!customLocation && !enabledMethods.includes(paymentMethod)) return setError('Choose an available payment method.'), false;
     return true;
   };
 
@@ -133,11 +134,12 @@ export default function CommerceCheckout({
     try {
       const created = await studioClient.entities.Order.create({
         items: cart.map(item => ({ productId: item.id, title: item.title, price: item.price, qty: item.qty })),
-        total,
-        channel: paymentMethod === 'paystack' ? 'paystack' : continueToWhatsApp ? 'whatsapp' : 'manual',
-        paymentMethod,
+        total: customLocation ? subtotal : total,
+        channel: customLocation ? 'manual' : paymentMethod === 'paystack' ? 'paystack' : continueToWhatsApp ? 'whatsapp' : 'manual',
+        paymentMethod: customLocation ? 'pay_on_delivery' : paymentMethod,
         deliveryMethod: 'delivery',
-        deliveryZoneId: zone.id,
+        deliveryZoneId: customLocation ? '' : zone.id,
+        deliveryQuoteRequested: customLocation,
         shippingAddress: {
           recipientName: details.recipientName,
           phone: details.phone,
@@ -153,7 +155,7 @@ export default function CommerceCheckout({
       setOrder(created);
       setCart([]);
       onCompleted?.(created);
-      if (paymentMethod === 'paystack') {
+      if (!customLocation && paymentMethod === 'paystack') {
         try {
           await launchSecurePayment(created);
           return;
@@ -207,6 +209,7 @@ export default function CommerceCheckout({
       setView('bag');
       setOrder(null);
       setZoneId('');
+      setCustomLocation(false);
       setProofFile(null);
       if (proofPreview) URL.revokeObjectURL(proofPreview);
       setProofPreview('');
@@ -284,15 +287,19 @@ export default function CommerceCheckout({
                     <p className="mt-2 text-sm text-ivory/40">Choose one zone. Its fee is added immediately.</p>
                     <div className="mt-4 grid gap-2">
                       {activeZones.map(item => (
-                        <button key={item.id} onClick={() => setZoneId(item.id)} className={`flex min-h-16 items-center justify-between border p-4 text-left ${zoneId === item.id ? 'border-brass bg-brass/10' : 'border-ivory/10 bg-carbon'}`}>
+                        <button key={item.id} onClick={() => { setZoneId(item.id); setCustomLocation(false); }} className={`flex min-h-16 items-center justify-between border p-4 text-left ${zoneId === item.id && !customLocation ? 'border-brass bg-brass/10' : 'border-ivory/10 bg-carbon'}`}>
                           <span><strong className="block text-ivory">{item.name}</strong><small className="text-ivory/35">{item.eta || 'Delivery arranged by the studio'}</small></span>
                           <span className="text-right text-sm text-brass">{formatMoney(item.fee)}{zoneId === item.id && <Check className="ml-auto mt-1" size={15} />}</span>
                         </button>
                       ))}
+                      {commerce.customLocationEnabled !== false && <button onClick={() => { setCustomLocation(true); setZoneId(''); }} className={`flex min-h-16 items-center justify-between border p-4 text-left ${customLocation ? 'border-brass bg-brass/10' : 'border-ivory/10 bg-carbon'}`}>
+                        <span><strong className="block text-ivory">{commerce.customLocationLabel || 'My location is not listed'}</strong><small className="text-ivory/35">{commerce.customLocationNote || 'The studio will quote delivery before payment.'}</small></span>
+                        {customLocation && <Check className="text-brass" size={17} />}
+                      </button>}
                     </div>
                   </section>
 
-                  <section className="border border-brass/10 bg-obsidian/45 p-4 sm:p-5">
+                  {!customLocation && <section className="border border-brass/10 bg-obsidian/45 p-4 sm:p-5">
                     <div className="flex items-center gap-3"><CreditCard className="text-brass" size={19} /><h3 className="font-display text-xl">Payment method</h3></div>
                     {paystackEnabled && <p className="mt-2 text-sm text-ivory/45">You will continue to Paystack's secure checkout to choose Mobile Money or card. Your Mobile Money PIN is entered only in the official network prompt, never on this website.</p>}
                     <div className="mt-4 grid gap-2">
@@ -305,6 +312,9 @@ export default function CommerceCheckout({
                       ))}
                     </div>
                   </section>
+                  }
+
+                  {customLocation && <section className="border border-brass/20 bg-brass/5 p-4 text-sm text-ivory/60"><strong className="block text-brass">Delivery quote requested</strong><p className="mt-1">Your order will be recorded with a GHS 0 delivery fee. The studio will contact you with the exact delivery price and then arrange secure payment.</p></section>}
 
                   <textarea value={details.customerNote} onChange={event => setDetails({ ...details, customerNote: event.target.value })} placeholder="Order note (optional)" rows={3} className={`${fieldClass} py-3`} />
                 </div>
@@ -351,10 +361,10 @@ export default function CommerceCheckout({
                 <>
                   <div className="mb-4 grid grid-cols-3 gap-2 border border-ivory/10 p-3 text-center text-xs">
                     <span className="text-ivory/35">Subtotal<strong className="mt-1 block text-ivory">{formatMoney(subtotal)}</strong></span>
-                    <span className="text-ivory/35">Delivery<strong className="mt-1 block text-ivory">{formatMoney(deliveryFee)}</strong></span>
-                    <span className="text-ivory/35">Total<strong className="mt-1 block text-brass">{formatMoney(total)}</strong></span>
+                    <span className="text-ivory/35">Delivery<strong className="mt-1 block text-ivory">{customLocation ? 'Quote required' : formatMoney(deliveryFee)}</strong></span>
+                    <span className="text-ivory/35">Total<strong className="mt-1 block text-brass">{formatMoney(customLocation ? subtotal : total)}</strong></span>
                   </div>
-                  {paymentMethod === 'paystack' ? (
+                  {customLocation ? <button onClick={() => placeOrder()} disabled={ordering} className="flex min-h-[52px] w-full items-center justify-center gap-2 bg-brass text-sm uppercase tracking-widest text-obsidian disabled:opacity-50"><Truck size={17} /> {ordering ? 'Recording request…' : 'Request delivery quote'}</button> : paymentMethod === 'paystack' ? (
                     <button onClick={() => placeOrder()} disabled={ordering} className="flex min-h-[52px] w-full items-center justify-center gap-2 bg-brass text-sm uppercase tracking-widest text-obsidian disabled:opacity-50">
                       <CreditCard size={17} /> {ordering ? 'Opening secure payment…' : 'Pay securely now'}
                     </button>

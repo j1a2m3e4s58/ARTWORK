@@ -46,6 +46,9 @@ export const DEFAULT_COMMERCE_OPTIONS = {
   },
 
   payOnDeliveryNote: 'Pay on delivery is subject to confirmation for the selected location and order value.',
+  customLocationEnabled: true,
+  customLocationLabel: 'My location is not listed',
+  customLocationNote: 'Send my address to the studio for a delivery quote before I pay.',
   checkoutNote: 'Your order is recorded securely. The studio will confirm availability, delivery, and payment on WhatsApp.',
 };
 

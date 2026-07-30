@@ -1627,7 +1627,12 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
     if (clean.deliveryMethod === 'delivery' && !clean.shippingAddress) {
       return res.status(400).json({ error: 'Enter a delivery address or choose studio pickup.' });
     }
-    if (clean.deliveryMethod === 'delivery') {
+    if (clean.deliveryMethod === 'delivery' && clean.deliveryQuoteRequested) {
+      clean.deliveryZone = { id: 'custom-quote', name: 'Location needs a delivery quote', fee: 0, eta: 'The studio will confirm the delivery fee.' };
+      clean.shipping = 0;
+      clean.paymentMethod = 'pay_on_delivery';
+      clean.channel = 'manual';
+    } else if (clean.deliveryMethod === 'delivery') {
       const zone = commerce.deliveryZones.find(candidate => (
         candidate.active !== false && String(candidate.id) === String(clean.deliveryZoneId)
       ));
@@ -1664,8 +1669,8 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
     record.statusHistory = [{ status: 'received', at: now(), actorId: user.id }];
   }
   if (name === 'Order') {
-    record.status = 'pending';
-    record.paymentStatus = record.paymentMethod === 'pay_on_delivery' ? 'pay_on_delivery' : 'awaiting_payment';
+    record.status = record.deliveryQuoteRequested ? 'delivery_quote_required' : 'pending';
+    record.paymentStatus = record.deliveryQuoteRequested ? 'quote_required' : record.paymentMethod === 'pay_on_delivery' ? 'pay_on_delivery' : 'awaiting_payment';
     record.proofStatus = 'not_submitted';
     record.currency = paymentStatus.currency;
     record.trackingCode = createOrderTrackingCode();
@@ -1710,6 +1715,7 @@ app.post('/api/payments/initialize', requireVerifiedUser, mutationLimiter, async
   const order = db.data.Order.find(item => item.id === req.body.orderId && item.userId === req.user.id && !item.deleted_at);
   if (!order) return res.status(404).json({ error: 'Order not found.' });
   if (order.paymentMethod !== 'paystack') return res.status(400).json({ error: 'This order uses a manual payment method.' });
+  if (order.paymentStatus === 'quote_required') return res.status(409).json({ error: 'The studio must confirm the custom delivery fee before payment can begin.' });
   if (order.status === 'cancelled') return res.status(409).json({ error: 'This order has been cancelled.' });
   if (order.paymentStatus === 'paid') return res.status(409).json({ error: 'This order is already paid.' });
   if (order.paymentReference && order.paymentAuthorizationUrl) {
@@ -1853,6 +1859,14 @@ app.patch('/api/entities/:name/:id', requireStaff, mutationLimiter, async (req, 
       message: `Status changed to ${String(changes.status).replaceAll('_', ' ')}.`,
       read: false, created_date: now(),
     });
+    if (req.params.name === 'Order' && record.accountEmail) {
+      const statusLabel = String(changes.status).replaceAll('_', ' ');
+      record.statusEmailDelivery = await deliverEmail({
+        to: record.accountEmail,
+        subject: `Order ${record.trackingCode || ''} update — Reigns Atelier`,
+        text: `Your order ${record.trackingCode || ''} has been updated to: ${statusLabel}.\n\nTotal: ${record.currency || 'GHS'} ${Number(changes.total ?? record.total ?? 0).toFixed(2)}\n\nSign in to your account to view the order and continue payment when requested.`,
+      });
+    }
   }
   if (req.params.name === 'User' && ['suspended', 'active'].includes(changes.status)) {
     record.sessionVersion = (record.sessionVersion || 0) + 1;
