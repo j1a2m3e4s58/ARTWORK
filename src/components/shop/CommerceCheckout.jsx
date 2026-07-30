@@ -14,7 +14,10 @@ export default function CommerceCheckout({
 }) {
   const [view, setView] = useState('bag');
   const [zoneId, setZoneId] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('mobile_money');
+  // Secure online checkout is the preferred route. When Paystack is not
+  // configured the effect below automatically selects the first enabled
+  // manual method instead.
+  const [paymentMethod, setPaymentMethod] = useState('paystack');
   const [details, setDetails] = useState({
     recipientName: user?.full_name || '', phone: '', addressLine1: '', addressLine2: '',
     city: '', region: '', country: 'Ghana', postalCode: '', customerNote: '',
@@ -34,13 +37,15 @@ export default function CommerceCheckout({
   const deliveryFee = Number(zone?.fee || 0);
   const total = subtotal + deliveryFee;
   const count = cart.reduce((sum, item) => sum + item.qty, 0);
+  const paystackEnabled = paymentConfig?.configured && commerce.paymentMethods?.paystack !== false;
   const enabledMethods = useMemo(() => {
     const manual = ['mobile_money', 'bank_transfer', 'pay_on_delivery']
       .filter(method => commerce.paymentMethods?.[method] !== false);
-    return paymentConfig?.configured && commerce.paymentMethods?.paystack !== false
-      ? ['paystack', ...manual]
-      : manual;
-  }, [commerce.paymentMethods, paymentConfig]);
+    // A live Paystack connection takes payment on Paystack's hosted checkout.
+    // This prevents customers from accidentally using the old proof-upload
+    // flow after the studio has switched to online payments.
+    return paystackEnabled ? ['paystack'] : manual;
+  }, [commerce.paymentMethods, paystackEnabled]);
   const whatsappNumber = String(commerce.whatsapp?.number || settings.whatsapp_number || '').replace(/\D/g, '');
 
   useEffect(() => {
@@ -61,10 +66,14 @@ export default function CommerceCheckout({
   }, [open, onClose, ordering, uploadingProof]);
 
   useEffect(() => {
+    if (paystackEnabled) {
+      setPaymentMethod('paystack');
+      return;
+    }
     if (!enabledMethods.includes(paymentMethod) && enabledMethods[0]) {
       setPaymentMethod(enabledMethods[0]);
     }
-  }, [enabledMethods, paymentMethod]);
+  }, [enabledMethods, paymentMethod, paystackEnabled]);
 
   const updateQuantity = (id, delta) => setCart(current => current
     .map(item => item.id === id ? { ...item, qty: Math.max(0, item.qty + delta) } : item)
@@ -285,6 +294,7 @@ export default function CommerceCheckout({
 
                   <section className="border border-brass/10 bg-obsidian/45 p-4 sm:p-5">
                     <div className="flex items-center gap-3"><CreditCard className="text-brass" size={19} /><h3 className="font-display text-xl">Payment method</h3></div>
+                    {paystackEnabled && <p className="mt-2 text-sm text-ivory/45">You will continue to Paystack's secure checkout to choose Mobile Money or card. Your Mobile Money PIN is entered only in the official network prompt, never on this website.</p>}
                     <div className="mt-4 grid gap-2">
                       {enabledMethods.map(method => (
                         <button key={method} onClick={() => setPaymentMethod(method)} className={`flex min-h-16 items-center gap-4 border p-4 text-left ${paymentMethod === method ? 'border-brass bg-brass/10' : 'border-ivory/10 bg-carbon'}`}>
