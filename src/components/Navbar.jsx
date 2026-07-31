@@ -100,7 +100,7 @@ export default function Navbar() {
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.8, delay: 0.2 }}
       >
-        <div className="mx-auto grid h-20 max-w-[1440px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 px-5 sm:px-6 lg:px-8 xl:px-12">
+        <div className="mx-auto flex h-20 max-w-[1440px] items-center gap-3 px-5 sm:px-6 lg:grid lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:gap-4 lg:px-8 xl:px-12">
           <div className="flex shrink-0 flex-col leading-none group select-none">
             <Link
               to="/"
@@ -148,7 +148,7 @@ export default function Navbar() {
           </div>
 
           {/* Right actions */}
-          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2 lg:ml-0">
             <button onClick={() => setSearchOpen(true)} aria-label="Search the site" className="flex h-10 w-10 items-center justify-center text-ivory/65 transition-colors hover:text-brass"><Search size={19} /></button>
             <Link to="/wishlist" aria-label="Open my wishlist" className={`flex h-10 w-10 items-center justify-center transition-colors hover:text-brass ${location.pathname === '/wishlist' ? 'text-brass' : 'text-ivory/65'}`}><Heart size={19} /></Link>
             <Link to="/track-order" aria-label="Track an order" className={`hidden h-10 items-center gap-1.5 px-1.5 font-tight text-xs tracking-wide transition-colors xl:flex ${location.pathname === '/track-order' ? 'text-brass' : 'text-ivory/55 hover:text-brass'}`}><PackageSearch size={16} /> <span>Track</span></Link>
