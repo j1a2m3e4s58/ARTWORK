@@ -167,6 +167,9 @@ export default function Footer() {
           <div className="flex gap-6">
             <Link to="/privacy" className="text-ivory/25 text-xs font-tight tracking-wide hover:text-brass">Privacy Policy</Link>
             <Link to="/terms" className="text-ivory/25 text-xs font-tight tracking-wide hover:text-brass">Terms of Service</Link>
+            <Link to="/delivery-returns" className="text-ivory/25 text-xs font-tight tracking-wide hover:text-brass">Delivery & Returns</Link>
+            <Link to="/commission-policy" className="text-ivory/25 text-xs font-tight tracking-wide hover:text-brass">Commission Policy</Link>
+            <Link to="/track-order" className="text-ivory/25 text-xs font-tight tracking-wide hover:text-brass">Track order</Link>
           </div>
         </div>
       </div>

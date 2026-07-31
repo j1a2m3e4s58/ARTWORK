@@ -36,6 +36,7 @@ const LegalPage = lazy(() => import('@/pages/LegalPage'));
 const Account = lazy(() => import('@/pages/Account'));
 const AcceptInvite = lazy(() => import('@/pages/AcceptInvite'));
 const VerifyEmail = lazy(() => import('@/pages/VerifyEmail'));
+const OrderTracking = lazy(() => import('@/pages/OrderTracking'));
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings } = useAuth();
@@ -65,6 +66,9 @@ const AuthenticatedApp = () => {
         <Route path="/testimonials" element={<FeatureRoute setting="show_testimonials" defaultEnabled={false}><Testimonials /></FeatureRoute>} />
         <Route path="/privacy" element={<LegalPage type="privacy" />} />
         <Route path="/terms" element={<LegalPage type="terms" />} />
+        <Route path="/delivery-returns" element={<LegalPage type="delivery" />} />
+        <Route path="/commission-policy" element={<LegalPage type="commission" />} />
+        <Route path="/track-order" element={<OrderTracking />} />
       </Route>
       <Route element={<AdminRoute><AdminAccessGate><AdminLayout /></AdminAccessGate></AdminRoute>}>
         <Route path="/admin" element={<Admin />} />

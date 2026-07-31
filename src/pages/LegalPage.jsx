@@ -44,13 +44,49 @@ The service may occasionally be unavailable for maintenance. To the extent permi
 Changes
 These terms may be updated when the service changes. Continued use after an update means you accept the revised terms.`;
 
+const DELIVERY_DEFAULT = `Last updated: July 2026
+
+Delivery zones and fees
+Available delivery zones, fees and estimated delivery times are shown at checkout. If your location is not listed, request a custom delivery quote before payment.
+
+Order processing
+Orders are prepared after successful payment or, where offered, after the studio confirms pay-on-delivery eligibility. The studio will notify you if an item is unavailable or a delivery detail needs clarification.
+
+Original artwork and made-to-order work
+Original artwork is subject to availability. Commissioned or made-to-order work may have a separate production period before dispatch.
+
+Returns and damage
+Contact the studio promptly if an item arrives damaged or incorrect. Do not return artwork without written instructions from the studio. Custom commissions are generally non-refundable once work has begun, except where required by law.
+
+Payment refunds
+Eligible refunds are reviewed by the studio and processed using the original payment method where possible.`;
+
+const COMMISSION_DEFAULT = `Last updated: July 2026
+
+Commission process
+Submit a request with your preferred artwork type, reference material, budget and deadline. The studio will confirm scope, price, timeline and revision allowance before work starts.
+
+Deposits and payments
+A deposit or full payment may be required before work begins. The payment arrangement and balance due date will be agreed in writing for each commission.
+
+Reference material and approvals
+You confirm that you have permission to submit reference images. Please review concept or progress updates promptly; substantial changes after approval may require a revised quote.
+
+Copyright and delivery
+The artist retains copyright unless commercial or reproduction rights are explicitly agreed in writing. Physical delivery, digital files and framing are only included when listed in the accepted quote.
+
+Cancellation
+If you need to cancel, contact the studio as early as possible. Deposit refunds depend on the work already completed and the terms agreed for the commission.`;
+
 export default function LegalPage({ type }) {
   const page = usePageContent('Legal');
-  const privacy = type === 'privacy';
-  const title = privacy ? (page.privacy_title || 'Privacy Policy') : (page.terms_title || 'Terms of Service');
-  const body = privacy
-    ? (page.privacy_body || PRIVACY_DEFAULT)
-    : (page.terms_body || TERMS_DEFAULT);
+  const definitions = {
+    privacy: { title: page.privacy_title || 'Privacy Policy', body: page.privacy_body || PRIVACY_DEFAULT },
+    terms: { title: page.terms_title || 'Terms of Service', body: page.terms_body || TERMS_DEFAULT },
+    delivery: { title: page.delivery_title || 'Delivery & Returns', body: page.delivery_body || DELIVERY_DEFAULT },
+    commission: { title: page.commission_policy_title || 'Commission Policy', body: page.commission_policy_body || COMMISSION_DEFAULT },
+  };
+  const { title, body } = definitions[type] || definitions.terms;
   return (
     <PageTransition>
       <main className="min-h-screen bg-obsidian px-6 pb-24 pt-32">

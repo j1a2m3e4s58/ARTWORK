@@ -199,6 +199,9 @@ export const studioClient = {
     verify: reference => request(`/api/payments/verify/${encodeURIComponent(reference)}`),
   },
   orders: {
+    track: ({ trackingCode, email }) => request('/api/orders/track', {
+      method: 'POST', body: JSON.stringify({ trackingCode, email }),
+    }),
     cancel: id => request(`/api/orders/${id}/cancel`, { method: 'POST' }),
     submitPaymentProof: (id, proof) => request(`/api/orders/${id}/payment-proof`, {
       method: 'POST',

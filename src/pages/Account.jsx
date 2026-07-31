@@ -225,6 +225,7 @@ export default function Account() {
                         <p>Delivery: {order.deliveryZone?.name || order.deliveryMethod || 'To be confirmed'}</p>
                         <p>Payment: {String(order.paymentStatus || 'awaiting_payment').replaceAll('_', ' ')}</p>
                       </div>
+                      {(order.statusHistory || []).length > 0 && <details className="mt-3 border-t border-brass/10 pt-3 text-xs text-ivory/45"><summary className="cursor-pointer text-brass">View order progress</summary><ol className="mt-3 space-y-2 border-l border-brass/20 pl-3">{order.statusHistory.map((entry, index) => <li key={`${entry.status}-${entry.at}-${index}`}><span className="capitalize text-ivory/70">{String(entry.status || '').replaceAll('_', ' ')}</span>{entry.at && <span className="ml-2 text-ivory/30">{new Date(entry.at).toLocaleString()}</span>}</li>)}</ol></details>}
                       <strong className="mt-3 block font-display text-xl text-ivory">{formatMoney(order.total, order.currency)}</strong>
                       {order.paymentMethod === 'paystack' && !['paid', 'refunded'].includes(order.paymentStatus) && (
                         <button onClick={() => continueSecurePayment(order)} className="mt-3 flex min-h-10 w-full items-center justify-center gap-2 bg-brass px-3 text-xs text-obsidian">

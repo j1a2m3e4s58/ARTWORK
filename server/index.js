@@ -1759,6 +1759,33 @@ app.get('/api/payments/verify/:reference', requireVerifiedUser, async (req, res)
   }
 });
 
+// A customer can check an order without signing in, but must know both the
+// tracking code and the email used at checkout.  Only safe fulfilment fields
+// are returned; addresses, payment references and uploaded files stay private.
+app.post('/api/orders/track', authLimiter, async (req, res) => {
+  const trackingCode = String(req.body?.trackingCode || '').trim().toUpperCase();
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  if (!trackingCode || !email) return res.status(400).json({ error: 'Enter both your tracking code and checkout email.' });
+  const order = db.data.Order.find(item => (
+    !item.deleted_at
+    && String(item.trackingCode || '').toUpperCase() === trackingCode
+    && String(item.accountEmail || '').trim().toLowerCase() === email
+  ));
+  if (!order) return res.status(404).json({ error: 'No order matches that tracking code and email.' });
+  res.json({
+    trackingCode: order.trackingCode,
+    createdDate: order.created_date,
+    status: order.status,
+    paymentStatus: order.paymentStatus,
+    paymentMethod: order.paymentMethod,
+    deliveryZone: order.deliveryZone ? { name: order.deliveryZone.name, eta: order.deliveryZone.eta } : null,
+    total: order.total,
+    currency: order.currency || 'GHS',
+    items: (order.items || []).map(item => ({ title: item.title, qty: item.qty })),
+    statusHistory: (order.statusHistory || []).map(item => ({ status: item.status, at: item.at })),
+  });
+});
+
 app.post('/api/orders/:id/cancel', requireVerifiedUser, mutationLimiter, async (req, res) => {
   const order = db.data.Order.find(item => item.id === req.params.id && item.userId === req.user.id && !item.deleted_at);
   if (!order) return res.status(404).json({ error: 'Order not found.' });

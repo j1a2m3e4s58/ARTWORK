@@ -57,6 +57,10 @@ const PAGE_CONTENT_DEFAULTS = [
   { key: 'privacy_body', label: 'Privacy Policy Text', value: 'We collect account, message, and commission information only to provide studio services. We do not sell personal information.', group: 'Legal Pages', page: 'Legal' },
   { key: 'terms_title', label: 'Terms Page Title', value: 'Terms of Service', group: 'Legal Pages', page: 'Legal' },
   { key: 'terms_body', label: 'Terms of Service Text', value: 'By using Reigns Atelier, you agree to provide accurate information and respect the artist’s intellectual property and commission terms.', group: 'Legal Pages', page: 'Legal' },
+  { key: 'delivery_title', label: 'Delivery & Returns Title', value: 'Delivery & Returns', group: 'Legal Pages', page: 'Legal' },
+  { key: 'delivery_body', label: 'Delivery & Returns Text', value: 'Delivery zones, fees and estimated delivery times are shown at checkout. Contact the studio promptly if an item arrives damaged or incorrect.', group: 'Legal Pages', page: 'Legal' },
+  { key: 'commission_policy_title', label: 'Commission Policy Title', value: 'Commission Policy', group: 'Legal Pages', page: 'Legal' },
+  { key: 'commission_policy_body', label: 'Commission Policy Text', value: 'The studio confirms scope, price, timeline, revisions and payment arrangement before commissioned work begins.', group: 'Legal Pages', page: 'Legal' },
   // Home page
   { key: 'hero_title', label: 'Hero Title', value: 'Reigns Atelier', group: 'Home Page', page: 'Home' },
   { key: 'hero_subtitle', label: 'Hero Subtitle', value: 'Where imagination bleeds onto canvas. Fine art portraits, digital masterpieces, and bespoke commissions crafted with devotion.', group: 'Home Page', page: 'Home' },
