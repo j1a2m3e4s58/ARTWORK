@@ -1,4 +1,4 @@
-const CACHE = 'reigns-atelier-v6';
+const CACHE = 'reigns-atelier-v7';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/brand/reigns-app-icon-192.png', '/brand/reigns-app-icon-512.png'];
 
 self.addEventListener('install', event => {
@@ -17,6 +17,24 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('message', event => {
   if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+// Push events are deliberately handled here so the installed app can show
+// alerts even while it is not open once the studio enables its web-push keys.
+self.addEventListener('push', event => {
+  const payload = event.data?.json?.() || {};
+  const title = payload.title || 'Reigns Atelier';
+  event.waitUntil(self.registration.showNotification(title, {
+    body: payload.body || 'You have a new studio action to review.',
+    icon: '/brand/reigns-app-icon-192.png',
+    badge: '/brand/reigns-app-icon-192.png',
+    data: { url: payload.url || '/admin?section=alerts' },
+  }));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(clients.openWindow(event.notification.data?.url || '/admin?section=alerts'));
 });
 
 self.addEventListener('fetch', event => {

@@ -422,6 +422,15 @@ async function audit(user, action, entity, entityId, details = {}) {
   });
 }
 
+function notifyStudioStaff({ title, message, section, entity, entityId, priority = 'normal' }) {
+  const recipients = db.data.User.filter(user => staffRoles.has(user.role) && user.status === 'active' && !user.deleted_at);
+  recipients.forEach(user => db.data.Notification.push({
+    id: newId(), userId: user.id, type: 'studio.action', title: String(title).slice(0, 140),
+    message: String(message).slice(0, 500), section, entity, entityId, priority,
+    read: false, created_date: now(),
+  }));
+}
+
 async function deliverEmail(message, { queueOnFailure = true } = {}) {
   const delivery = await sendEmail(message);
   if (!delivery.delivered && queueOnFailure) {
@@ -1684,6 +1693,19 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
     }
   }
   db.data[name].push(record);
+  if (name === 'Message') {
+    notifyStudioStaff({ title: 'New customer message', message: `${record.name || record.email || 'A customer'} sent a message that needs a reply.`, section: 'inbox', entity: name, entityId: record.id, priority: 'high' });
+  }
+  if (name === 'CommissionRequest') {
+    notifyStudioStaff({ title: 'New commission request', message: `${record.name || 'A customer'} requested a ${record.artworkType || 'new'} commission.`, section: 'commissions', entity: name, entityId: record.id, priority: 'high' });
+  }
+  if (name === 'InternshipApplication') {
+    notifyStudioStaff({ title: 'New internship application', message: `${record.name || 'An applicant'} submitted an internship application.`, section: 'internships', entity: name, entityId: record.id, priority: 'normal' });
+  }
+  if (name === 'Order') {
+    const quote = record.deliveryQuoteRequested;
+    notifyStudioStaff({ title: quote ? 'Delivery quote required' : 'New shop order', message: quote ? `${record.shippingAddress?.recipientName || 'A customer'} needs a custom delivery quote for ${record.trackingCode}.` : `${record.shippingAddress?.recipientName || 'A customer'} placed order ${record.trackingCode}.`, section: 'orders', entity: name, entityId: record.id, priority: quote ? 'high' : 'normal' });
+  }
   if (name === 'CommissionRequest') {
     record.confirmationDelivery = await deliverEmail({
       to: record.email,
@@ -1826,6 +1848,14 @@ app.post('/api/orders/:id/payment-proof', requireVerifiedUser, mutationLimiter, 
   order.paymentStatus = 'payment_submitted';
   order.proofSubmittedAt = now();
   order.updated_date = now();
+  notifyStudioStaff({
+    title: 'Payment proof submitted',
+    message: `${order.shippingAddress?.recipientName || order.accountEmail || 'A customer'} submitted payment proof for ${order.trackingCode}.`,
+    section: 'orders',
+    entity: 'Order',
+    entityId: order.id,
+    priority: 'high',
+  });
   await audit(req.user, 'order.payment_proof_submitted', 'Order', order.id);
   await save();
   res.json(order);
@@ -2029,6 +2059,38 @@ app.delete('/api/admin/media/:id/purge', requireAdmin, mutationLimiter, async (r
   await audit(req.user, 'media.purged', 'Media', media.id, { provider: media.provider });
   await save();
   res.json({ success: true });
+});
+
+app.post('/api/admin/recycle-bin/purge', requireAdmin, mutationLimiter, async (req, res) => {
+  const allowedEntities = new Set(['Artwork', 'HeroSlide', 'Media', 'ShopProduct', 'Testimonial', 'Video', 'BlogPost']);
+  const requested = Array.isArray(req.body.items) ? req.body.items : [];
+  if (!requested.length) return res.status(400).json({ error: 'Select at least one recycle-bin item to permanently delete.' });
+
+  let purged = 0;
+  for (const entry of requested) {
+    const entity = String(entry?.entity || '');
+    const id = String(entry?.id || '');
+    if (!allowedEntities.has(entity) || !id) continue;
+    const record = db.data[entity]?.find(item => item.id === id && item.deleted_at);
+    if (!record) continue;
+    if (entity === 'Media') {
+      await deleteStoredFile({ publicId: record.publicId, resourceType: record.resourceType, uploadDir });
+    }
+    db.data[entity] = db.data[entity].filter(item => item.id !== id);
+    purged += 1;
+  }
+  await audit(req.user, 'recycle_bin.purged', 'RecycleBin', null, { purged });
+  await save();
+  res.json({ success: true, purged });
+});
+
+app.post('/api/notifications/:id/read', requireStaff, mutationLimiter, async (req, res) => {
+  const notification = db.data.Notification.find(item => item.id === req.params.id && item.userId === req.user.id && !item.deleted_at);
+  if (!notification) return res.status(404).json({ error: 'Notification not found.' });
+  notification.read = true;
+  notification.readAt = now();
+  await save();
+  res.json(notification);
 });
 
 app.patch('/api/account/profile', requireUser, mutationLimiter, async (req, res) => {

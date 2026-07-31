@@ -97,6 +97,9 @@ export const studioClient = {
     purgeMedia(id) {
       return request(`/api/admin/media/${id}/purge`, { method: 'DELETE' });
     },
+    purgeRecycleBin(items) {
+      return request('/api/admin/recycle-bin/purge', { method: 'POST', body: JSON.stringify({ items }) });
+    },
     testEmail() {
       return request('/api/admin/test-email', { method: 'POST' });
     },
@@ -110,6 +113,11 @@ export const studioClient = {
   messages: {
     reply(id, text) {
       return request(`/api/messages/${id}/reply`, { method: 'POST', body: JSON.stringify({ text }) });
+    },
+  },
+  notifications: {
+    markRead(id) {
+      return request(`/api/notifications/${id}/read`, { method: 'POST' });
     },
   },
   artworks: {

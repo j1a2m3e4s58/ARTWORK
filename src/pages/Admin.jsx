@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Image, ShoppingBag, MessageSquare, BookOpen,
-  Users, Plus, Trash2, Pencil, Video, FileText, X, Check, Settings, Star, Download, MoreHorizontal, PackageCheck, Activity, PanelsTopLeft, Library, ArchiveRestore, Truck
+  Users, Plus, Trash2, Pencil, Video, FileText, X, Check, Settings, Star, Download, MoreHorizontal, PackageCheck, Activity, PanelsTopLeft, Library, ArchiveRestore, Truck, Bell
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import PageTransition from '@/components/PageTransition';
@@ -32,6 +32,7 @@ import { DEFAULT_STUDIO_OPTIONS, parseStudioOptions } from '@/lib/studioOptions'
 
 const allTabs = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard, group: 'Dashboard' },
+  { id: 'alerts', label: 'Action Alerts', icon: Bell, group: 'Dashboard' },
   { id: 'gallery', label: 'Gallery', icon: Image, group: 'Content' },
   { id: 'banners', label: 'Home Banners', icon: PanelsTopLeft, group: 'Content' },
   { id: 'media', label: 'Media Library', icon: Library, group: 'Content' },
@@ -68,8 +69,8 @@ const STATUS_COLORS = {
 
 const ROLE_TABS = {
   admin: allTabs.map(tab => tab.id),
-  editor: ['overview', 'gallery', 'banners', 'media', 'recycle', 'videos', 'shop', 'testimonials', 'quotes', 'pages', 'blog', 'commission-packages', 'commission-form', 'internships'],
-  support: ['overview', 'inbox', 'commissions', 'orders'],
+  editor: ['overview', 'alerts', 'gallery', 'banners', 'media', 'recycle', 'videos', 'shop', 'testimonials', 'quotes', 'pages', 'blog', 'commission-packages', 'commission-form', 'internships'],
+  support: ['overview', 'alerts', 'inbox', 'commissions', 'orders'],
 };
 
 function ConfirmDelete({ onConfirm, onCancel }) {
@@ -168,7 +169,11 @@ export default function Admin() {
   const [newVideo, setNewVideo] = useState({ title: '', videoUrl: '', thumbnailUrl: '', category: DEFAULT_STUDIO_OPTIONS.videoCategories[0], description: '', duration: '', isFeatured: false, status: 'published' });
   const [videoError, setVideoError] = useState('');
   const [newArtwork, setNewArtwork] = useState({ title: '', category: DEFAULT_STUDIO_OPTIONS.artworkCategories[0], imageUrl: '', medium: '', description: '', price: '', status: 'draft' });
+  const [notifications, setNotifications] = useState([]);
+  const [notificationPermission, setNotificationPermission] = useState(() => typeof window !== 'undefined' && 'Notification' in window ? window.Notification.permission : 'unsupported');
+  const seenAlertIds = useRef(new Set());
   const pendingMessageCount = messages.filter(message => !['replied', 'archived', 'spam'].includes(message.status)).length;
+  const actionAlerts = notifications.filter(item => item.userId === user?.id && !item.read).sort((a, b) => String(b.created_date).localeCompare(String(a.created_date)));
 
   const selectTab = id => {
     if (!tabs.some(tab => tab.id === id)) return;
@@ -180,6 +185,22 @@ export default function Admin() {
       else next.set('section', id);
       return next;
     });
+  };
+
+  const openAlert = async alert => {
+    try { await studioClient.notifications.markRead(alert.id); } catch { /* the alert is still useful even if the read marker is delayed */ }
+    setNotifications(current => current.map(item => item.id === alert.id ? { ...item, read: true } : item));
+    selectTab(alert.section || 'overview');
+  };
+
+  const enableDesktopAlerts = async () => {
+    if (!('Notification' in window)) {
+      setTabError('This browser does not support desktop notifications.');
+      return;
+    }
+    const permission = await window.Notification.requestPermission();
+    setNotificationPermission(permission);
+    if (permission !== 'granted') setTabError('Notification permission was not granted. You can enable it later in your browser site settings.');
   };
 
   useEffect(() => {
@@ -235,6 +256,40 @@ export default function Admin() {
       window.clearInterval(poller);
     };
   }, [user?.role]);
+
+  useEffect(() => {
+    let active = true;
+    const loadAlerts = async () => {
+      try {
+        const items = await studioClient.entities.Notification.list('-created_date', 100);
+        if (!active) return;
+        const mine = items.filter(item => item.userId === user?.id);
+        const firstLoad = seenAlertIds.current.size === 0;
+        const newUnread = mine.filter(item => !item.read && !seenAlertIds.current.has(item.id));
+        mine.forEach(item => seenAlertIds.current.add(item.id));
+        setNotifications(mine);
+        if (!firstLoad && notificationPermission === 'granted') {
+          newUnread.forEach(item => {
+            const notification = new window.Notification(`Reigns Atelier — ${item.title}`, {
+              body: item.message,
+              icon: '/brand/reigns-app-icon-192.png',
+              tag: `atelier-action-${item.id}`,
+            });
+            notification.onclick = () => {
+              window.focus();
+              openAlert(item);
+              notification.close();
+            };
+          });
+        }
+      } catch (error) {
+        console.error('Unable to load studio action alerts:', error);
+      }
+    };
+    loadAlerts();
+    const poller = window.setInterval(loadAlerts, 30000);
+    return () => { active = false; window.clearInterval(poller); };
+  }, [user?.id, notificationPermission]);
 
   useEffect(() => {
     let active = true;
@@ -362,11 +417,11 @@ export default function Admin() {
                     }`}>
                     <Icon size={15} />
                     <span className="font-tight text-sm">{label}</span>
-                    {id === 'inbox' && pendingMessageCount > 0 && (
+                    {(id === 'inbox' && pendingMessageCount > 0) || (id === 'alerts' && actionAlerts.length > 0) ? (
                       <span className="ml-auto min-w-5 rounded-full bg-brass px-1.5 py-0.5 text-center text-[10px] font-semibold text-obsidian">
-                        {pendingMessageCount}
+                        {id === 'alerts' ? actionAlerts.length : pendingMessageCount}
                       </span>
-                    )}
+                    ) : null}
                   </button>
                 ))}
               </section>
@@ -376,14 +431,14 @@ export default function Admin() {
 
         {/* Mobile bottom bar */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-carbon/95 backdrop-blur-xl border-t border-brass/10 z-50 flex px-2 pb-[max(.4rem,env(safe-area-inset-bottom))]">
-          {tabs.filter(tab => ['overview', 'inbox', 'commissions', 'users'].includes(tab.id)).map(({ id, label, icon: Icon }) => (
+          {tabs.filter(tab => ['overview', 'alerts', 'inbox', 'commissions'].includes(tab.id)).map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => selectTab(id)}
               aria-current={activeTab === id ? 'page' : undefined}
               className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-2 transition-colors ${activeTab === id ? 'text-brass' : 'text-ivory/30'}`}>
               <Icon size={17} /><span className="text-[9px] font-tight">{label}</span>
-              {id === 'inbox' && pendingMessageCount > 0 && (
+              {((id === 'inbox' && pendingMessageCount > 0) || (id === 'alerts' && actionAlerts.length > 0)) && (
                 <span className="absolute right-[24%] top-1 min-w-4 rounded-full bg-brass px-1 text-center text-[9px] font-semibold text-obsidian">
-                  {pendingMessageCount}
+                  {id === 'alerts' ? actionAlerts.length : pendingMessageCount}
                 </span>
               )}
             </button>
@@ -412,9 +467,9 @@ export default function Admin() {
                               aria-current={activeTab === id ? 'page' : undefined}
                               className={`flex min-h-12 items-center gap-3 rounded-xl border px-3 py-3 text-left text-sm ${activeTab === id ? 'border-brass/30 bg-brass/10 text-brass' : 'border-ivory/5 text-ivory/55'}`}>
                               <Icon size={16} /> {label}
-                              {id === 'inbox' && pendingMessageCount > 0 && (
+                              {((id === 'inbox' && pendingMessageCount > 0) || (id === 'alerts' && actionAlerts.length > 0)) && (
                                 <span className="ml-auto min-w-5 rounded-full bg-brass px-1.5 text-center text-[10px] font-semibold text-obsidian">
-                                  {pendingMessageCount}
+                                  {id === 'alerts' ? actionAlerts.length : pendingMessageCount}
                                 </span>
                               )}
                             </button>
@@ -449,6 +504,7 @@ export default function Admin() {
               <h1 className="font-display text-4xl text-ivory mb-8">Dashboard</h1>
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
                 {[
+                  { label: 'Action alerts', value: actionAlerts.length, color: actionAlerts.length ? 'text-red-300' : 'text-ivory/35', tab: 'alerts' },
                   { label: 'Messages needing reply', value: pendingMessageCount, color: pendingMessageCount ? 'text-brass' : 'text-ivory/35', tab: 'inbox' },
                   { label: 'Artworks', value: artworks.length || '—', color: 'text-brass', tab: 'gallery' },
                   { label: 'Videos', value: videos.length || '—', color: 'text-soft-pink', tab: 'videos' },
@@ -462,9 +518,23 @@ export default function Admin() {
                   </div>
                 ))}
               </div>
+              <section className="mb-6 border border-brass/15 bg-carbon">
+                <div className="flex flex-col gap-3 border-b border-brass/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div><h2 className="flex items-center gap-2 font-display text-2xl text-ivory"><Bell size={19} className="text-brass" /> Priority action alerts</h2><p className="mt-1 text-xs text-ivory/40">Open an alert to go directly to the customer request.</p></div>
+                  {notificationPermission !== 'granted' && <button onClick={enableDesktopAlerts} className="min-h-10 border border-brass/25 px-3 text-xs text-brass hover:border-brass/50">Enable desktop alerts</button>}
+                </div>
+                {actionAlerts.length ? <div className="divide-y divide-brass/10">{actionAlerts.slice(0, 5).map(alert => <button key={alert.id} onClick={() => openAlert(alert)} className="flex w-full items-start gap-3 p-4 text-left transition-colors hover:bg-brass/5"><span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${alert.priority === 'high' ? 'bg-red-400' : 'bg-brass'}`} /><span className="min-w-0 flex-1"><span className="block text-sm text-ivory">{alert.title}</span><span className="mt-1 block text-xs text-ivory/45">{alert.message}</span></span><span className="shrink-0 text-[10px] uppercase tracking-widest text-brass">Open</span></button>)}</div> : <p className="p-6 text-sm text-ivory/40">No customer actions need attention right now.</p>}
+              </section>
               <div className="bg-carbon border border-brass/10 p-6 text-ivory/50 text-sm leading-relaxed">
                 Welcome back. Use the admin navigation to manage artworks, videos, commissions, shop products, testimonials, quotes, messages, users, page content, subscribers, and site settings.
               </div>
+            </div>
+          )}
+
+          {activeTab === 'alerts' && (
+            <div>
+              <div className="mb-6 flex items-end justify-between gap-4"><div><h1 className="font-display text-4xl text-ivory">Action Alerts</h1><p className="mt-2 text-sm text-ivory/45">Customer requests and important studio actions, newest first.</p></div>{notificationPermission !== 'granted' && <button onClick={enableDesktopAlerts} className="min-h-10 border border-brass/25 px-3 text-xs text-brass">Enable desktop alerts</button>}</div>
+              <div className="space-y-2">{actionAlerts.map(alert => <button key={alert.id} onClick={() => openAlert(alert)} className="flex w-full items-start gap-3 border border-brass/10 bg-carbon p-4 text-left hover:border-brass/30"><span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${alert.priority === 'high' ? 'bg-red-400' : 'bg-brass'}`} /><span className="min-w-0 flex-1"><span className="block text-sm text-ivory">{alert.title}</span><span className="mt-1 block text-xs text-ivory/45">{alert.message}</span><span className="mt-2 block text-[10px] uppercase tracking-widest text-ivory/30">{new Date(alert.created_date).toLocaleString()}</span></span><span className="text-xs text-brass">Open</span></button>)}{!actionAlerts.length && <p className="border border-brass/10 bg-carbon py-16 text-center text-sm text-ivory/40">No outstanding action alerts.</p>}</div>
             </div>
           )}
 
