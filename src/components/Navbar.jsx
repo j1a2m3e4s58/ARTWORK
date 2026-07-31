@@ -1,10 +1,11 @@
 ﻿import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, ArrowUpRight, UserRound, ShieldCheck } from 'lucide-react';
+import { Menu, X, ArrowUpRight, UserRound, ShieldCheck, Search } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
 import InstallAppButton from './InstallAppButton';
 import { useAuth } from '@/lib/AuthContext';
+import GlobalSearch from './GlobalSearch';
 
 const navLinks = [
   { label: 'Home', path: '/' },
@@ -33,6 +34,7 @@ export default function Navbar() {
   const visibleLinks = [...visiblePrimaryLinks, ...visibleSecondaryLinks];
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const location = useLocation();
   const menuButtonRef = useRef(null);
   const logoPressTimer = useRef(null);
@@ -146,6 +148,7 @@ export default function Navbar() {
 
           {/* Right actions */}
           <div className="flex items-center gap-4">
+            <button onClick={() => setSearchOpen(true)} aria-label="Search the site" className="flex h-10 w-10 items-center justify-center text-ivory/65 transition-colors hover:text-brass"><Search size={19} /></button>
             {!user ? (
               <div className="hidden lg:flex items-center gap-3">
                 <Link to="/login" className="font-tight text-xs text-ivory/55 hover:text-brass">Log in</Link>
@@ -264,6 +267,7 @@ export default function Navbar() {
           </motion.div>
         )}
       </AnimatePresence>
+      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     </>
   );
 }

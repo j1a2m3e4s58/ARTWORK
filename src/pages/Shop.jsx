@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Heart, ShoppingBag } from 'lucide-react';
+import { Heart, List, ShoppingBag, X } from 'lucide-react';
 import CommerceCheckout from '@/components/shop/CommerceCheckout';
 import PageTransition from '@/components/PageTransition';
 import ResourceFeedback from '@/components/ResourceFeedback';
@@ -37,6 +37,7 @@ export default function Shop() {
   });
   const [wishlist, setWishlist] = useState([]);
   const [cartOpen, setCartOpen] = useState(false);
+  const [catalogueOpen, setCatalogueOpen] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('reigns_art_shop_cart', JSON.stringify(cart));
@@ -75,10 +76,10 @@ export default function Shop() {
               <ScrollReveal delay={0.1}><h1 className="mt-2 font-display text-5xl text-ivory md:text-7xl">{page.shop_title || commerce.storeName || 'Art Shop'}</h1></ScrollReveal>
               <p className="mt-4 max-w-2xl text-sm leading-relaxed text-ivory/40 md:text-base">{page.shop_subtitle || commerce.storeSubtitle}</p>
             </div>
-            <button onClick={() => setCartOpen(true)} className="relative flex min-h-12 w-fit items-center gap-2 border border-brass/30 px-5 text-sm text-ivory/70 transition-colors hover:border-brass/60 hover:text-brass">
+            <div className="flex flex-wrap gap-2"><button onClick={() => setCatalogueOpen(true)} className="flex min-h-12 items-center gap-2 border border-brass/30 px-4 text-sm text-brass transition-colors hover:border-brass/60"><List size={18} /> Art catalogue</button><button onClick={() => setCartOpen(true)} className="relative flex min-h-12 w-fit items-center gap-2 border border-brass/30 px-5 text-sm text-ivory/70 transition-colors hover:border-brass/60 hover:text-brass">
               <ShoppingBag size={18} /> Your Bag
               {cartCount > 0 && <span className="absolute -right-2 -top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-brass px-1 text-xs font-semibold text-obsidian">{cartCount}</span>}
-            </button>
+            </button></div>
           </div>
         </header>
 
@@ -118,6 +119,7 @@ export default function Shop() {
       </main>
 
       <CommerceCheckout open={cartOpen} onClose={() => setCartOpen(false)} cart={cart} setCart={setCart} user={user} settings={settings} commerce={commerce} formatMoney={formatMoney} />
+      <AnimatePresence>{catalogueOpen && <motion.div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><button aria-label="Close art catalogue" className="absolute inset-0 bg-black/75 backdrop-blur-md" onClick={() => setCatalogueOpen(false)} /><motion.section role="dialog" aria-modal="true" aria-label="Art catalogue and prices" className="relative flex max-h-[88dvh] w-full max-w-3xl flex-col border border-brass/25 bg-carbon shadow-2xl" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}><header className="flex items-center justify-between border-b border-brass/15 p-5 sm:p-6"><div><p className="text-[10px] uppercase tracking-[0.28em] text-brass">Studio store</p><h2 className="mt-1 font-display text-3xl text-ivory">Art catalogue & prices</h2><p className="mt-1 text-sm text-ivory/45">Current work, materials, prints and studio pieces.</p></div><button onClick={() => setCatalogueOpen(false)} className="flex h-11 w-11 items-center justify-center text-ivory/60 hover:text-brass"><X size={21} /></button></header><div className="min-h-0 space-y-2 overflow-y-auto p-4 sm:p-6">{products.map(product => <div key={product.id} className="flex gap-3 border border-brass/10 bg-obsidian/50 p-3"><img src={imageVariant(product.imageUrl, 160)} alt="" className="h-16 w-16 shrink-0 object-cover" loading="lazy"/><div className="min-w-0 flex-1"><div className="flex justify-between gap-3"><p className="truncate text-sm text-ivory">{product.title}</p><strong className="shrink-0 text-sm text-brass">{formatMoney(product.price)}</strong></div><p className="mt-1 text-xs text-ivory/40">{product.type || 'Art item'}{product.dimensions ? ` · ${product.dimensions}` : ''}</p></div></div>)}{!products.length && <p className="py-12 text-center text-sm text-ivory/40">The catalogue is being prepared.</p>}</div></motion.section></motion.div>}</AnimatePresence>
     </PageTransition>
   );
 }

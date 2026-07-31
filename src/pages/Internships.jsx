@@ -6,6 +6,7 @@ import ScrollReveal from '@/components/ScrollReveal';
 import { usePageContent } from '@/hooks/usePageContent';
 import { useAuth } from '@/lib/AuthContext';
 import { studioClient } from '@/api/studioClient';
+import DocumentPreviewModal from '@/components/DocumentPreviewModal';
 
 const defaults = {
   title: 'Learn inside the atelier',
@@ -36,6 +37,7 @@ export default function Internships() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const content = key => page[`internship_${key}`] || defaults[key];
   const set = (key, value) => setForm(current => ({ ...current, [key]: value }));
 
@@ -72,10 +74,11 @@ export default function Internships() {
         <label className="mt-4 block text-xs uppercase tracking-wider text-ivory/45">Why would you like this internship? *<textarea required minLength="20" value={form.interests} onChange={event => set('interests', event.target.value)} rows={5} className="mt-2 w-full border border-brass/15 bg-obsidian px-3 py-3 text-sm normal-case tracking-normal text-ivory" /></label>
         <label className="mt-4 block text-xs uppercase tracking-wider text-ivory/45">Notice or extra information<textarea value={form.notice} onChange={event => set('notice', event.target.value)} rows={3} placeholder="For example: school requirements, preferred dates, accessibility needs, or anything the studio should know." className="mt-2 w-full border border-brass/15 bg-obsidian px-3 py-3 text-sm normal-case tracking-normal text-ivory" /></label>
         <input ref={inputRef} type="file" accept=".pdf,image/*" className="hidden" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; upload(file); }} />
-        {letter && <div className="mt-5 flex min-w-0 items-center gap-4 border border-green-400/25 bg-green-400/[0.06] p-4" role="status"><div className="flex h-14 w-12 shrink-0 flex-col items-center justify-center border border-red-300/30 bg-red-400/10 text-red-200"><FileText size={22} /><span className="mt-1 text-[9px] font-bold">{letter.mime === 'application/pdf' ? 'PDF' : 'FILE'}</span></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-ivory">{letter.name}</p><p className="mt-1 text-xs text-ivory/45">{displaySize(letter.bytes)} · Uploaded and ready to send</p>{letter.url && <a href={letter.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-xs text-brass hover:underline">Preview document</a>}</div><FileCheck2 className="shrink-0 text-green-300" size={21} aria-label="File uploaded" /></div>}
+        {letter && <div className="mt-5 flex min-w-0 items-center gap-4 border border-green-400/25 bg-green-400/[0.06] p-4" role="status"><div className="flex h-14 w-12 shrink-0 flex-col items-center justify-center border border-red-300/30 bg-red-400/10 text-red-200"><FileText size={22} /><span className="mt-1 text-[9px] font-bold">{letter.mime === 'application/pdf' ? 'PDF' : 'FILE'}</span></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-ivory">{letter.name}</p><p className="mt-1 text-xs text-ivory/45">{displaySize(letter.bytes)} · Uploaded and ready to send</p>{letter.url && <button type="button" onClick={() => setPreviewOpen(true)} className="mt-2 inline-block text-xs text-brass hover:underline">Preview document</button>}</div><FileCheck2 className="shrink-0 text-green-300" size={21} aria-label="File uploaded" /></div>}
         <button type="button" onClick={() => inputRef.current?.click()} className="mt-5 flex w-full items-center justify-center gap-2 border border-dashed border-brass/30 p-4 text-sm text-brass hover:bg-brass/5">{uploading ? <Loader2 className="animate-spin" size={17} /> : <Upload size={17} />}{uploading ? 'Uploading document…' : letter ? 'Replace uploaded file' : content('letterLabel')}</button>
         <button disabled={saving || uploading} className="mt-5 flex w-full items-center justify-center gap-2 bg-brass py-4 text-sm uppercase tracking-widest text-obsidian disabled:opacity-50"><Send size={16} />{saving ? 'Sending…' : user ? 'Send application' : 'Sign in to apply'}</button>
       </form>
     </section>
+    <DocumentPreviewModal open={previewOpen} onClose={() => setPreviewOpen(false)} url={letter?.url} name={letter?.name} mime={letter?.mime} />
   </main></PageTransition>;
 }
