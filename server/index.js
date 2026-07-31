@@ -1964,10 +1964,10 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
   if (staffRoles.has(req.user.role) && !hasAdminAccess(req, req.user)) {
     return res.status(403).json({ error: 'Re-enter your password to unlock Studio Control.', code: 'admin_unlock_required' });
   }
-  if (!req.file) return res.status(400).json({ error: 'Choose a supported image or video.' });
+  if (!req.file) return res.status(400).json({ error: 'Choose a supported image, video, or PDF file.' });
   const detected = await fileTypeFromBuffer(req.file.buffer);
-  const allowed = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'video/mp4', 'video/webm']);
-  if (!detected || !allowed.has(detected.mime)) return res.status(400).json({ error: 'Only JPG, PNG, WebP, AVIF, MP4 and WebM files are accepted.' });
+  const allowed = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'video/mp4', 'video/webm', 'application/pdf']);
+  if (!detected || !allowed.has(detected.mime)) return res.status(400).json({ error: 'Only PDF, JPG, PNG, WebP, AVIF, MP4 and WebM files are accepted.' });
   const fileId = newId();
   const stored = await storeFile({ buffer: req.file.buffer, mime: detected.mime, extension: detected.ext, uploadDir, id: fileId });
   const media = {
