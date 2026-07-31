@@ -127,10 +127,10 @@ async function verifyHuman(req, res, next) {
   }
 }
 
-const publicRead = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
+const publicRead = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'PriceGuide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
 const authenticatedCreate = new Set(['CommissionRequest', 'InternshipApplication', 'Message', 'Order']);
 const staffRoles = new Set(['admin', 'editor', 'support']);
-const contentEntities = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'Media', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
+const contentEntities = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'Media', 'PriceGuide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
 const supportEntities = new Set(['CommissionRequest', 'InternshipApplication', 'Message', 'Order']);
 const hiddenUserFields = ({
   passwordHash, mfaSecret, pendingMfaSecret, mfaRecoveryCodeHashes,
@@ -341,6 +341,19 @@ function createOrderTrackingCode() {
   } while (db.data.Order.some(order => order.trackingCode === code));
   return code;
 }
+
+const safeOrderTrackingPayload = order => ({
+  trackingCode: order.trackingCode,
+  createdDate: order.created_date,
+  status: order.status,
+  paymentStatus: order.paymentStatus,
+  paymentMethod: order.paymentMethod,
+  deliveryZone: order.deliveryZone ? { name: order.deliveryZone.name, eta: order.deliveryZone.eta } : null,
+  total: order.total,
+  currency: order.currency || 'GHS',
+  items: (order.items || []).map(item => ({ title: item.title, qty: item.qty })),
+  statusHistory: (order.statusHistory || []).map(item => ({ status: item.status, at: item.at })),
+});
 
 async function confirmPaidOrder(order, payment, providerEventId) {
   if (order.paymentStatus === 'paid') return false;
@@ -648,6 +661,15 @@ async function ensureSeeds() {
       id: newId(), key, value, label, page: 'Settings',
       group: 'Navigation', created_date: now(),
     });
+  }
+  // Seed the supplied price guides once. The marker prevents a deleted guide
+  // from reappearing after a deployment; all later changes happen in Admin.
+  if (!db.data.SiteContent.some(item => item.page === 'Settings' && item.key === 'price_guides_seeded')) {
+    db.data.PriceGuide.push(
+      { id: newId(), title: 'Reigns Atelier Ultimate Price List', description: 'A complete studio guide to services, packages and prices.', fileUrl: '/price-guides/reigns-atelier-ultimate-price-list.pdf', status: 'published', sortOrder: 1, created_date: now() },
+      { id: newId(), title: 'Pencil Portrait Price List', description: 'Portrait drawing sizes, options and current prices.', fileUrl: '/price-guides/reigns-atelier-pencil-portrait-price-list.pdf', status: 'published', sortOrder: 2, created_date: now() },
+    );
+    db.data.SiteContent.push({ id: newId(), key: 'price_guides_seeded', value: 'true', label: 'Price guides initialised', page: 'Settings', group: 'System', created_date: now() });
   }
   const provenanceByHost = {
     'images.pexels.com': { name: 'Pexels', license: 'https://www.pexels.com/license/' },
@@ -1555,6 +1577,7 @@ app.get('/api/entities/:name', async (req, res) => {
       records = records.filter(record => record.contentStatus !== 'starter');
     }
     if (name === 'BlogPost') records = records.filter(record => record.status === 'published' || !record.status);
+    if (name === 'PriceGuide') records = records.filter(record => record.status === 'published' || !record.status);
     if (name === 'Testimonial') records = records.filter(record => record.status === 'approved');
     if (['Artwork', 'HeroSlide', 'ShopProduct', 'Video'].includes(name)) {
       records = records.filter(record => (
@@ -1683,6 +1706,7 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
     record.proofStatus = 'not_submitted';
     record.currency = paymentStatus.currency;
     record.trackingCode = createOrderTrackingCode();
+    record.trackingToken = randomBytes(24).toString('base64url');
     record.idempotencyKey = String(req.get('idempotency-key') || '').trim().slice(0, 120) || null;
     record.statusHistory = [{ status: 'pending', at: now(), actorId: user.id }];
     record.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -1794,18 +1818,15 @@ app.post('/api/orders/track', authLimiter, async (req, res) => {
     && String(item.accountEmail || '').trim().toLowerCase() === email
   ));
   if (!order) return res.status(404).json({ error: 'No order matches that tracking code and email.' });
-  res.json({
-    trackingCode: order.trackingCode,
-    createdDate: order.created_date,
-    status: order.status,
-    paymentStatus: order.paymentStatus,
-    paymentMethod: order.paymentMethod,
-    deliveryZone: order.deliveryZone ? { name: order.deliveryZone.name, eta: order.deliveryZone.eta } : null,
-    total: order.total,
-    currency: order.currency || 'GHS',
-    items: (order.items || []).map(item => ({ title: item.title, qty: item.qty })),
-    statusHistory: (order.statusHistory || []).map(item => ({ status: item.status, at: item.at })),
-  });
+  res.json(safeOrderTrackingPayload(order));
+});
+
+app.post('/api/orders/track-token', authLimiter, async (req, res) => {
+  const trackingToken = String(req.body?.trackingToken || '').trim();
+  if (!trackingToken) return res.status(400).json({ error: 'A secure tracking link is required.' });
+  const order = db.data.Order.find(item => !item.deleted_at && safeEqual(String(item.trackingToken || ''), trackingToken));
+  if (!order) return res.status(404).json({ error: 'This secure tracking link is no longer available. Use your tracking code and checkout email.' });
+  res.json(safeOrderTrackingPayload(order));
 });
 
 app.post('/api/orders/:id/cancel', requireVerifiedUser, mutationLimiter, async (req, res) => {
@@ -2007,6 +2028,25 @@ app.post('/api/artworks/:id/like', requireUser, mutationLimiter, async (req, res
   }
   await save();
   res.json({ liked: !existing, likes: artwork.likes });
+});
+
+// Shop wishlists are private to the signed-in customer and travel with their
+// account. Guests can still save locally until they choose to sign in.
+app.get('/api/wishlist', requireUser, (req, res) => {
+  res.json(Array.isArray(req.user.wishlistProductIds) ? req.user.wishlistProductIds : []);
+});
+
+app.post('/api/wishlist/:productId', requireUser, mutationLimiter, async (req, res) => {
+  const product = db.data.ShopProduct.find(item => item.id === req.params.productId && !item.deleted_at);
+  if (!product) return res.status(404).json({ error: 'Art shop item not found.' });
+  const saved = new Set(Array.isArray(req.user.wishlistProductIds) ? req.user.wishlistProductIds : []);
+  const requestedSaved = req.body?.saved;
+  const shouldSave = typeof requestedSaved === 'boolean' ? requestedSaved : !saved.has(product.id);
+  if (shouldSave) saved.add(product.id); else saved.delete(product.id);
+  req.user.wishlistProductIds = [...saved];
+  await audit(req.user, shouldSave ? 'wishlist.saved' : 'wishlist.removed', 'ShopProduct', product.id);
+  await save();
+  res.json(req.user.wishlistProductIds);
 });
 
 app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) => {

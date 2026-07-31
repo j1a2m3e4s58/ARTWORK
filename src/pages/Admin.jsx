@@ -27,6 +27,7 @@ import CommissionPackagesTab from '@/components/admin/CommissionPackagesTab';
 import CommissionRequestFormTab from '@/components/admin/CommissionRequestFormTab';
 import InternshipsTab from '@/components/admin/InternshipsTab';
 import CommerceSettingsTab from '@/components/admin/CommerceSettingsTab';
+import PriceGuidesTab from '@/components/admin/PriceGuidesTab';
 import ResponsiveSelect from '@/components/ResponsiveSelect';
 import { DEFAULT_STUDIO_OPTIONS, parseStudioOptions } from '@/lib/studioOptions';
 
@@ -42,6 +43,7 @@ const allTabs = [
   { id: 'pages', label: 'Page Content', icon: FileText, group: 'Content' },
   { id: 'blog', label: 'Blog', icon: BookOpen, group: 'Content' },
   { id: 'shop', label: 'Art Shop', icon: ShoppingBag, group: 'Sales' },
+  { id: 'price-guides', label: 'Price Guides', icon: FileText, group: 'Sales' },
   { id: 'orders', label: 'Orders', icon: PackageCheck, group: 'Sales' },
   { id: 'commerce', label: 'Delivery & Payments', icon: Truck, group: 'Sales' },
   { id: 'commissions', label: 'Commissions', icon: MessageSquare, group: 'Sales' },
@@ -69,7 +71,7 @@ const STATUS_COLORS = {
 
 const ROLE_TABS = {
   admin: allTabs.map(tab => tab.id),
-  editor: ['overview', 'alerts', 'gallery', 'banners', 'media', 'recycle', 'videos', 'shop', 'testimonials', 'quotes', 'pages', 'blog', 'commission-packages', 'commission-form', 'internships'],
+  editor: ['overview', 'alerts', 'gallery', 'banners', 'media', 'recycle', 'videos', 'shop', 'price-guides', 'testimonials', 'quotes', 'pages', 'blog', 'commission-packages', 'commission-form', 'internships'],
   support: ['overview', 'alerts', 'inbox', 'commissions', 'orders'],
 };
 
@@ -747,6 +749,7 @@ export default function Admin() {
           {activeTab === 'inbox' && <InboxTab messages={messages} setMessages={setMessages} />}
           {activeTab === 'orders' && <OrdersTab />}
           {activeTab === 'commerce' && <CommerceSettingsTab />}
+          {activeTab === 'price-guides' && <PriceGuidesTab />}
           {activeTab === 'users' && <UsersTab currentUser={user} />}
 
           {/* -- PAGE CONTENT -- */}

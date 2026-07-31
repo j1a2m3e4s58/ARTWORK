@@ -68,7 +68,7 @@ const createEntity = name => ({
 
 const entityNames = [
   'Artwork', 'AuditLog', 'BlogPost', 'CommissionRequest', 'InternshipApplication', 'HeroSlide', 'Media', 'Message', 'NewsletterSubscriber',
-  'Notification', 'Order', 'Outbox', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'User', 'Video',
+  'Notification', 'Order', 'Outbox', 'PriceGuide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'User', 'Video',
 ];
 
 const entities = Object.fromEntries(entityNames.map(name => [name, createEntity(name)]));
@@ -127,6 +127,10 @@ export const studioClient = {
     toggleLike(id) {
       return request(`/api/artworks/${id}/like`, { method: 'POST' });
     },
+  },
+  wishlist: {
+    list: () => request('/api/wishlist'),
+    set: (productId, saved) => request(`/api/wishlist/${encodeURIComponent(productId)}`, { method: 'POST', body: JSON.stringify({ saved }) }),
   },
   integrations: {
     Core: {
@@ -209,6 +213,9 @@ export const studioClient = {
   orders: {
     track: ({ trackingCode, email }) => request('/api/orders/track', {
       method: 'POST', body: JSON.stringify({ trackingCode, email }),
+    }),
+    trackByToken: trackingToken => request('/api/orders/track-token', {
+      method: 'POST', body: JSON.stringify({ trackingToken }),
     }),
     cancel: id => request(`/api/orders/${id}/cancel`, { method: 'POST' }),
     submitPaymentProof: (id, proof) => request(`/api/orders/${id}/payment-proof`, {

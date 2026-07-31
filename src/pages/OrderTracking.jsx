@@ -10,7 +10,7 @@ const money = (value, currency = 'GHS') => new Intl.NumberFormat('en-GH', { styl
 export default function OrderTracking() {
   const location = useLocation();
   const initial = new URLSearchParams(location.search);
-  const [form, setForm] = useState({ trackingCode: initial.get('code') || '', email: initial.get('email') || '' });
+  const [form, setForm] = useState({ trackingCode: initial.get('code') || '', email: '' });
   const [order, setOrder] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -30,11 +30,10 @@ export default function OrderTracking() {
 
   useEffect(() => {
     const query = new URLSearchParams(location.search);
-    const trackingCode = query.get('code') || '';
-    const email = query.get('email') || '';
-    if (!trackingCode || !email) return;
-    setForm({ trackingCode, email });
-    trackOrder({ trackingCode, email });
+    const trackingToken = query.get('token') || '';
+    if (!trackingToken) return;
+    setLoading(true); setError('');
+    studioClient.orders.trackByToken(trackingToken).then(setOrder).catch(requestError => setError(requestError.message || 'We could not open this order.')).finally(() => setLoading(false));
   }, [location.search, trackOrder]);
 
   const submit = event => {
@@ -47,7 +46,7 @@ export default function OrderTracking() {
       <header className="border border-brass/15 bg-carbon/70 p-5 sm:p-8">
         <p className="text-xs uppercase tracking-[.3em] text-brass/70">Customer care</p>
         <h1 className="mt-3 font-display text-5xl text-ivory sm:text-6xl">Track your order</h1>
-        <p className="mt-4 max-w-2xl text-sm leading-7 text-ivory/55">See the latest payment, studio preparation and delivery progress. A checkout link fills this form automatically; you can also search using your tracking code and checkout email.</p>
+        <p className="mt-4 max-w-2xl text-sm leading-7 text-ivory/55">See the latest payment, studio preparation and delivery progress. Your checkout confirmation opens a secure tracking link automatically; you can also search using your tracking code and checkout email.</p>
       </header>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]">

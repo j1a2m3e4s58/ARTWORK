@@ -20,9 +20,10 @@ export default function FileUploadField({ label, value, onChange, accept = 'imag
   const handleFile = async (file) => {
     if (!file) return;
     const isVideo = file.type.startsWith('video/');
-    const maxBytes = isVideo ? 75 * 1024 * 1024 : 10 * 1024 * 1024;
+    const isPdf = file.type === 'application/pdf';
+    const maxBytes = isVideo ? 75 * 1024 * 1024 : isPdf ? 20 * 1024 * 1024 : 10 * 1024 * 1024;
     if (file.size > maxBytes) {
-      setError(`${isVideo ? 'Videos' : 'Images'} must be ${isVideo ? '75 MB' : '10 MB'} or smaller.`);
+      setError(`${isVideo ? 'Videos' : isPdf ? 'PDFs' : 'Images'} must be ${isVideo ? '75 MB' : isPdf ? '20 MB' : '10 MB'} or smaller.`);
       return;
     }
     setUploading(true);
@@ -96,7 +97,7 @@ export default function FileUploadField({ label, value, onChange, accept = 'imag
       )}
 
       {/* Preview */}
-      {value && (accept.includes('image') || !accept.includes('video')) && (
+      {value && accept.includes('image') && (
         <img src={value} alt="" className="mt-2 h-20 w-auto object-cover border border-brass/10 opacity-70" onError={e => e.target.style.display = 'none'} />
       )}
       {value && accept.includes('video') && (
@@ -104,6 +105,7 @@ export default function FileUploadField({ label, value, onChange, accept = 'imag
           Your browser does not support this video preview.
         </video>
       )}
+      {value && accept.includes('pdf') && <a href={value} target="_blank" rel="noreferrer" className="mt-2 flex min-h-11 items-center border border-brass/15 bg-obsidian px-3 text-xs text-brass hover:border-brass/40">PDF selected — open preview</a>}
       {error && <p role="alert" className="mt-2 text-xs text-red-300">{error}</p>}
     </div>
   );

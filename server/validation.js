@@ -107,6 +107,11 @@ export const schemas = {
     imageUrl: safeUrl, dimensions: optionalText(100), description: optionalText(4000),
     isFeatured: z.boolean().optional().default(false), inventory: z.coerce.number().int().min(0).optional(),
   }).passthrough(),
+  PriceGuide: z.object({
+    title: text(240), description: optionalText(1000), fileUrl: safeUrl,
+    status: z.enum(['draft', 'published']).optional().default('draft'),
+    sortOrder: z.coerce.number().int().min(0).max(999).optional().default(0),
+  }).passthrough(),
   SiteContent: z.object({ key: text(160), value: z.union([z.string().max(200000), z.number(), z.boolean()]), page: optionalText(100), group: optionalText(100) }).passthrough(),
   Testimonial: z.object({
     clientName: text(160), location: optionalText(160), rating: z.coerce.number().int().min(1).max(5),
