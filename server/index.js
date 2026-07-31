@@ -1961,7 +1961,8 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     next();
   });
 }, async (req, res) => {
-  if (staffRoles.has(req.user.role) && !hasAdminAccess(req, req.user)) {
+  const isPublicApplicationUpload = req.body?.purpose === 'internship-letter';
+  if (staffRoles.has(req.user.role) && !isPublicApplicationUpload && !hasAdminAccess(req, req.user)) {
     return res.status(403).json({ error: 'Re-enter your password to unlock Studio Control.', code: 'admin_unlock_required' });
   }
   if (!req.file) return res.status(400).json({ error: 'Choose a supported image, video, or PDF file.' });
@@ -1980,10 +1981,10 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     publicId: stored.publicId,
     resourceType: stored.resourceType,
     userId: req.user.id,
-    purpose: staffRoles.has(req.user.role) ? 'content-library' : 'customer-reference',
+    purpose: isPublicApplicationUpload ? 'internship-letter' : staffRoles.has(req.user.role) ? 'content-library' : 'customer-reference',
     altText: '',
-    sourceName: staffRoles.has(req.user.role) ? 'Studio upload' : 'Customer upload',
-    contentStatus: staffRoles.has(req.user.role) ? 'original' : 'customer-reference',
+    sourceName: isPublicApplicationUpload ? 'Internship applicant upload' : staffRoles.has(req.user.role) ? 'Studio upload' : 'Customer upload',
+    contentStatus: staffRoles.has(req.user.role) && !isPublicApplicationUpload ? 'original' : 'customer-reference',
     created_date: now(),
   };
   db.data.Media.push(media);

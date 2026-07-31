@@ -122,9 +122,10 @@ export const studioClient = {
   },
   integrations: {
     Core: {
-      async UploadFile({ file }) {
+      async UploadFile({ file, purpose = '' }) {
         const body = new FormData();
         body.append('file', file);
+        if (purpose) body.append('purpose', purpose);
         return request('/api/upload', { method: 'POST', body });
       },
       SendEmail(message) {
