@@ -100,8 +100,8 @@ export default function Navbar() {
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.8, delay: 0.2 }}
       >
-        <div className="max-w-7xl mx-auto px-6 lg:px-12 flex items-center justify-between h-20">
-          <div className="flex flex-col leading-none group select-none">
+        <div className="mx-auto grid h-20 max-w-[1440px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 px-5 sm:px-6 lg:px-8 xl:px-12">
+          <div className="flex shrink-0 flex-col leading-none group select-none">
             <Link
               to="/"
               className="flex items-center gap-3"
@@ -122,12 +122,12 @@ export default function Navbar() {
           </div>
 
           {/* Desktop nav */}
-          <div className="hidden lg:flex items-center gap-5 xl:gap-7">
+          <div className="hidden min-w-0 items-center justify-center gap-4 lg:flex xl:gap-5">
             {visiblePrimaryLinks.map((link) => (
               <Link
                 key={link.path}
                 to={link.path}
-                className={`font-tight text-sm tracking-wide transition-all duration-300 relative group ${
+                className={`shrink-0 font-tight text-xs tracking-wide transition-all duration-300 relative group xl:text-sm ${
                   location.pathname === link.path ? 'text-brass' : 'text-ivory/60 hover:text-ivory'
                 }`}
               >
@@ -139,7 +139,7 @@ export default function Navbar() {
             ))}
             {visibleSecondaryLinks.length > 0 && (
               <details className="group relative">
-                <summary className="cursor-pointer list-none font-tight text-sm tracking-wide text-ivory/60 hover:text-ivory">Explore</summary>
+                <summary className="cursor-pointer list-none whitespace-nowrap font-tight text-xs tracking-wide text-ivory/60 hover:text-ivory xl:text-sm">Explore</summary>
                 <div className="absolute left-1/2 top-8 min-w-40 -translate-x-1/2 border border-brass/15 bg-carbon/95 p-2 shadow-2xl backdrop-blur-xl">
                   {visibleSecondaryLinks.map(link => <Link key={link.path} to={link.path} className="block px-3 py-2 text-sm text-ivory/55 hover:bg-brass/10 hover:text-brass">{link.label}</Link>)}
                 </div>
@@ -148,10 +148,10 @@ export default function Navbar() {
           </div>
 
           {/* Right actions */}
-          <div className="flex items-center gap-4">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <button onClick={() => setSearchOpen(true)} aria-label="Search the site" className="flex h-10 w-10 items-center justify-center text-ivory/65 transition-colors hover:text-brass"><Search size={19} /></button>
             <Link to="/wishlist" aria-label="Open my wishlist" className={`flex h-10 w-10 items-center justify-center transition-colors hover:text-brass ${location.pathname === '/wishlist' ? 'text-brass' : 'text-ivory/65'}`}><Heart size={19} /></Link>
-            <Link to="/track-order" aria-label="Track an order" className={`hidden h-10 items-center gap-2 border px-3 font-tight text-xs tracking-wide transition-colors xl:flex ${location.pathname === '/track-order' ? 'border-brass/50 text-brass' : 'border-brass/20 text-ivory/55 hover:border-brass/45 hover:text-brass'}`}><PackageSearch size={16} /> Track order</Link>
+            <Link to="/track-order" aria-label="Track an order" className={`hidden h-10 items-center gap-1.5 px-1.5 font-tight text-xs tracking-wide transition-colors xl:flex ${location.pathname === '/track-order' ? 'text-brass' : 'text-ivory/55 hover:text-brass'}`}><PackageSearch size={16} /> <span>Track</span></Link>
             {!user ? (
               <div className="hidden lg:flex items-center gap-3">
                 <Link to="/login" className="font-tight text-xs text-ivory/55 hover:text-brass">Log in</Link>
@@ -164,12 +164,6 @@ export default function Navbar() {
                 <button onClick={() => logout()} className="font-tight text-xs text-ivory/45 hover:text-brass">Sign out</button>
               </div>
             )}
-            <Link
-              to="/commission"
-              className="hidden xl:block font-tight text-sm px-5 py-2 border border-brass/40 text-brass hover:bg-brass hover:text-obsidian transition-all duration-300 tracking-wide"
-            >
-              Commission
-            </Link>
             {/* Hamburger */}
             <button
               ref={menuButtonRef}
