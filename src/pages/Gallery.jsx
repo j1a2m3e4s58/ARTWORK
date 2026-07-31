@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
-import { X, Heart, Share2 } from 'lucide-react';
+import { X, Heart, Share2, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
@@ -95,6 +95,12 @@ export default function Gallery() {
     window.setTimeout(() => setShareNotice(''), 3000);
   };
 
+  const moveLightbox = direction => {
+    const currentIndex = filtered.findIndex(item => item.id === lightbox?.id);
+    if (currentIndex < 0 || !filtered.length) return;
+    setLightbox(filtered[(currentIndex + direction + filtered.length) % filtered.length]);
+  };
+
   return (
     <PageTransition>
       <div className="min-h-screen bg-obsidian pt-28 pb-24">
@@ -164,13 +170,16 @@ export default function Gallery() {
                       type="button"
                       onClick={() => setLightbox(art)}
                       aria-label={`View ${art.title}`}
-                      className="absolute inset-0 bg-gradient-to-t from-obsidian/90 via-obsidian/20 to-transparent text-left opacity-0 transition-all duration-400 group-hover:opacity-100 focus:opacity-100"
+                      className="absolute inset-0 bg-gradient-to-t from-obsidian/90 via-obsidian/20 to-transparent text-left opacity-100 transition-all duration-400 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
                     >
                       <div className="absolute bottom-0 left-0 right-0 p-5">
                         <p className="font-tight text-[10px] uppercase tracking-widest text-brass/80 mb-1">{art.category}</p>
                         <p className="font-display text-xl text-ivory">{art.title}</p>
                         <p className="font-tight text-xs text-ivory/50 mt-1">{art.medium}</p>
                       </div>
+                      <span className="absolute bottom-4 right-4 flex h-10 w-10 items-center justify-center border border-ivory/20 bg-obsidian/70 text-ivory/90 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100">
+                        <Maximize2 size={15} />
+                      </span>
                     </button>
                     <button
                       type="button"
@@ -195,7 +204,7 @@ export default function Gallery() {
       <AnimatePresence>
         {lightbox && (
           <motion.div
-            className="fixed inset-0 z-[9000] flex items-center justify-center"
+            className="fixed inset-0 z-[9000] flex items-center justify-center p-0 sm:p-5"
             role="dialog"
             aria-modal="true"
             aria-label={`${lightbox.title} artwork details`}
@@ -207,32 +216,45 @@ export default function Gallery() {
           >
             <div className="absolute inset-0 bg-obsidian/95 backdrop-blur-2xl" />
             <motion.div
-              className="relative z-10 flex flex-col lg:flex-row gap-0 max-w-5xl w-full mx-6 overflow-hidden"
+              className="relative z-10 flex h-[100dvh] w-full flex-col overflow-y-auto border-y border-brass/20 bg-carbon sm:h-auto sm:max-h-[92dvh] sm:max-w-5xl sm:flex-row sm:overflow-hidden sm:border"
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
               onClick={e => e.stopPropagation()}
             >
-              {/* Image */}
-              <div className="flex-1 relative">
+              {/* The phone viewer keeps the entire artwork visible rather than cropping it. */}
+              <div className="relative flex min-h-[44dvh] flex-1 items-center justify-center bg-black sm:min-h-0">
                 <img
                   src={imageVariant(lightbox.imageUrl, 1600)}
                   srcSet={imageSrcSet(lightbox.imageUrl)}
                   sizes="(min-width: 1024px) 70vw, 100vw"
                   alt={lightbox.title}
-                  className="w-full h-[70vh] lg:h-[80vh] object-cover"
+                  className="h-[52dvh] w-full object-contain sm:h-[70vh] lg:h-[80vh]"
                 />
+                {filtered.length > 1 && (
+                  <>
+                    <button type="button" onClick={() => moveLightbox(-1)} aria-label="Previous artwork" className="absolute left-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center border border-ivory/20 bg-obsidian/70 text-ivory backdrop-blur transition-colors hover:border-brass hover:text-brass sm:left-5">
+                      <ChevronLeft size={20} />
+                    </button>
+                    <button type="button" onClick={() => moveLightbox(1)} aria-label="Next artwork" className="absolute right-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center border border-ivory/20 bg-obsidian/70 text-ivory backdrop-blur transition-colors hover:border-brass hover:text-brass sm:right-5">
+                      <ChevronRight size={20} />
+                    </button>
+                    <span className="absolute bottom-3 rounded-full border border-ivory/15 bg-obsidian/70 px-3 py-1 font-tight text-[10px] tracking-widest text-ivory/75 sm:hidden">
+                      {filtered.findIndex(item => item.id === lightbox.id) + 1} / {filtered.length}
+                    </span>
+                  </>
+                )}
               </div>
               {/* Info */}
-              <div className="lg:w-72 bg-carbon border-t lg:border-t-0 lg:border-l border-brass/10 p-8 flex flex-col justify-between">
+              <div className="flex shrink-0 flex-col justify-between border-t border-brass/10 bg-carbon p-5 sm:w-80 sm:p-7 lg:border-l lg:border-t-0">
                 <div>
-                  <button onClick={() => setLightbox(null)} aria-label="Close artwork viewer" className="text-ivory/40 hover:text-brass transition-colors mb-8">
+                  <button onClick={() => setLightbox(null)} aria-label="Close artwork viewer" className="absolute right-3 top-3 z-20 flex h-11 w-11 items-center justify-center border border-ivory/20 bg-obsidian/70 text-ivory/75 backdrop-blur transition-colors hover:border-brass hover:text-brass sm:static sm:mb-6 sm:h-auto sm:w-auto sm:border-0 sm:bg-transparent sm:p-0 sm:text-ivory/40">
                     <X size={18} />
                   </button>
                   <p className="font-tight text-[10px] uppercase tracking-[0.3em] text-brass/60 mb-2">{lightbox.category}</p>
                   <h3 className="font-display text-3xl text-ivory mb-4">{lightbox.title}</h3>
-                  <p className="text-ivory/50 text-sm leading-relaxed mb-8">{lightbox.description}</p>
+                  {lightbox.description && <p className="mb-6 text-sm leading-relaxed text-ivory/55 sm:mb-8">{lightbox.description}</p>}
                   {lightbox.sourceName && lightbox.contentStatus !== 'original' && (
                     <p className="mb-6 border-l border-brass/30 pl-3 text-xs leading-relaxed text-ivory/35">
                       Licensed reference media from {lightbox.sourceName}. Original Reigns Atelier works are identified separately.
@@ -247,7 +269,7 @@ export default function Gallery() {
                     ))}
                   </div>
                 </div>
-                <div className="flex gap-3 mt-8">
+                <div className="mt-6 flex gap-3 sm:mt-8">
                   <button
                     onClick={() => toggleLike(lightbox.id)}
                     className={`flex-1 flex items-center justify-center gap-2 py-3 border text-sm font-tight tracking-wide transition-all ${
