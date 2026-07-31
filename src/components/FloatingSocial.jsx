@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Instagram, Twitter, Youtube } from 'lucide-react';
+import { Facebook, Instagram, Linkedin, Music2, Pin, Twitter, Youtube } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
 
 export default function FloatingSocial() {
@@ -8,6 +8,10 @@ export default function FloatingSocial() {
     { icon: Instagram, href: settings.instagram_url, label: 'Instagram' },
     { icon: Twitter, href: settings.twitter_url, label: 'Twitter' },
     { icon: Youtube, href: settings.youtube_url, label: 'YouTube' },
+    { icon: Music2, href: settings.tiktok_url, label: 'TikTok' },
+    { icon: Facebook, href: settings.facebook_url, label: 'Facebook' },
+    { icon: Linkedin, href: settings.linkedin_url, label: 'LinkedIn' },
+    { icon: Pin, href: settings.pinterest_url, label: 'Pinterest' },
   ].filter(item => item.href);
   if (!socials.length) return null;
   return (

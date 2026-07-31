@@ -1,5 +1,5 @@
 ﻿import { Link } from 'react-router-dom';
-import { Instagram, Twitter, Youtube, Mail, ArrowUpRight, X } from 'lucide-react';
+import { Instagram, Twitter, Youtube, Mail, ArrowUpRight, X, Facebook, Linkedin, Music2, Pin } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { studioClient } from '@/api/studioClient';
 import { useSettings } from '@/hooks/useSettings';
@@ -88,6 +88,10 @@ export default function Footer() {
               {settings.instagram_url && <a aria-label="Instagram" href={settings.instagram_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Instagram size={18} /></a>}
               {settings.twitter_url && <a aria-label="Twitter" href={settings.twitter_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Twitter size={18} /></a>}
               {settings.youtube_url && <a aria-label="YouTube" href={settings.youtube_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Youtube size={18} /></a>}
+              {settings.tiktok_url && <a aria-label="TikTok" href={settings.tiktok_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Music2 size={18} /></a>}
+              {settings.facebook_url && <a aria-label="Facebook" href={settings.facebook_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Facebook size={18} /></a>}
+              {settings.linkedin_url && <a aria-label="LinkedIn" href={settings.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Linkedin size={18} /></a>}
+              {settings.pinterest_url && <a aria-label="Pinterest" href={settings.pinterest_url} target="_blank" rel="noopener noreferrer" className="text-ivory/30 hover:text-brass transition-colors"><Pin size={18} /></a>}
               {settings.contact_email && <a aria-label="Email the studio" href={`mailto:${settings.contact_email}`} className="text-ivory/30 hover:text-brass transition-colors"><Mail size={18} /></a>}
             </div>
           </div>

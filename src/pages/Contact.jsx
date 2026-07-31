@@ -1,6 +1,6 @@
 ﻿import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Mail, Phone, MapPin, Instagram, Twitter, Youtube, ArrowRight, Send, Loader2 } from 'lucide-react';
+import { Mail, Phone, MapPin, Instagram, Twitter, Youtube, ArrowRight, Send, Loader2, Facebook, Linkedin, Music2, Pin } from 'lucide-react';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
 import PageTransition from '@/components/PageTransition';
@@ -145,6 +145,10 @@ export default function Contact() {
                       { icon: Instagram, href: settings.instagram_url, label: 'Instagram' },
                       { icon: Twitter, href: settings.twitter_url, label: 'Twitter' },
                       { icon: Youtube, href: settings.youtube_url, label: 'YouTube' },
+                      { icon: Music2, href: settings.tiktok_url, label: 'TikTok' },
+                      { icon: Facebook, href: settings.facebook_url, label: 'Facebook' },
+                      { icon: Linkedin, href: settings.linkedin_url, label: 'LinkedIn' },
+                      { icon: Pin, href: settings.pinterest_url, label: 'Pinterest' },
                     ].filter(item => item.href).map(({ icon: Icon, href, label }) => (
                       <a key={label} href={href} target="_blank" rel="noopener noreferrer"
                         className="flex items-center gap-2 border border-brass/15 text-ivory/50 px-4 py-2.5 hover:border-brass/40 hover:text-brass transition-all text-sm font-tight">

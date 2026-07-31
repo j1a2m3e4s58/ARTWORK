@@ -246,6 +246,8 @@ export default function Navbar() {
                 {settings.instagram_url && <a href={settings.instagram_url} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">Instagram</a>}
                 {settings.twitter_url && <a href={settings.twitter_url} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">Twitter</a>}
                 {settings.youtube_url && <a href={settings.youtube_url} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">YouTube</a>}
+                {settings.tiktok_url && <a href={settings.tiktok_url} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">TikTok</a>}
+                {settings.facebook_url && <a href={settings.facebook_url} target="_blank" rel="noopener noreferrer" className="font-tight text-[10px] uppercase tracking-widest text-ivory/35 hover:text-brass">Facebook</a>}
               </div>
               <div className="mt-4">
                 <InstallAppButton />

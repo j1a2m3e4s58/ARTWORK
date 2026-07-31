@@ -60,7 +60,7 @@ export default function SiteMetadata() {
     structuredData.textContent = JSON.stringify({
       '@context': 'https://schema.org', '@type': 'ArtGallery', name: brand, url: baseUrl,
       image: `${baseUrl}/brand/reigns-atelier-logo.jpg`, email: settings.contact_email || undefined,
-      sameAs: [settings.instagram_url, settings.twitter_url, settings.youtube_url].filter(Boolean),
+      sameAs: [settings.instagram_url, settings.twitter_url, settings.youtube_url, settings.tiktok_url, settings.facebook_url, settings.linkedin_url, settings.pinterest_url].filter(Boolean),
     });
   }, [location.pathname, settings]);
   return null;

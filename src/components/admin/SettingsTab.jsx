@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect } from 'react';
-import { Check, Pencil, Plus, Phone, Mail, Instagram, Twitter, Youtube, Globe, MessageCircle } from 'lucide-react';
+import { Check, Pencil, Plus, Phone, Mail, Instagram, Twitter, Youtube, Globe, MessageCircle, Facebook, Linkedin, Music2, Pin } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 
 const SETTING_DEFAULTS = [
@@ -29,6 +29,10 @@ const SETTING_DEFAULTS = [
   { key: 'instagram_url', label: 'Instagram URL', value: '', group: 'Social', icon: 'instagram' },
   { key: 'twitter_url', label: 'Twitter / X URL', value: '', group: 'Social', icon: 'twitter' },
   { key: 'youtube_url', label: 'YouTube URL', value: '', group: 'Social', icon: 'youtube' },
+  { key: 'tiktok_url', label: 'TikTok URL', value: '', group: 'Social', icon: 'tiktok' },
+  { key: 'facebook_url', label: 'Facebook URL', value: '', group: 'Social', icon: 'facebook' },
+  { key: 'linkedin_url', label: 'LinkedIn URL', value: '', group: 'Social', icon: 'linkedin' },
+  { key: 'pinterest_url', label: 'Pinterest URL', value: '', group: 'Social', icon: 'pinterest' },
   { key: 'footer_copyright', label: 'Footer Copyright Text', value: '© 2026 Reigns Atelier. All artworks are the intellectual property of the artist.', group: 'Branding', icon: 'globe' },
   { key: 'site_tagline', label: 'Site Tagline', value: 'Where imagination bleeds onto canvas.', group: 'Branding', icon: 'globe' },
   { key: 'artist_photo', label: 'Artist Photo URL', value: '/brand/reigns-atelier-logo.jpg', group: 'Branding', icon: 'globe', hint: 'Upload or paste URL for the About page artist photo' },
@@ -42,7 +46,7 @@ const SETTING_DEFAULTS = [
   { key: 'promo_banner_link', label: 'Promo Banner Link (optional)', value: '/shop', group: 'Newsletter & Offers', icon: 'globe', hint: 'Where the banner links to, e.g. /shop or /commission' },
 ];
 
-const ICON_MAP = { phone: Phone, mail: Mail, instagram: Instagram, twitter: Twitter, youtube: Youtube, globe: Globe, message: MessageCircle };
+const ICON_MAP = { phone: Phone, mail: Mail, instagram: Instagram, twitter: Twitter, youtube: Youtube, tiktok: Music2, facebook: Facebook, linkedin: Linkedin, pinterest: Pin, globe: Globe, message: MessageCircle };
 
 const GROUP_ORDER = ['Contact', 'Social', 'Branding', 'Navigation', 'Business', 'SEO & App', 'Banners', 'Newsletter & Offers'];
 
