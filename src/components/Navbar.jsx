@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, ArrowUpRight, UserRound, ShieldCheck, Search } from 'lucide-react';
+import { Menu, X, ArrowUpRight, UserRound, ShieldCheck, Search, Heart, PackageSearch } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
 import InstallAppButton from './InstallAppButton';
 import { useAuth } from '@/lib/AuthContext';
@@ -17,6 +17,7 @@ const navLinks = [
   { label: 'Contact', path: '/contact' },
 ];
 const secondaryLinks = [
+  { label: 'Track order', path: '/track-order' },
   { label: 'Art Films', path: '/videos', settingKey: 'show_videos' },
   { label: 'Journal', path: '/blog', settingKey: 'show_blog' },
 ];
@@ -149,6 +150,8 @@ export default function Navbar() {
           {/* Right actions */}
           <div className="flex items-center gap-4">
             <button onClick={() => setSearchOpen(true)} aria-label="Search the site" className="flex h-10 w-10 items-center justify-center text-ivory/65 transition-colors hover:text-brass"><Search size={19} /></button>
+            <Link to="/wishlist" aria-label="Open my wishlist" className={`flex h-10 w-10 items-center justify-center transition-colors hover:text-brass ${location.pathname === '/wishlist' ? 'text-brass' : 'text-ivory/65'}`}><Heart size={19} /></Link>
+            <Link to="/track-order" aria-label="Track an order" className={`hidden h-10 items-center gap-2 border px-3 font-tight text-xs tracking-wide transition-colors xl:flex ${location.pathname === '/track-order' ? 'border-brass/50 text-brass' : 'border-brass/20 text-ivory/55 hover:border-brass/45 hover:text-brass'}`}><PackageSearch size={16} /> Track order</Link>
             {!user ? (
               <div className="hidden lg:flex items-center gap-3">
                 <Link to="/login" className="font-tight text-xs text-ivory/55 hover:text-brass">Log in</Link>

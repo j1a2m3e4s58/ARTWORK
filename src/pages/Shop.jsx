@@ -35,13 +35,24 @@ export default function Shop() {
       return [];
     }
   });
-  const [wishlist, setWishlist] = useState([]);
+  const [wishlist, setWishlist] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('reigns_art_shop_wishlist') || '[]');
+    } catch {
+      return [];
+    }
+  });
   const [cartOpen, setCartOpen] = useState(false);
   const [catalogueOpen, setCatalogueOpen] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('reigns_art_shop_cart', JSON.stringify(cart));
   }, [cart]);
+
+  useEffect(() => {
+    localStorage.setItem('reigns_art_shop_wishlist', JSON.stringify(wishlist));
+    window.dispatchEvent(new Event('reigns-wishlist-changed'));
+  }, [wishlist]);
 
   const filtered = filter === 'All' ? products : products.filter(product => product.type === filter);
   const typeFilters = ['All', ...new Set(products.map(product => product.type).filter(Boolean))];

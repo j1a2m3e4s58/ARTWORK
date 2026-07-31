@@ -37,6 +37,7 @@ const Account = lazy(() => import('@/pages/Account'));
 const AcceptInvite = lazy(() => import('@/pages/AcceptInvite'));
 const VerifyEmail = lazy(() => import('@/pages/VerifyEmail'));
 const OrderTracking = lazy(() => import('@/pages/OrderTracking'));
+const Wishlist = lazy(() => import('@/pages/Wishlist'));
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings } = useAuth();
@@ -69,6 +70,7 @@ const AuthenticatedApp = () => {
         <Route path="/delivery-returns" element={<LegalPage type="delivery" />} />
         <Route path="/commission-policy" element={<LegalPage type="commission" />} />
         <Route path="/track-order" element={<OrderTracking />} />
+        <Route path="/wishlist" element={<Wishlist />} />
       </Route>
       <Route element={<AdminRoute><AdminAccessGate><AdminLayout /></AdminAccessGate></AdminRoute>}>
         <Route path="/admin" element={<Admin />} />

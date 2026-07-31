@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft, Banknote, Check, Copy, CreditCard, ImagePlus, MapPin, MessageCircle,
-  Minus, PackageCheck, Plus, ShoppingBag, Truck, Upload, X,
+  Minus, PackageCheck, PackageSearch, Plus, ShoppingBag, Truck, Upload, X,
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { paymentMethodLabel, renderWhatsAppOrderMessage } from '@/lib/commerceOptions';
@@ -326,7 +326,7 @@ export default function CommerceCheckout({
                     <div className="mx-auto flex h-16 w-16 items-center justify-center bg-brass text-obsidian"><PackageCheck size={30} /></div>
                     <h3 className="mt-5 font-display text-3xl text-ivory">Thank you. Your order is recorded.</h3>
                     <p className="mt-2 text-sm text-ivory/45">Keep this tracking code for payment and delivery updates.</p>
-                    <div className="mt-5 border border-brass/15 bg-obsidian p-4"><span className="text-[10px] uppercase tracking-widest text-ivory/35">Tracking code</span><strong className="mt-1 block font-display text-3xl tracking-wider text-brass">{order.trackingCode}</strong><button onClick={() => navigator.clipboard.writeText(order.trackingCode)} className="mt-2 inline-flex items-center gap-2 text-xs text-ivory/45"><Copy size={13} /> Copy code</button></div>
+                    <div className="mt-5 border border-brass/15 bg-obsidian p-4"><span className="text-[10px] uppercase tracking-widest text-ivory/35">Tracking code</span><strong className="mt-1 block font-display text-3xl tracking-wider text-brass">{order.trackingCode}</strong><div className="mt-3 flex flex-wrap justify-center gap-3"><button onClick={() => navigator.clipboard.writeText(order.trackingCode)} className="inline-flex items-center gap-2 text-xs text-ivory/45 hover:text-brass"><Copy size={13} /> Copy code</button><button onClick={() => window.location.assign(`/track-order?code=${encodeURIComponent(order.trackingCode)}&email=${encodeURIComponent(order.accountEmail || user?.email || '')}`)} className="inline-flex items-center gap-2 border border-brass/25 px-3 py-2 text-xs text-brass hover:border-brass"><PackageSearch size={14} /> Track this order</button></div></div>
                   </div>
 
                   <div className="mt-5 border border-brass/10 bg-obsidian/45 p-5">
