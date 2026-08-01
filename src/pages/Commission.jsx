@@ -322,16 +322,19 @@ export default function Commission() {
                       <div className="mt-4 border-t border-brass/10 pt-4"><button type="button" onClick={() => setForm(current => ({ ...current, pricingCategory: 'Custom size / quote request', pricingSize: 'Custom size', pricingSubjects: '', pricingFinish: '', quotedPrice: '', package: 'Custom size / quote request' }))} className={`w-full border px-4 py-3 text-left text-sm transition-colors ${form.pricingCategory === 'Custom size / quote request' ? 'border-brass bg-brass/10 text-brass' : 'border-brass/20 text-ivory/60 hover:border-brass/45'}`}><span className="font-tight uppercase tracking-wider">Size not listed?</span><span className="mt-1 block text-xs text-ivory/40">Request a custom size or special framing. The studio will confirm the quote before work begins.</span></button></div>
                     </section>
                     {form.pricingCategory === 'Custom size / quote request' && <label className="block text-xs uppercase tracking-[.18em] text-ivory/45">Custom size or framing details<input value={form.pricingSubjects} onChange={event => set('pricingSubjects', event.target.value)} placeholder="For example: 36 × 48 in, double framed, four people" className="mt-2 min-h-12 w-full border border-brass/20 bg-obsidian px-4 py-3 text-sm normal-case tracking-normal text-ivory placeholder:text-ivory/25 focus:border-brass/50 focus:outline-none"/></label>}
-                    <fieldset className="grid grid-cols-1 min-[390px]:grid-cols-2 gap-2 mt-3">
-                      <legend className="sr-only">Budget</legend>
+                    <fieldset className="mt-5">
+                      <legend className="text-xs uppercase tracking-[0.18em] text-ivory/45">Your working budget</legend>
+                      <p className="mt-2 rounded border border-brass/10 bg-obsidian/60 px-3 py-2.5 text-xs leading-relaxed text-ivory/45">This does not charge you or change the listed price above. It helps the studio suggest the best option if you need a custom size, extra people, special materials, or a different finish.</p>
+                      <div className="mt-3 grid grid-cols-1 min-[390px]:grid-cols-2 gap-2">
                       {commissionFormOptions.budgets.map(b => (
-                        <button key={b} onClick={() => set('budget', b)}
+                        <button type="button" key={b} onClick={() => set('budget', b)} aria-pressed={form.budget === b}
                           className={`py-3 px-4 border text-sm font-tight tracking-wide transition-all duration-200 ${
                             form.budget === b ? 'border-brass bg-brass/10 text-brass' : 'border-brass/15 text-ivory/50 hover:border-brass/30'
                           }`}>
                           {b}
                         </button>
                       ))}
+                      </div>
                     </fieldset>
                     <label htmlFor="commission-deadline" className="mt-4 block text-xs uppercase tracking-[0.18em] text-ivory/45">Preferred completion date <span className="normal-case tracking-normal text-ivory/25">(optional)</span></label>
                     <div className="relative mt-2">
