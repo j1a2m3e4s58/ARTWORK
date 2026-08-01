@@ -13,6 +13,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { Link } from 'react-router-dom';
 import { DEFAULT_COMMISSION_OPTIONS, parseCommissionOptions } from '@/lib/commissionOptions';
 import { parseCommissionPrices, ghc } from '@/lib/commissionPricing';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const DEFAULT_PACKAGES = [
   { name: 'Sketch Study', price: 'GH₵ 800', duration: '5-7 days', features: ['One subject', 'Pencil / Charcoal', 'Digital delivery', '1 revision', 'A4 size'] },
@@ -26,6 +27,23 @@ const DEFAULT_FAQS = [
   { q: 'Do you offer revisions?', a: 'Yes — revisions are included based on your package. The Fine Portrait and Masterwork packages include multiple rounds of feedback.' },
   { q: 'How do I pay?', a: 'A 50% deposit is required to begin. The remaining 50% is due upon your approval of the final artwork before delivery.' },
 ];
+
+// Use an in-page menu instead of the phone operating system's full-screen
+// picker. Radix automatically flips this menu upward when there is not enough
+// room below the field.
+function PricingSelect({ label, value, options, placeholder, disabled, onValueChange }) {
+  return <label className="text-xs uppercase tracking-wider text-ivory/45">
+    {label}
+    <Select value={value || undefined} onValueChange={onValueChange} disabled={disabled}>
+      <SelectTrigger className="mt-2 min-h-12 w-full rounded-none border-brass/20 bg-obsidian px-3 text-sm normal-case tracking-normal text-ivory shadow-none focus:ring-0 data-[placeholder]:text-ivory/35">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent position="popper" sideOffset={6} collisionPadding={16} className="z-[120] max-h-[min(18rem,var(--radix-select-content-available-height))] rounded-none border-brass/30 bg-carbon text-ivory shadow-2xl">
+        {options.map(option => <SelectItem key={option} value={option} className="rounded-none px-3 py-3 text-sm text-ivory/80 focus:bg-brass/15 focus:text-ivory data-[state=checked]:bg-brass/10 data-[state=checked]:text-brass">{option}</SelectItem>)}
+      </SelectContent>
+    </Select>
+  </label>;
+}
 
 export default function Commission() {
   const settings = useSettings();
@@ -313,10 +331,10 @@ export default function Commission() {
                         {selectedPrice && <button type="button" onClick={() => setPreviewOpen(true)} className="flex items-center gap-2 border border-brass/35 px-3 py-2 text-xs text-brass hover:bg-brass/10"><ImageIcon size={14}/> Preview selected size</button>}
                       </div>
                       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <label className="text-xs uppercase tracking-wider text-ivory/45">Artwork pricing guide<select value={form.pricingCategory} onChange={e => choosePricing('pricingCategory', e.target.value)} className="mt-2 min-h-12 w-full border border-brass/20 bg-obsidian px-3 text-sm normal-case tracking-normal text-ivory"><option value="">Choose a guide</option>{categories.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
-                        <label className="text-xs uppercase tracking-wider text-ivory/45">Size<select disabled={!form.pricingCategory} value={form.pricingSize} onChange={e => choosePricing('pricingSize', e.target.value)} className="mt-2 min-h-12 w-full border border-brass/20 bg-obsidian px-3 text-sm normal-case tracking-normal text-ivory disabled:opacity-40"><option value="">Choose a size</option>{sizes.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
-                        <label className="text-xs uppercase tracking-wider text-ivory/45">Subjects<select disabled={!form.pricingSize} value={form.pricingSubjects} onChange={e => choosePricing('pricingSubjects', e.target.value)} className="mt-2 min-h-12 w-full border border-brass/20 bg-obsidian px-3 text-sm normal-case tracking-normal text-ivory disabled:opacity-40"><option value="">Choose subject count</option>{subjects.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
-                        <label className="text-xs uppercase tracking-wider text-ivory/45">Framing / finish<select disabled={!form.pricingSubjects} value={form.pricingFinish} onChange={e => choosePricing('pricingFinish', e.target.value)} className="mt-2 min-h-12 w-full border border-brass/20 bg-obsidian px-3 text-sm normal-case tracking-normal text-ivory disabled:opacity-40"><option value="">Choose finish</option>{finishes.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+                        <PricingSelect label="Artwork pricing guide" value={form.pricingCategory} options={categories} placeholder="Choose a guide" onValueChange={value => choosePricing('pricingCategory', value)} />
+                        <PricingSelect label="Size" value={form.pricingSize} options={sizes} placeholder="Choose a size" disabled={!form.pricingCategory} onValueChange={value => choosePricing('pricingSize', value)} />
+                        <PricingSelect label="Subjects" value={form.pricingSubjects} options={subjects} placeholder="Choose subject count" disabled={!form.pricingSize} onValueChange={value => choosePricing('pricingSubjects', value)} />
+                        <PricingSelect label="Framing / finish" value={form.pricingFinish} options={finishes} placeholder="Choose finish" disabled={!form.pricingSubjects} onValueChange={value => choosePricing('pricingFinish', value)} />
                       </div>
                       {selectedPrice && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-brass/10 pt-4"><div><p className="text-xs uppercase tracking-[.18em] text-ivory/40">Your selected price</p><p className="mt-1 font-display text-3xl text-brass">{selectedPrice.priceNote || ghc(selectedPrice.price)}</p></div><p className="max-w-sm text-xs leading-relaxed text-ivory/45">{selectedPrice.category} · {selectedPrice.size} · {selectedPrice.subjects} · {selectedPrice.finish}</p></div>}
                       <div className="mt-4 border-t border-brass/10 pt-4"><button type="button" onClick={() => setForm(current => ({ ...current, pricingCategory: 'Custom size / quote request', pricingSize: 'Custom size', pricingSubjects: '', pricingFinish: '', quotedPrice: '', package: 'Custom size / quote request' }))} className={`w-full border px-4 py-3 text-left text-sm transition-colors ${form.pricingCategory === 'Custom size / quote request' ? 'border-brass bg-brass/10 text-brass' : 'border-brass/20 text-ivory/60 hover:border-brass/45'}`}><span className="font-tight uppercase tracking-wider">Size not listed?</span><span className="mt-1 block text-xs text-ivory/40">Request a custom size or special framing. The studio will confirm the quote before work begins.</span></button></div>
