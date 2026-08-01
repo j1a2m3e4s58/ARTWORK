@@ -12,8 +12,10 @@ export default function CommissionPricingTab() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(''); const [error, setError] = useState('');
-  useEffect(() => { studioClient.entities.SiteContent.filter({ key: 'commission_price_options', page: 'Commission' }).then(records => {
-    const existing = records.at(-1) || null; setRecord(existing);
+  useEffect(() => { studioClient.entities.SiteContent.filter({ key: 'commission_price_options', page: 'Commission' }, '-updated_date', 200).then(records => {
+    // Keep the editor attached to the same newest record customers read.
+    // This also safely handles legacy duplicate records from earlier saves.
+    const existing = records[0] || null; setRecord(existing);
     if (existing?.value) { try { const parsed = JSON.parse(existing.value); if (Array.isArray(parsed) && parsed.length) setItems(parsed); } catch { /* defaults */ } }
   }).catch(e => setError(e.message)).finally(() => setLoading(false)); }, []);
   const update = (id, changes) => setItems(current => current.map(item => item.id === id ? { ...item, ...changes } : item));
