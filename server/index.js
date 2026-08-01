@@ -128,7 +128,7 @@ async function verifyHuman(req, res, next) {
 }
 
 const publicRead = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'PriceGuide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
-const authenticatedCreate = new Set(['CommissionRequest', 'InternshipApplication', 'Message', 'Order']);
+const authenticatedCreate = new Set(['CommissionRequest', 'InternshipApplication', 'Message', 'Order', 'PartnerApplication']);
 const staffRoles = new Set(['admin', 'editor', 'support']);
 const contentEntities = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'Media', 'PriceGuide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
 const supportEntities = new Set(['CommissionRequest', 'InternshipApplication', 'Message', 'Order']);
@@ -1548,7 +1548,7 @@ app.get('/api/entities/:name', async (req, res) => {
   if (blocksEntityReadForPendingMfa(user, publicAccess)) {
     return res.status(403).json({ error: 'Enable multi-factor authentication before accessing studio records.', code: 'mfa_required' });
   }
-  const ownData = ['CommissionRequest', 'InternshipApplication', 'Message', 'Notification', 'Order'].includes(name);
+  const ownData = ['CommissionRequest', 'InternshipApplication', 'Message', 'Notification', 'Order', 'PartnerApplication'].includes(name);
   const staffAccess = !pendingAdminMfa && canManage(user, name) && hasAdminAccess(req, user);
   if (!publicAccess && !staffAccess && !(user && ownData)) {
     return res.status(403).json({ error: 'You do not have access to these records.' });
@@ -1586,6 +1586,7 @@ app.get('/api/entities/:name', async (req, res) => {
         && (!record.scheduledAt || new Date(record.scheduledAt).getTime() <= Date.now())
       ));
     }
+    if (name === 'ShopProduct') records = records.filter(record => !record.sellerId || record.listingStatus === 'approved' || !record.listingStatus);
   }
   for (const [key, value] of Object.entries(req.query)) {
     if (!['sort', 'limit', 'offset', 'page', 'includeDeleted'].includes(key)) records = records.filter(record => String(record[key]) === String(value));
@@ -1602,6 +1603,63 @@ app.get('/api/entities/:name', async (req, res) => {
   res.setHeader('x-page-limit', String(requestedLimit));
   res.setHeader('x-page-offset', String(requestedOffset));
   res.json(records);
+});
+
+app.get('/api/partner/overview', requireVerifiedUser, async (req, res) => {
+  if (req.user.role !== 'partner') return res.status(403).json({ error: 'Your partner application must be approved before you can access the partner workspace.' });
+  const products = db.data.ShopProduct.filter(item => item.sellerId === req.user.id && !item.deleted_at);
+  const payouts = db.data.PartnerPayout.filter(item => item.partnerId === req.user.id && !item.deleted_at);
+  const application = db.data.PartnerApplication.find(item => item.userId === req.user.id && !item.deleted_at);
+  res.json({ application, products, payouts });
+});
+
+app.post('/api/partner/products', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  if (req.user.role !== 'partner') return res.status(403).json({ error: 'Only approved partners can submit items for review.' });
+  let clean;
+  try { clean = validateEntity('ShopProduct', req.body); }
+  catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
+  const product = {
+    ...clean, id: newId(), sellerId: req.user.id, sellerName: req.user.full_name || req.user.email,
+    listingStatus: 'pending', status: 'draft', isPartnerListing: true, created_date: now(), updated_date: now(),
+  };
+  db.data.ShopProduct.push(product);
+  notifyStudioStaff({ title: 'Partner listing needs review', message: `${product.sellerName} submitted “${product.title}”.`, section: 'partners', entity: 'ShopProduct', entityId: product.id, priority: 'normal' });
+  await audit(req.user, 'partner.product_submitted', 'ShopProduct', product.id, { title: product.title });
+  await save();
+  res.status(201).json(product);
+});
+
+app.patch('/api/partner/products/:id', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  if (req.user.role !== 'partner') return res.status(403).json({ error: 'Only approved partners can change partner listings.' });
+  const product = db.data.ShopProduct.find(item => item.id === req.params.id && item.sellerId === req.user.id && !item.deleted_at);
+  if (!product) return res.status(404).json({ error: 'Partner listing not found.' });
+  let clean;
+  try { clean = validateEntity('ShopProduct', { ...product, ...req.body }, { partial: true }); }
+  catch (error) { return res.status(error.status || 400).json({ error: error.message }); }
+  Object.assign(product, clean, { sellerId: req.user.id, sellerName: req.user.full_name || req.user.email, listingStatus: 'pending', status: 'draft', updated_date: now() });
+  notifyStudioStaff({ title: 'Partner listing updated', message: `${product.sellerName} updated “${product.title}”; review is required again.`, section: 'partners', entity: 'ShopProduct', entityId: product.id });
+  await audit(req.user, 'partner.product_updated', 'ShopProduct', product.id);
+  await save();
+  res.json(product);
+});
+
+app.patch('/api/admin/partners/:id', requireAdmin, mutationLimiter, async (req, res) => {
+  const application = db.data.PartnerApplication.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!application) return res.status(404).json({ error: 'Partner application not found.' });
+  const status = ['pending', 'approved', 'rejected', 'suspended'].includes(req.body.status) ? req.body.status : application.status || 'pending';
+  const commissionRate = Math.max(0, Math.min(100, Number(req.body.commissionRate ?? application.commissionRate ?? 0)));
+  Object.assign(application, { status, commissionRate, contractUrl: String(req.body.contractUrl || application.contractUrl || '').slice(0, 2048), reviewedAt: now(), reviewedBy: req.user.id, updated_date: now() });
+  const partner = db.data.User.find(item => item.id === application.userId && !item.deleted_at);
+  if (partner && !staffRoles.has(partner.role)) {
+    partner.role = status === 'approved' ? 'partner' : 'customer';
+    partner.partnerProfile = { shopName: application.shopName, commissionRate, status: status === 'approved' ? 'active' : status };
+    partner.updated_date = now();
+    db.data.Notification.push({ id: newId(), userId: partner.id, type: 'partner.application', title: `Partner application ${status}`, message: status === 'approved' ? 'Your partner workspace is ready. Submit your first item for review.' : 'Your application status has been updated. Please contact the studio for details.', section: status === 'approved' ? 'partner' : 'account', entity: 'PartnerApplication', entityId: application.id, priority: 'normal', read: false, created_date: now() });
+    await deliverEmail({ to: partner.email, subject: `Partner application ${status}`, text: status === 'approved' ? 'Your Reigns Atelier partner application is approved. Sign in to submit items for review.' : 'Your Reigns Atelier partner application status has changed. Please contact the studio if you have questions.' });
+  }
+  await audit(req.user, 'partner.application_reviewed', 'PartnerApplication', application.id, { status, commissionRate });
+  await save();
+  res.json({ application, partner: partner ? hiddenUserFields(partner) : null });
 });
 
 app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, async (req, res) => {
@@ -1700,6 +1758,11 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
     record.status = 'received';
     record.statusHistory = [{ status: 'received', at: now(), actorId: user.id }];
   }
+  if (name === 'PartnerApplication') {
+    record.status = 'pending';
+    record.commissionRate = 0;
+    record.reviewedAt = null;
+  }
   if (name === 'Order') {
     record.status = record.deliveryQuoteRequested ? 'delivery_quote_required' : 'pending';
     record.paymentStatus = record.deliveryQuoteRequested ? 'quote_required' : record.paymentMethod === 'pay_on_delivery' ? 'pay_on_delivery' : 'awaiting_payment';
@@ -1726,6 +1789,9 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
   if (name === 'InternshipApplication') {
     notifyStudioStaff({ title: 'New internship application', message: `${record.name || 'An applicant'} submitted an internship application.`, section: 'internships', entity: name, entityId: record.id, priority: 'normal' });
   }
+  if (name === 'PartnerApplication') {
+    notifyStudioStaff({ title: 'New partner application', message: `${record.fullName || record.email || 'A seller'} wants to join the curated marketplace.`, section: 'partners', entity: name, entityId: record.id, priority: 'high' });
+  }
   if (name === 'Order') {
     const quote = record.deliveryQuoteRequested;
     notifyStudioStaff({ title: quote ? 'Delivery quote required' : 'New shop order', message: quote ? `${record.shippingAddress?.recipientName || 'A customer'} needs a custom delivery quote for ${record.trackingCode}.` : `${record.shippingAddress?.recipientName || 'A customer'} placed order ${record.trackingCode}.`, section: 'orders', entity: name, entityId: record.id, priority: quote ? 'high' : 'normal' });
@@ -1742,6 +1808,13 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
       to: record.email,
       subject: 'Internship application received — Reigns Atelier',
       text: `Hi ${record.name},\n\nWe received your internship application and will review it with care. We will contact you about next steps.\n\nReigns Atelier`,
+    });
+  }
+  if (name === 'PartnerApplication') {
+    record.confirmationDelivery = await deliverEmail({
+      to: record.email,
+      subject: 'Partner application received — Reigns Atelier',
+      text: `Hi ${record.fullName},\n\nYour partner application has been received. The studio will review your work and contact you about next steps.\n\nReigns Atelier`,
     });
   }
   await audit(user, `${name.toLowerCase()}.created`, name, record.id);

@@ -68,7 +68,7 @@ const createEntity = name => ({
 
 const entityNames = [
   'Artwork', 'AuditLog', 'BlogPost', 'CommissionRequest', 'InternshipApplication', 'HeroSlide', 'Media', 'Message', 'NewsletterSubscriber',
-  'Notification', 'Order', 'Outbox', 'PriceGuide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'User', 'Video',
+  'Notification', 'Order', 'Outbox', 'PartnerApplication', 'PartnerPayout', 'PriceGuide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'User', 'Video',
 ];
 
 const entities = Object.fromEntries(entityNames.map(name => [name, createEntity(name)]));
@@ -109,6 +109,9 @@ export const studioClient = {
     testAlert() {
       return request('/api/admin/test-alert', { method: 'POST' });
     },
+    reviewPartnerApplication(id, data) {
+      return request(`/api/admin/partners/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) });
+    },
   },
   messages: {
     reply(id, text) {
@@ -131,6 +134,11 @@ export const studioClient = {
   wishlist: {
     list: () => request('/api/wishlist'),
     set: (productId, saved) => request(`/api/wishlist/${encodeURIComponent(productId)}`, { method: 'POST', body: JSON.stringify({ saved }) }),
+  },
+  partners: {
+    overview: () => request('/api/partner/overview'),
+    submitProduct: data => request('/api/partner/products', { method: 'POST', body: JSON.stringify(data) }),
+    updateProduct: (id, data) => request(`/api/partner/products/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
   },
   integrations: {
     Core: {

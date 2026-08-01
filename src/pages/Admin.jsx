@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Image, ShoppingBag, MessageSquare, BookOpen,
-  Users, Plus, Trash2, Pencil, Video, FileText, X, Check, Settings, Star, Download, MoreHorizontal, PackageCheck, Activity, PanelsTopLeft, Library, ArchiveRestore, Truck, Bell
+  Users, Plus, Trash2, Pencil, Video, FileText, X, Check, Settings, Star, Download, MoreHorizontal, PackageCheck, Activity, PanelsTopLeft, Library, ArchiveRestore, Truck, Bell, Handshake
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import PageTransition from '@/components/PageTransition';
@@ -28,6 +28,7 @@ import CommissionRequestFormTab from '@/components/admin/CommissionRequestFormTa
 import InternshipsTab from '@/components/admin/InternshipsTab';
 import CommerceSettingsTab from '@/components/admin/CommerceSettingsTab';
 import PriceGuidesTab from '@/components/admin/PriceGuidesTab';
+import PartnersTab from '@/components/admin/PartnersTab';
 import ResponsiveSelect from '@/components/ResponsiveSelect';
 import { DEFAULT_STUDIO_OPTIONS, parseStudioOptions } from '@/lib/studioOptions';
 
@@ -46,6 +47,7 @@ const allTabs = [
   { id: 'price-guides', label: 'Price Guides', icon: FileText, group: 'Sales' },
   { id: 'orders', label: 'Orders', icon: PackageCheck, group: 'Sales' },
   { id: 'commerce', label: 'Delivery & Payments', icon: Truck, group: 'Sales' },
+  { id: 'partners', label: 'Partner Marketplace', icon: Handshake, group: 'Sales' },
   { id: 'commissions', label: 'Commissions', icon: MessageSquare, group: 'Sales' },
   { id: 'commission-packages', label: 'Commission Packages', icon: PackageCheck, group: 'Sales' },
   { id: 'commission-form', label: 'Forms & Categories', icon: FileText, group: 'Sales' },
@@ -749,6 +751,7 @@ export default function Admin() {
           {activeTab === 'inbox' && <InboxTab messages={messages} setMessages={setMessages} />}
           {activeTab === 'orders' && <OrdersTab />}
           {activeTab === 'commerce' && <CommerceSettingsTab />}
+          {activeTab === 'partners' && <PartnersTab />}
           {activeTab === 'price-guides' && <PriceGuidesTab />}
           {activeTab === 'users' && <UsersTab currentUser={user} />}
 

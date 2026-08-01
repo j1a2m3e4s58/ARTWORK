@@ -40,6 +40,17 @@ export const schemas = {
     interests: text(3000).min(20), notice: optionalText(3000),
     hasLetter: z.boolean().optional().default(false), letterUrl: safeUrl.optional().default(''),
   }),
+  PartnerApplication: z.object({
+    fullName: text(160), email: email.optional(), phone: optionalText(40),
+    shopName: text(180), category: optionalText(120), description: text(5000).min(30),
+    portfolioUrl: safeUrl.optional().default(''), agreementAccepted: z.literal(true),
+  }).passthrough(),
+  PartnerPayout: z.object({
+    partnerId: text(120), amount: z.coerce.number().positive().max(10000000),
+    currency: z.string().trim().length(3).optional().default('GHS'),
+    status: z.enum(['planned', 'processing', 'paid', 'on_hold']).optional().default('planned'),
+    period: optionalText(100), note: optionalText(2000),
+  }).passthrough(),
   NewsletterSubscriber: z.object({
     email,
     consent: z.boolean().optional().default(true),

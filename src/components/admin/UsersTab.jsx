@@ -3,7 +3,7 @@ import { MailPlus, RefreshCw, Shield, Users } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import ResponsiveSelect from '@/components/ResponsiveSelect';
 
-const ROLE_OPTIONS = ['customer', 'support', 'editor', 'admin'];
+const ROLE_OPTIONS = ['customer', 'partner', 'support', 'editor', 'admin'];
 
 export default function UsersTab({ currentUser }) {
   const [users, setUsers] = useState([]);

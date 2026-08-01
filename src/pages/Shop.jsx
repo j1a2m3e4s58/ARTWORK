@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Download, FileText, Heart, List, ShoppingBag, X } from 'lucide-react';
 import CommerceCheckout from '@/components/shop/CommerceCheckout';
@@ -102,7 +103,7 @@ export default function Shop() {
               <ScrollReveal delay={0.1}><h1 className="mt-2 font-display text-5xl text-ivory md:text-7xl">{page.shop_title || commerce.storeName || 'Art Shop'}</h1></ScrollReveal>
               <p className="mt-4 max-w-2xl text-sm leading-relaxed text-ivory/40 md:text-base">{page.shop_subtitle || commerce.storeSubtitle}</p>
             </div>
-            <div className="flex flex-wrap gap-2"><button onClick={() => setCatalogueOpen(true)} className="flex min-h-12 items-center gap-2 border border-brass/30 px-4 text-sm text-brass transition-colors hover:border-brass/60"><List size={18} /> Art catalogue</button><button onClick={() => setGuidesOpen(true)} className="flex min-h-12 items-center gap-2 border border-brass/30 px-4 text-sm text-brass transition-colors hover:border-brass/60"><FileText size={18} /> Price guides</button><button onClick={() => setCartOpen(true)} className="relative flex min-h-12 w-fit items-center gap-2 border border-brass/30 px-5 text-sm text-ivory/70 transition-colors hover:border-brass/60 hover:text-brass">
+            <div className="flex flex-wrap gap-2"><Link to={user?.role === 'partner' ? '/partner-portal' : '/partner-with-us'} className="flex min-h-12 items-center gap-2 border border-brass/30 px-4 text-sm text-brass transition-colors hover:border-brass/60">{user?.role === 'partner' ? 'Partner portal' : 'Sell with us'}</Link><button onClick={() => setCatalogueOpen(true)} className="flex min-h-12 items-center gap-2 border border-brass/30 px-4 text-sm text-brass transition-colors hover:border-brass/60"><List size={18} /> Art catalogue</button><button onClick={() => setGuidesOpen(true)} className="flex min-h-12 items-center gap-2 border border-brass/30 px-4 text-sm text-brass transition-colors hover:border-brass/60"><FileText size={18} /> Price guides</button><button onClick={() => setCartOpen(true)} className="relative flex min-h-12 w-fit items-center gap-2 border border-brass/30 px-5 text-sm text-ivory/70 transition-colors hover:border-brass/60 hover:text-brass">
               <ShoppingBag size={18} /> Your Bag
               {cartCount > 0 && <span className="absolute -right-2 -top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-brass px-1 text-xs font-semibold text-obsidian">{cartCount}</span>}
             </button></div>

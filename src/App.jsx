@@ -38,6 +38,8 @@ const AcceptInvite = lazy(() => import('@/pages/AcceptInvite'));
 const VerifyEmail = lazy(() => import('@/pages/VerifyEmail'));
 const OrderTracking = lazy(() => import('@/pages/OrderTracking'));
 const Wishlist = lazy(() => import('@/pages/Wishlist'));
+const PartnerWithUs = lazy(() => import('@/pages/PartnerWithUs'));
+const PartnerPortal = lazy(() => import('@/pages/PartnerPortal'));
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings } = useAuth();
@@ -71,6 +73,8 @@ const AuthenticatedApp = () => {
         <Route path="/commission-policy" element={<LegalPage type="commission" />} />
         <Route path="/track-order" element={<OrderTracking />} />
         <Route path="/wishlist" element={<Wishlist />} />
+        <Route path="/partner-with-us" element={<PartnerWithUs />} />
+        <Route path="/partner-portal" element={<PartnerPortal />} />
       </Route>
       <Route element={<AdminRoute><AdminAccessGate><AdminLayout /></AdminAccessGate></AdminRoute>}>
         <Route path="/admin" element={<Admin />} />
