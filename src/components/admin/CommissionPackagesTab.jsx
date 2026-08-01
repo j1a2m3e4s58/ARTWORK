@@ -10,7 +10,7 @@ const DEFAULT_PACKAGES = [
 
 const createPackage = () => ({
   id: `package-${Date.now()}`,
-  name: 'New commission package',
+  name: 'New commission option',
   price: 'GH₵ ',
   duration: 'Estimated timeframe',
   features: ['Describe what is included'],
@@ -74,11 +74,11 @@ export default function CommissionPackagesTab() {
       features: item.features.map(feature => feature.trim()).filter(Boolean),
     }));
     if (clean.some(item => !item.name || !item.price || !item.duration)) {
-      setError('Every package needs a name, price, and timeframe.');
+      setError('Every commission option needs a name, price, and timeframe.');
       return;
     }
     if (!clean.some(item => item.active)) {
-      setError('Keep at least one package visible on the commission page.');
+      setError('Keep at least one option visible on the commission page.');
       return;
     }
     setSaving(true);
@@ -96,7 +96,7 @@ export default function CommissionPackagesTab() {
         : await studioClient.entities.SiteContent.create(payload);
       setRecord(saved);
       setPackages(clean);
-      setMessage('Saved. The commission page now uses these packages.');
+      setMessage('Saved. The commission page now uses these options.');
       window.dispatchEvent(new Event('atelier:content-updated'));
     } catch (saveError) {
       setError(saveError.message || 'The packages could not be saved.');
@@ -109,7 +109,7 @@ export default function CommissionPackagesTab() {
 
   return (
     <div>
-      <h1 className="mb-2 font-display text-4xl text-ivory">Commission Packages</h1>
+      <h1 className="mb-2 font-display text-4xl text-ivory">Commission options</h1>
       <p className="mb-7 max-w-2xl text-sm text-ivory/45">Change prices, package text, turnaround time, included offers, visibility, and the “Most Popular” label. Add as many packages as you need.</p>
       {error && <p role="alert" className="mb-5 border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-300">{error}</p>}
       {message && <p role="status" className="mb-5 border border-green-400/30 bg-green-400/10 p-3 text-sm text-green-300">{message}</p>}
@@ -118,7 +118,7 @@ export default function CommissionPackagesTab() {
         {packages.map((item, index) => (
           <article key={item.id} className="border border-brass/15 bg-carbon p-5">
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-brass/10 pb-4">
-              <p className="font-tight text-xs uppercase tracking-[0.22em] text-brass/70">Package {index + 1}</p>
+              <p className="font-tight text-xs uppercase tracking-[0.22em] text-brass/70">Option {index + 1}</p>
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={() => updatePackage(item.id, { active: !item.active })} className={`border px-3 py-1.5 text-xs ${item.active ? 'border-green-400/35 text-green-300' : 'border-ivory/15 text-ivory/45'}`}>{item.active ? 'Visible' : 'Hidden'}</button>
                 <button type="button" onClick={() => setFeatured(item.id)} className={`flex items-center gap-1 border px-3 py-1.5 text-xs ${item.featured ? 'border-brass bg-brass/10 text-brass' : 'border-brass/20 text-ivory/50'}`}><Star size={13} fill={item.featured ? 'currentColor' : 'none'} /> Most popular</button>

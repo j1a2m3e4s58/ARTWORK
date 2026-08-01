@@ -1,6 +1,6 @@
 ﻿import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, CalendarDays, Check, ChevronDown, Upload, Sparkles, Loader2 } from 'lucide-react';
+import { ArrowRight, CalendarDays, Check, ChevronDown, Upload, Sparkles, Loader2, Frame, Image as ImageIcon, X } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
@@ -12,6 +12,7 @@ import CommissionGuideChat from '@/components/CommissionGuideChat';
 import { useAuth } from '@/lib/AuthContext';
 import { Link } from 'react-router-dom';
 import { DEFAULT_COMMISSION_OPTIONS, parseCommissionOptions } from '@/lib/commissionOptions';
+import { parseCommissionPrices, ghc } from '@/lib/commissionPricing';
 
 const DEFAULT_PACKAGES = [
   { name: 'Sketch Study', price: 'GH₵ 800', duration: '5-7 days', features: ['One subject', 'Pencil / Charcoal', 'Digital delivery', '1 revision', 'A4 size'] },
@@ -31,6 +32,7 @@ export default function Commission() {
   const { user } = useAuth();
   const page = usePageContent('Commission');
   const commissionFormOptions = parseCommissionOptions(page.commission_form_options);
+  const commissionPrices = parseCommissionPrices(page.commission_price_options);
   const legacyPackages = [1, 2, 3].map((number, index) => ({
     name: page[`commission_pkg${number}_name`] || DEFAULT_PACKAGES[index].name,
     price: page[`commission_pkg${number}_price`] || DEFAULT_PACKAGES[index].price,
@@ -60,17 +62,38 @@ export default function Commission() {
   })).filter(faq => faq.q && faq.a);
 
   const [step, setStep] = useState(1);
-  const [form, setForm] = useState({ name: user?.full_name || '', email: user?.email || '', phone: '', artworkType: '', otherArtworkType: '', budget: '', deadline: '', description: '', package: '', referenceImageUrl: '' });
+  const [form, setForm] = useState({ name: user?.full_name || '', email: user?.email || '', phone: '', artworkType: '', otherArtworkType: '', budget: '', deadline: '', description: '', package: '', pricingCategory: '', pricingSize: '', pricingSubjects: '', pricingFinish: '', quotedPrice: '', referenceImageUrl: '' });
   const [submitted, setSubmitted] = useState(false);
   const [openFaq, setOpenFaq] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [previewOpen, setPreviewOpen] = useState(false);
   const fileInputRef = useRef(null);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const selectedArtworkTypes = String(form.artworkType || '').split(',').map(item => item.trim()).filter(Boolean);
   const otherSelected = selectedArtworkTypes.some(item => item.toLowerCase() === 'other');
+  const categories = [...new Set(commissionPrices.map(item => item.category))];
+  const categoryPrices = commissionPrices.filter(item => item.category === form.pricingCategory);
+  const sizes = [...new Set(categoryPrices.map(item => item.size))];
+  const sizePrices = categoryPrices.filter(item => item.size === form.pricingSize);
+  const subjects = [...new Set(sizePrices.map(item => item.subjects))];
+  const subjectPrices = sizePrices.filter(item => item.subjects === form.pricingSubjects);
+  const finishes = [...new Set(subjectPrices.map(item => item.finish))];
+  const selectedPrice = commissionPrices.find(item => item.category === form.pricingCategory && item.size === form.pricingSize && item.subjects === form.pricingSubjects && item.finish === form.pricingFinish);
+  const choosePricing = (key, value) => setForm(current => {
+    const next = { ...current, [key]: value };
+    if (key === 'pricingCategory') Object.assign(next, { pricingSize: '', pricingSubjects: '', pricingFinish: '', quotedPrice: '' });
+    if (key === 'pricingSize') Object.assign(next, { pricingSubjects: '', pricingFinish: '', quotedPrice: '' });
+    if (key === 'pricingSubjects') Object.assign(next, { pricingFinish: '', quotedPrice: '' });
+    if (key === 'pricingFinish') {
+      const match = commissionPrices.find(item => item.category === next.pricingCategory && item.size === next.pricingSize && item.subjects === next.pricingSubjects && item.finish === value);
+      next.quotedPrice = match ? String(match.price) : '';
+      next.package = match ? `${match.category} — ${match.size}, ${match.subjects}, ${match.finish}` : '';
+    }
+    return next;
+  });
   const toggleArtworkType = type => {
     const next = selectedArtworkTypes.includes(type)
       ? selectedArtworkTypes.filter(item => item !== type)
@@ -147,7 +170,7 @@ export default function Commission() {
               </a> : <Link to="/contact" className="flex items-center justify-center gap-2 border border-brass/30 text-brass py-3 font-tight text-sm tracking-wide hover:border-brass transition-colors">
                 Contact the studio
               </Link>}
-              <button onClick={() => { setSubmitted(false); setForm({ name: user?.full_name || '', email: user?.email || '', phone: '', artworkType: '', otherArtworkType: '', budget: '', deadline: '', description: '', package: '', referenceImageUrl: '' }); setStep(1); }}
+              <button onClick={() => { setSubmitted(false); setForm({ name: user?.full_name || '', email: user?.email || '', phone: '', artworkType: '', otherArtworkType: '', budget: '', deadline: '', description: '', package: '', pricingCategory: '', pricingSize: '', pricingSubjects: '', pricingFinish: '', quotedPrice: '', referenceImageUrl: '' }); setStep(1); }}
                 className="border border-brass/20 text-ivory/60 py-3 font-tight text-sm tracking-wide hover:border-brass/40 transition-colors"
               >
                 Submit another request
@@ -179,9 +202,10 @@ export default function Commission() {
           </ScrollReveal>
         </div>
 
-        {/* Packages */}
+        {/* Commission options */}
         <div className="max-w-7xl mx-auto px-6 lg:px-12 mb-24">
-          <ScrollReveal><SectionLabel>Packages</SectionLabel></ScrollReveal>
+          <ScrollReveal><SectionLabel>Commission options</SectionLabel></ScrollReveal>
+          <p className="mt-3 max-w-2xl text-sm text-ivory/45">Choose an option if it suits your request. You can still choose your exact size and framing in the form below.</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
             {packages.map((pkg, i) => (
               <ScrollReveal key={pkg.name} delay={i * 0.1}>
@@ -283,6 +307,19 @@ export default function Commission() {
                         />
                       </label>
                     )}
+                    <section className="mt-7 border border-brass/15 bg-carbon/60 p-4 sm:p-5">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div><p className="font-tight text-xs uppercase tracking-[.2em] text-brass">Size & presentation</p><p className="mt-1 text-sm text-ivory/45">Choose the price-guide option that matches your artwork. The price is an estimate and is included with your request.</p></div>
+                        {selectedPrice && <button type="button" onClick={() => setPreviewOpen(true)} className="flex items-center gap-2 border border-brass/35 px-3 py-2 text-xs text-brass hover:bg-brass/10"><ImageIcon size={14}/> Preview selected size</button>}
+                      </div>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <label className="text-xs uppercase tracking-wider text-ivory/45">Artwork pricing guide<select value={form.pricingCategory} onChange={e => choosePricing('pricingCategory', e.target.value)} className="mt-2 min-h-12 w-full border border-brass/20 bg-obsidian px-3 text-sm normal-case tracking-normal text-ivory"><option value="">Choose a guide</option>{categories.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+                        <label className="text-xs uppercase tracking-wider text-ivory/45">Size<select disabled={!form.pricingCategory} value={form.pricingSize} onChange={e => choosePricing('pricingSize', e.target.value)} className="mt-2 min-h-12 w-full border border-brass/20 bg-obsidian px-3 text-sm normal-case tracking-normal text-ivory disabled:opacity-40"><option value="">Choose a size</option>{sizes.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+                        <label className="text-xs uppercase tracking-wider text-ivory/45">Subjects<select disabled={!form.pricingSize} value={form.pricingSubjects} onChange={e => choosePricing('pricingSubjects', e.target.value)} className="mt-2 min-h-12 w-full border border-brass/20 bg-obsidian px-3 text-sm normal-case tracking-normal text-ivory disabled:opacity-40"><option value="">Choose subject count</option>{subjects.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+                        <label className="text-xs uppercase tracking-wider text-ivory/45">Framing / finish<select disabled={!form.pricingSubjects} value={form.pricingFinish} onChange={e => choosePricing('pricingFinish', e.target.value)} className="mt-2 min-h-12 w-full border border-brass/20 bg-obsidian px-3 text-sm normal-case tracking-normal text-ivory disabled:opacity-40"><option value="">Choose finish</option>{finishes.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+                      </div>
+                      {selectedPrice && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-brass/10 pt-4"><div><p className="text-xs uppercase tracking-[.18em] text-ivory/40">Your selected price</p><p className="mt-1 font-display text-3xl text-brass">{selectedPrice.priceNote || ghc(selectedPrice.price)}</p></div><p className="max-w-sm text-xs leading-relaxed text-ivory/45">{selectedPrice.category} · {selectedPrice.size} · {selectedPrice.subjects} · {selectedPrice.finish}</p></div>}
+                    </section>
                     <fieldset className="grid grid-cols-1 min-[390px]:grid-cols-2 gap-2 mt-3">
                       <legend className="sr-only">Budget</legend>
                       {commissionFormOptions.budgets.map(b => (
@@ -390,6 +427,16 @@ export default function Commission() {
             ))}
           </div>
         </div>
+        <AnimatePresence>
+          {previewOpen && selectedPrice && <motion.div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/75 p-3 backdrop-blur-sm sm:items-center sm:p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setPreviewOpen(false)}>
+            <motion.div className="w-full max-w-2xl border border-brass/30 bg-carbon shadow-2xl" initial={{ y: 28, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 28, opacity: 0 }} onClick={event => event.stopPropagation()}>
+              <div className="flex items-center justify-between border-b border-brass/15 px-5 py-4"><div><p className="text-xs uppercase tracking-[.2em] text-brass">Artwork preview</p><h3 className="mt-1 font-display text-2xl text-ivory">{selectedPrice.size} · {selectedPrice.finish}</h3></div><button type="button" onClick={() => setPreviewOpen(false)} className="border border-brass/20 p-2 text-ivory/60 hover:text-ivory"><X size={18}/></button></div>
+              <div className="grid gap-5 p-5 sm:grid-cols-[1.15fr_.85fr] sm:p-7"><div className={`flex min-h-72 items-center justify-center bg-[#bca36d]/10 p-6 ${/framed/i.test(selectedPrice.finish) ? 'border-[13px] border-[#6e532b] shadow-[inset_0_0_0_2px_#c4a968,0_12px_35px_rgba(0,0,0,.45)]' : 'border border-ivory/25 shadow-[0_12px_35px_rgba(0,0,0,.35)]'}`}>
+                {selectedPrice.previewImageUrl ? <img src={selectedPrice.previewImageUrl} alt={`Preview of ${selectedPrice.size} ${selectedPrice.finish} artwork`} className="max-h-72 w-full object-contain" /> : <div className="text-center"><Frame className="mx-auto text-brass/70" size={42}/><p className="mt-4 font-display text-2xl text-ivory">Your artwork</p><p className="mt-2 text-sm text-ivory/45">{selectedPrice.size}<br/>{selectedPrice.finish}</p></div>}
+              </div><div className="flex flex-col justify-center"><p className="text-xs uppercase tracking-[.2em] text-brass">Selected format</p><h4 className="mt-3 font-display text-3xl text-ivory">{selectedPrice.size}</h4><p className="mt-2 text-sm text-ivory/55">{selectedPrice.subjects} · {selectedPrice.finish}</p><p className="mt-6 font-display text-3xl text-brass">{selectedPrice.priceNote || ghc(selectedPrice.price)}</p><p className="mt-3 text-xs leading-relaxed text-ivory/40">The Studio Control image manager can replace this preview with a real framed or unframed sample at any time.</p><button type="button" onClick={() => setPreviewOpen(false)} className="mt-6 bg-brass px-4 py-3 text-sm text-obsidian">Use this selection</button></div></div>
+            </motion.div>
+          </motion.div>}
+        </AnimatePresence>
         <CommissionGuideChat />
       </div>
     </PageTransition>

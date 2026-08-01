@@ -32,6 +32,11 @@ export const schemas = {
     deadline: optionalText(40),
     description: text(12000).min(10),
     package: optionalText(120),
+    pricingCategory: optionalText(160),
+    pricingSize: optionalText(80),
+    pricingSubjects: optionalText(80),
+    pricingFinish: optionalText(100),
+    quotedPrice: z.union([z.string().max(40), z.coerce.number().nonnegative().max(10000000)]).optional().default(''),
     referenceImageUrl: safeUrl.optional().default(''),
   }),
   InternshipApplication: z.object({

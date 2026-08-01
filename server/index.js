@@ -26,6 +26,7 @@ import { initializePayment, paymentStatus, verifyPayment, verifyPaymentWebhook }
 import { blocksEntityReadForPendingMfa, canUseProtectedFeature, passwordProblem, requiresProductionMfa } from './security.js';
 import { reportOperationalError } from './operations.js';
 import { assertRuntimeConfiguration } from './runtime-config.js';
+import { DEFAULT_COMMISSION_PRICES } from '../src/lib/commissionPricing.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -687,6 +688,12 @@ async function ensureSeeds() {
       { id: newId(), title: 'Pencil Portrait Price List', description: 'Portrait drawing sizes, options and current prices.', fileUrl: '/price-guides/reigns-atelier-pencil-portrait-price-list.pdf', status: 'published', sortOrder: 2, created_date: now() },
     );
     db.data.SiteContent.push({ id: newId(), key: 'price_guides_seeded', value: 'true', label: 'Price guides initialised', page: 'Settings', group: 'System', created_date: now() });
+  }
+  if (!db.data.SiteContent.some(item => item.page === 'Commission' && item.key === 'commission_price_options')) {
+    db.data.SiteContent.push({
+      id: newId(), key: 'commission_price_options', label: 'Commission size, finish and price options',
+      page: 'Commission', group: 'Commission Pricing', value: JSON.stringify(DEFAULT_COMMISSION_PRICES), created_date: now(),
+    });
   }
   const provenanceByHost = {
     'images.pexels.com': { name: 'Pexels', license: 'https://www.pexels.com/license/' },
