@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ImagePlus, Plus, Save, Trash2 } from 'lucide-react';
+import { Copy, Plus, Save, Trash2 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import FileUploadField from '@/components/admin/FileUploadField';
 import { DEFAULT_COMMISSION_PRICES } from '@/lib/commissionPricing';
@@ -17,6 +17,7 @@ export default function CommissionPricingTab() {
     if (existing?.value) { try { const parsed = JSON.parse(existing.value); if (Array.isArray(parsed) && parsed.length) setItems(parsed); } catch { /* defaults */ } }
   }).catch(e => setError(e.message)).finally(() => setLoading(false)); }, []);
   const update = (id, changes) => setItems(current => current.map(item => item.id === id ? { ...item, ...changes } : item));
+  const duplicate = item => setItems(current => [...current, { ...item, id: `price-${Date.now()}`, size: `${item.size} copy`, active: true }]);
   const active = useMemo(() => items.filter(item => item.active).length, [items]);
   const save = async () => {
     const clean = items.map(item => ({ ...item, category: String(item.category || '').trim(), size: String(item.size || '').trim(), subjects: String(item.subjects || '').trim(), finish: String(item.finish || '').trim(), price: Number(item.price || 0), priceNote: String(item.priceNote || '').trim() }));
@@ -32,6 +33,7 @@ export default function CommissionPricingTab() {
     <div className="mt-6 space-y-4">{items.map((item, i) => <article key={item.id} className="border border-brass/15 bg-carbon p-4 sm:p-5"><div className="mb-4 flex flex-wrap items-center justify-between gap-2"><p className="text-xs uppercase tracking-[.2em] text-brass/70">Choice {i + 1}</p><div className="flex gap-2"><button type="button" onClick={() => update(item.id, { active: item.active === false })} className="border border-brass/20 px-3 py-1.5 text-xs text-ivory/60">{item.active === false ? 'Hidden' : 'Visible'}</button><button type="button" onClick={() => setItems(list => list.filter(candidate => candidate.id !== item.id))} className="border border-red-400/25 px-3 py-1.5 text-xs text-red-300"><Trash2 size={13}/></button></div></div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{[['Artwork category','category'],['Size / dimensions','size'],['Subjects','subjects'],['Finish','finish']].map(([label,key]) => <label key={key} className="text-xs uppercase tracking-wider text-ivory/45">{label}<input value={item[key] || ''} onChange={e => update(item.id, {[key]:e.target.value})} className="mt-2 w-full border border-brass/15 bg-obsidian px-3 py-2.5 text-sm normal-case tracking-normal text-ivory"/></label>)}<label className="text-xs uppercase tracking-wider text-ivory/45">Price (GHS)<input type="number" min="0" value={item.price ?? 0} onChange={e => update(item.id, {price:e.target.value})} className="mt-2 w-full border border-brass/15 bg-obsidian px-3 py-2.5 text-sm normal-case tracking-normal text-ivory"/></label></div>
       <div className="mt-3 grid gap-3 lg:grid-cols-2"><label className="text-xs uppercase tracking-wider text-ivory/45">Price note (optional)<input value={item.priceNote || ''} onChange={e => update(item.id,{priceNote:e.target.value})} placeholder="For example: GHS 3,500–3,800" className="mt-2 w-full border border-brass/15 bg-obsidian px-3 py-2.5 text-sm normal-case tracking-normal text-ivory"/></label><FileUploadField label="Customer preview image (optional)" value={item.previewImageUrl} onChange={value => update(item.id,{previewImageUrl:value})} accept="image/*" placeholder="Upload a framed or paper preview image" /></div>
+      <button type="button" onClick={() => duplicate(item)} className="mt-3 flex items-center gap-2 border border-brass/25 px-3 py-2 text-xs text-brass hover:bg-brass/10"><Copy size={13}/> Duplicate this option</button>
     </article>)}</div>
     <div className="mt-6 flex flex-wrap gap-3"><button type="button" onClick={() => setItems(list => [...list, blank()])} className="flex items-center gap-2 border border-brass/30 px-4 py-3 text-sm text-brass"><Plus size={16}/> Add size option</button><button type="button" disabled={saving || !active} onClick={save} className="flex items-center gap-2 bg-brass px-5 py-3 text-sm text-obsidian disabled:opacity-50"><Save size={16}/>{saving ? 'Saving…' : 'Save customer prices'}</button></div>
   </div>;
