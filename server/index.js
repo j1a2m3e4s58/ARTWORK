@@ -369,7 +369,24 @@ async function confirmPaidOrder(order, payment, providerEventId) {
   delete order.paymentAuthorizationUrl;
   order.statusHistory ||= [];
   order.statusHistory.push({ status: 'confirmed', at: now(), actorId: 'payment-provider' });
+  assignPartnerSettlements(order);
   return true;
+}
+
+function assignPartnerSettlements(order) {
+  if (order.partnerSettlements?.length) return order.partnerSettlements;
+  const settlements = (order.items || []).map(item => {
+    const product = db.data.ShopProduct.find(candidate => candidate.id === item.productId && !candidate.deleted_at);
+    if (!product?.sellerId) return null;
+    const partner = db.data.User.find(candidate => candidate.id === product.sellerId && !candidate.deleted_at);
+    const application = db.data.PartnerApplication.find(candidate => candidate.userId === product.sellerId && candidate.status === 'approved' && !candidate.deleted_at);
+    const commissionRate = Math.max(0, Math.min(100, Number(application?.commissionRate ?? partner?.partnerProfile?.commissionRate ?? 0)));
+    const gross = Math.max(0, Number(item.price) || 0) * Math.max(1, Number(item.qty) || 1);
+    const studioCommission = Math.round(gross * commissionRate * 100) / 100;
+    return { productId: product.id, partnerId: product.sellerId, gross, commissionRate, studioCommission, partnerAmount: Math.round((gross - studioCommission) * 100) / 100 };
+  }).filter(Boolean);
+  order.partnerSettlements = settlements;
+  return settlements;
 }
 
 async function handlePaymentWebhook(req, res) {
@@ -1610,7 +1627,14 @@ app.get('/api/partner/overview', requireVerifiedUser, async (req, res) => {
   const products = db.data.ShopProduct.filter(item => item.sellerId === req.user.id && !item.deleted_at);
   const payouts = db.data.PartnerPayout.filter(item => item.partnerId === req.user.id && !item.deleted_at);
   const application = db.data.PartnerApplication.find(item => item.userId === req.user.id && !item.deleted_at);
-  res.json({ application, products, payouts });
+  const sales = db.data.Order.filter(order => order.paymentStatus === 'paid' && !order.deleted_at)
+    .flatMap(order => (order.partnerSettlements || []).map(settlement => ({ ...settlement, orderId: order.id, trackingCode: order.trackingCode, paidAt: order.paidAt })))
+    .filter(settlement => settlement.partnerId === req.user.id);
+  const grossSales = sales.reduce((sum, sale) => sum + sale.gross, 0);
+  const studioCommission = sales.reduce((sum, sale) => sum + sale.studioCommission, 0);
+  const earned = sales.reduce((sum, sale) => sum + sale.partnerAmount, 0);
+  const paidOut = payouts.filter(item => item.status === 'paid').reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  res.json({ application, products, payouts, sales, grossSales, studioCommission, earned, paidOut, availableBalance: Math.max(0, earned - paidOut) });
 });
 
 app.post('/api/partner/products', requireVerifiedUser, mutationLimiter, async (req, res) => {
@@ -1995,6 +2019,7 @@ app.patch('/api/entities/:name/:id', requireStaff, mutationLimiter, async (req, 
       changes.proofStatus = record.paymentProofUrl ? 'approved' : record.proofStatus;
       changes.status = record.status === 'pending' ? 'confirmed' : record.status;
       record.paidAt ||= now();
+      assignPartnerSettlements(record);
     } else if (changes.paymentStatus === 'failed' && record.paymentProofUrl) {
       changes.proofStatus = 'rejected';
     } else if (changes.paymentStatus === 'payment_submitted') {
