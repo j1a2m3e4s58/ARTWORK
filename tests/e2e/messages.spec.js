@@ -26,7 +26,12 @@ test.beforeEach(async ({ page }, testInfo) => {
   };
   await page.route('**/api/chat/conversations', route => route.fulfill({ json: [conversation] }));
   await page.route('**/api/chat/directory', route => route.fulfill({ json: [] }));
-  await page.route('**/api/chat/conversations/e2e-chat/messages?*', route => route.fulfill({ json: { items: [], nextCursor: null } }));
+  const message = {
+    id: 'e2e-message', conversationId: conversation.id, senderId: me.id,
+    body: 'A long studio message that must remain inside the conversation column on every screen size.',
+    created_date: new Date().toISOString(), reactions: {}, allowForward: true,
+  };
+  await page.route('**/api/chat/conversations/e2e-chat/messages?*', route => route.fulfill({ json: { items: [message], nextCursor: null } }));
   await page.route('**/api/chat/heartbeat', route => route.fulfill({ json: { success: true } }));
   await page.route('**/api/chat/events', route => route.abort());
 });
@@ -47,6 +52,10 @@ test('chat previews several selected files and leaves the site footer reachable'
   await expect(page.getByText('reigns-atelier-pencil-portrait-price-list.pdf', { exact: true })).toBeVisible();
   await expect(page.getByText('2 of 10 files selected')).toBeVisible();
   await expect(page.getByText('Add more', { exact: true })).toBeVisible();
+
+  await page.getByTitle('Message options').click();
+  await expect(page.getByRole('button', { name: 'Delete for everyone' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
 
   const accessibility = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
   const serious = accessibility.violations.filter(item => ['serious', 'critical'].includes(item.impact));
