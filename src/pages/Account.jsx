@@ -19,6 +19,7 @@ export default function Account() {
   const { user, checkUserAuth, logout } = useAuth();
   const [data, setData] = useState({ messages: [], commissions: [], artRequests: [], filmRequests: [], orders: [], notifications: [] });
   const [name, setName] = useState(user?.full_name || '');
+  const [chatDiscoverable, setChatDiscoverable] = useState(user?.chatDiscoverable !== false);
   const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '' });
   const [closePassword, setClosePassword] = useState('');
   const [notice, setNotice] = useState('');
@@ -55,7 +56,7 @@ export default function Account() {
   const updateProfile = async event => {
     event.preventDefault();
     setError('');
-    const updated = await studioClient.account.updateProfile({ full_name: name });
+    const updated = await studioClient.account.updateProfile({ full_name: name, chatDiscoverable });
     await checkUserAuth();
     setName(updated.full_name);
     setNotice('Profile updated.');
@@ -266,6 +267,7 @@ export default function Account() {
                 </label>
                 <p className="mt-3 text-sm text-ivory/45">{user?.email}</p>
                 <p className="mt-4 border border-brass/10 bg-obsidian/40 p-3 text-sm text-ivory/55"><b className="block text-ivory/75">Studio community messages</b>Your display name is available in the private signed-in member directory. Your email address and account details are never shown.</p>
+                <label className="mt-3 flex items-start gap-3 border border-brass/10 bg-obsidian/40 p-3 text-sm text-ivory/60"><input type="checkbox" checked={chatDiscoverable} onChange={event => setChatDiscoverable(event.target.checked)} className="mt-1 h-4 w-4 accent-[#c9a65b]" /><span><b className="block text-ivory/75">Let signed-in members find me</b>Turn this off to hide your profile from new community conversations. Existing chats remain available.</span></label>
                 <button className="mt-4 flex items-center gap-2 bg-brass px-4 py-2 text-sm text-obsidian"><Save size={15} /> Save profile</button>
               </form>
 

@@ -149,6 +149,47 @@ test('API keeps public reads open while blocking unverified customer mutations',
     });
     assert.equal(chatMessageResponse.status, 201);
     const chatMessage = await chatMessageResponse.json();
+    const invalidRecipientResponse = await fetch(`${baseUrl}/api/chat/conversations`, {
+      method: 'POST', headers: securedHeaders, body: JSON.stringify({ userId: 'missing-user' }),
+    });
+    assert.equal(invalidRecipientResponse.status, 404, 'A missing recipient must never silently fall back to an administrator.');
+
+    for (const body of ['Second message', 'Third message']) {
+      const response = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, {
+        method: 'POST', headers: securedHeaders, body: JSON.stringify({ body }),
+      });
+      assert.equal(response.status, 201);
+    }
+    const batchResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages/batch`, {
+      method: 'POST',
+      headers: securedHeaders,
+      body: JSON.stringify({ messages: [
+        { body: 'Two studio references', attachmentUrl: 'https://res.cloudinary.com/example/image/upload/reference-one.jpg', attachmentName: 'reference-one.jpg', attachmentType: 'image/jpeg' },
+        { attachmentUrl: 'https://res.cloudinary.com/example/image/upload/reference-two.jpg', attachmentName: 'reference-two.jpg', attachmentType: 'image/jpeg' },
+      ] }),
+    });
+    assert.equal(batchResponse.status, 201);
+    const batchMessages = await batchResponse.json();
+    assert.equal(batchMessages.length, 2, 'A multi-file send should record every attachment in one committed batch.');
+    assert.equal(batchMessages[0].body, 'Two studio references');
+    assert.equal(batchMessages[1].attachmentName, 'reference-two.jpg');
+    const firstPageResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages?limit=2`, { headers: { Cookie: adminCookieHeader } });
+    assert.equal(firstPageResponse.status, 200);
+    const firstPage = await firstPageResponse.json();
+    assert.equal(firstPage.items.length, 2);
+    assert.ok(firstPage.nextCursor, 'Paginated chat history should expose a cursor for older messages.');
+    const secondPage = await (await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages?limit=2&before=${encodeURIComponent(firstPage.nextCursor)}`, { headers: { Cookie: adminCookieHeader } })).json();
+    assert.ok(secondPage.items.length >= 1);
+
+    const markReadHeaders = { 'Content-Type': 'application/json', Cookie: cookieHeader, 'X-CSRF-Token': csrf };
+    assert.equal((await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/read`, { method: 'POST', headers: markReadHeaders })).status, 200);
+    const readOnce = await (await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, { headers: { Cookie: adminCookieHeader } })).json();
+    const firstReadAt = readOnce.find(item => item.id === chatMessage.id).readAt;
+    assert.ok(firstReadAt);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal((await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/read`, { method: 'POST', headers: markReadHeaders })).status, 200);
+    const readTwice = await (await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, { headers: { Cookie: adminCookieHeader } })).json();
+    assert.equal(readTwice.find(item => item.id === chatMessage.id).readAt, firstReadAt, 'Reading a conversation again must preserve the original read timestamp.');
     const reactionResponse = await fetch(`${baseUrl}/api/chat/messages/${chatMessage.id}/reaction`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'X-CSRF-Token': csrf },

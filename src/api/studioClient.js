@@ -171,10 +171,20 @@ export const studioClient = {
     conversations: () => request('/api/chat/conversations'),
     directory: () => request('/api/chat/directory'),
     start: userId => request('/api/chat/conversations', { method: 'POST', body: JSON.stringify({ userId }) }),
-    messages: (id, query = '') => request(`/api/chat/conversations/${encodeURIComponent(id)}/messages${query ? `?q=${encodeURIComponent(query)}` : ''}`),
+    messages: (id, { query = '', before = '', limit = 60 } = {}) => {
+      const params = new URLSearchParams();
+      if (query) params.set('q', query);
+      else {
+        params.set('limit', String(limit));
+        if (before) params.set('before', before);
+      }
+      return request(`/api/chat/conversations/${encodeURIComponent(id)}/messages?${params}`);
+    },
     send: (id, data) => request(`/api/chat/conversations/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify(data) }),
+    sendBatch: (id, messages) => request(`/api/chat/conversations/${encodeURIComponent(id)}/messages/batch`, { method: 'POST', body: JSON.stringify({ messages }) }),
     markRead: id => request(`/api/chat/conversations/${encodeURIComponent(id)}/read`, { method: 'POST' }),
     setForwarding: (messageId, allowed) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/forwarding`, { method: 'PATCH', body: JSON.stringify({ allowed }) }),
+    forward: (messageId, conversationId) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/forward`, { method: 'POST', body: JSON.stringify({ conversationId }) }),
     react: (messageId, emoji) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/reaction`, { method: 'POST', body: JSON.stringify({ emoji }) }),
     edit: (messageId, body) => request(`/api/chat/messages/${encodeURIComponent(messageId)}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
     remove: (messageId, mode = 'me') => request(`/api/chat/messages/${encodeURIComponent(messageId)}?mode=${encodeURIComponent(mode)}`, { method: 'DELETE' }),

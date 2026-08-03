@@ -1,14 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Archive, ArrowLeft, Ban, Bell, BellOff, CheckCheck, Download, File, Image, Loader2,
-  Megaphone, MessageCircle, Mic, MoreVertical, Paperclip, Pencil, Reply, RotateCcw,
-  Search, Send, Smile, Square, Trash2, Users, Video, X,
+  Archive, ArrowDown, ArrowLeft, Ban, Bell, BellOff, CheckCheck, Download, File, Forward, Image, Loader2,
+  Megaphone, MessageCircle, Mic, MoreVertical, Paperclip, Pencil, Plus, Reply, RotateCcw,
+  Search, Send, Smile, Square, Trash2, Users, Video, WifiOff, X,
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
 
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const MAX_FILE_BYTES = 75 * 1024 * 1024;
+const inferMimeType = file => {
+  if (file?.type) return file.type;
+  const extension = String(file?.name || '').split('.').pop()?.toLowerCase();
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic'].includes(extension)) return `image/${extension === 'jpg' ? 'jpeg' : extension}`;
+  if (['mp4', 'webm', 'mov'].includes(extension)) return `video/${extension === 'mov' ? 'quicktime' : extension}`;
+  if (['mp3', 'wav', 'm4a', 'ogg'].includes(extension)) return `audio/${extension === 'm4a' ? 'mp4' : extension}`;
+  if (extension === 'pdf') return 'application/pdf';
+  return 'application/octet-stream';
+};
 const attachmentIcon = type => type?.startsWith('image') ? Image : type?.startsWith('video') ? Video : type?.startsWith('audio') ? Mic : File;
 const formatBytes = bytes => {
   if (!bytes) return '';
@@ -88,10 +97,10 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [directory, setDirectory] = useState([]);
   const [activeId, setActiveId] = useState('');
   const [messages, setMessages] = useState([]);
-  const [text, setText] = useState('');
-  const [file, setFile] = useState(null);
-  const [filePreview, setFilePreview] = useState('');
+  const [drafts, setDrafts] = useState({});
+  const [attachments, setAttachments] = useState([]);
   const [preview, setPreview] = useState(null);
+  const [forwardingMessage, setForwardingMessage] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null);
   const [query, setQuery] = useState('');
   const [messageQuery, setMessageQuery] = useState('');
@@ -102,7 +111,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [editing, setEditing] = useState(null);
   const [messageMenuId, setMessageMenuId] = useState('');
   const [reactionPickerId, setReactionPickerId] = useState('');
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadProgress, setUploadProgress] = useState({});
   const [uploadFailed, setUploadFailed] = useState(false);
   const [pushState, setPushState] = useState('unknown');
   const [showAnnouncement, setShowAnnouncement] = useState(false);
@@ -110,12 +119,23 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [error, setError] = useState('');
+  const [connectionState, setConnectionState] = useState('connecting');
+  const [nextCursor, setNextCursor] = useState(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const messagesPaneRef = useRef(null);
   const recorderRef = useRef(null);
+  const recordingStreamRef = useRef(null);
+  const attachmentsRef = useRef([]);
   const chunksRef = useRef([]);
   const uploadAbortRef = useRef(null);
   const typingTimerRef = useRef(null);
   const initializedSelectionRef = useRef(false);
+  const typingLastSentRef = useRef({ value: false, at: 0 });
+  const activeIdRef = useRef('');
+  const text = drafts[activeId] || '';
+  const setText = value => setDrafts(current => ({ ...current, [activeId]: typeof value === 'function' ? value(current[activeId] || '') : value }));
+  useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
 
   const load = async () => {
     const [conversationRows, people] = await Promise.all([studioClient.chat.conversations(), studioClient.chat.directory()]);
@@ -134,8 +154,12 @@ export default function ChatWorkspace({ adminMode = false }) {
       ? pane.scrollHeight - pane.scrollTop - pane.clientHeight
       : Number.POSITIVE_INFINITY;
     const shouldFollowLatest = options.scrollToBottom || distanceFromBottom < 120;
-    const rows = await studioClient.chat.messages(id, search);
-    setMessages(rows);
+    const response = await studioClient.chat.messages(id, { query: search, before: options.before || '', limit: 60 });
+    const rows = Array.isArray(response) ? response : response.items || [];
+    setNextCursor(Array.isArray(response) ? null : response.nextCursor || null);
+    setMessages(current => options.mergeLatest
+      ? [...new Map([...current, ...rows].map(item => [item.id, item])).values()].sort((a, b) => String(a.created_date).localeCompare(String(b.created_date)))
+      : rows);
     const hasUnreadIncoming = rows.some(message => message.senderId !== user.id && !(message.readBy || []).includes(user.id));
     if (hasUnreadIncoming) await studioClient.chat.markRead(id);
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
@@ -147,32 +171,65 @@ export default function ChatWorkspace({ adminMode = false }) {
   };
 
   useEffect(() => {
-    load().catch(loadError => setError(loadError.message));
+    load().then(() => setConnectionState('connected')).catch(loadError => { setConnectionState('offline'); setError(loadError.message); });
     studioClient.chat.heartbeat().catch(() => {});
     const timer = window.setInterval(() => {
-      load().catch(() => {});
+      load().then(() => setConnectionState('connected')).catch(() => setConnectionState('offline'));
       studioClient.chat.heartbeat().catch(() => {});
-      if (activeId) loadMessages(activeId).catch(() => {});
-    }, 5000);
+      if (activeId) loadMessages(activeId, '', { mergeLatest: true }).catch(() => setConnectionState('offline'));
+    }, 15_000);
     return () => window.clearInterval(timer);
   }, [activeId]);
   useEffect(() => {
+    if (!window.EventSource) return undefined;
+    const stream = new EventSource('/api/chat/events', { withCredentials: true });
+    stream.addEventListener('ready', () => setConnectionState('connected'));
+    const refresh = event => {
+      setConnectionState('connected');
+      const payload = JSON.parse(event.data || '{}');
+      load().catch(() => setConnectionState('offline'));
+      if (payload.conversationId === activeIdRef.current) loadMessages(payload.conversationId, '', { mergeLatest: true }).catch(() => setConnectionState('offline'));
+    };
+    ['message', 'read', 'typing', 'conversation'].forEach(name => stream.addEventListener(name, refresh));
+    stream.onerror = () => setConnectionState('reconnecting');
+    return () => stream.close();
+  }, []);
+  useEffect(() => {
+    activeIdRef.current = activeId;
     setMessageQuery('');
     setSearchingMessages(false);
+    setReplyingTo(null);
+    setEditing(null);
+    setMessageMenuId('');
+    setReactionPickerId('');
+    setShowConversationMenu(false);
+    setPreview(null);
+    setForwardingMessage(null);
+    setError('');
+    setAttachments(current => {
+      current.forEach(item => URL.revokeObjectURL(item.previewUrl));
+      return [];
+    });
     loadMessages(activeId, '', { scrollToBottom: true }).catch(loadError => setError(loadError.message));
   }, [activeId]);
   useEffect(() => {
-    if (!file) { setFilePreview(''); return undefined; }
-    const url = URL.createObjectURL(file);
-    setFilePreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
-  useEffect(() => {
-    if (!('Notification' in window)) setPushState('unsupported');
-    else setPushState(window.Notification.permission === 'granted' ? 'enabled' : 'disabled');
+    const detectPush = async () => {
+      if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return setPushState('unsupported');
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      setPushState(window.Notification.permission === 'granted' && subscription ? 'enabled' : 'disabled');
+    };
+    detectPush().catch(() => setPushState('disabled'));
     return () => {
       window.clearTimeout(typingTimerRef.current);
       uploadAbortRef.current?.abort();
+      if (recorderRef.current?.state === 'recording') {
+        recorderRef.current.ondataavailable = null;
+        recorderRef.current.onstop = null;
+        recorderRef.current.stop();
+      }
+      recordingStreamRef.current?.getTracks().forEach(track => track.stop());
+      attachmentsRef.current.forEach(item => URL.revokeObjectURL(item.previewUrl));
     };
   }, []);
 
@@ -193,42 +250,81 @@ export default function ChatWorkspace({ adminMode = false }) {
       setActiveId(conversation.id);
     } catch (startError) { setError(startError.message); }
   };
-  const chooseFile = selected => {
+  const chooseFiles = selectedFiles => {
     setError('');
-    if (!selected) return;
-    if (selected.size > MAX_FILE_BYTES) return setError('Choose a file no larger than 75 MB.');
-    setFile(selected);
+    const selected = [...(selectedFiles || [])];
+    if (!selected.length) return;
+    const oversized = selected.find(item => item.size > MAX_FILE_BYTES);
+    if (oversized) return setError(`${oversized.name} is larger than the 75 MB limit.`);
+    const availableSlots = Math.max(0, 10 - attachments.length);
+    const additions = selected.slice(0, availableSlots).map(item => ({
+      id: `${Date.now()}-${crypto.randomUUID?.() || Math.random()}`,
+      file: item,
+      mime: inferMimeType(item),
+      previewUrl: URL.createObjectURL(item),
+    }));
+    setAttachments(current => [...current, ...additions].slice(0, 10));
+    if (selected.length > availableSlots) setError('You can attach up to 10 files to one send.');
   };
+  const removeAttachment = id => setAttachments(current => {
+    const removed = current.find(item => item.id === id);
+    if (removed) URL.revokeObjectURL(removed.previewUrl);
+    return current.filter(item => item.id !== id);
+  });
   const send = async () => {
-    if ((!text.trim() && !file) || !activeId) return;
+    if ((!text.trim() && !attachments.length) || !activeId) return;
     setBusy(true);
     setUploadFailed(false);
-    setUploadProgress(file ? 1 : 0);
+    setUploadProgress(Object.fromEntries(attachments.map(item => [item.id, 1])));
     setError('');
     try {
-      let attachment = {};
-      if (file) {
+      if (!attachments.length) {
+        await studioClient.chat.send(activeId, { body: text.trim(), replyToId: replyingTo?.id || null, allowForward: false });
+      } else {
         uploadAbortRef.current = new AbortController();
-        const uploaded = await studioClient.integrations.Core.UploadFileProgress({
-          file, purpose: 'chat-attachment', signal: uploadAbortRef.current.signal, onProgress: setUploadProgress,
-        });
-        attachment = {
-          attachmentUrl: uploaded.file_url,
-          attachmentName: file.name,
-          attachmentType: file.name.startsWith('voice-message-') ? 'audio/webm' : uploaded.media?.mime || file.type,
-          attachmentBytes: file.size,
-        };
+        const messages = [];
+        for (let index = 0; index < attachments.length; index += 1) {
+          const item = attachments[index];
+          const uploaded = await studioClient.integrations.Core.UploadFileProgress({
+            file: item.file,
+            purpose: 'chat-attachment',
+            signal: uploadAbortRef.current.signal,
+            onProgress: progress => setUploadProgress(current => ({ ...current, [item.id]: progress })),
+          });
+          messages.push({
+            body: index === 0 ? text.trim() : '',
+            attachmentUrl: uploaded.file_url,
+            attachmentName: item.file.name,
+            attachmentType: item.file.name.startsWith('voice-message-') ? 'audio/webm' : uploaded.media?.mime || item.mime,
+            attachmentBytes: item.file.size,
+            replyToId: index === 0 ? replyingTo?.id || null : null,
+            allowForward: false,
+          });
+        }
+        await studioClient.chat.sendBatch(activeId, messages);
       }
-      await studioClient.chat.send(activeId, { body: text.trim(), ...attachment, replyToId: replyingTo?.id || null, allowForward: false });
-      setText(''); setFile(null); setReplyingTo(null);
-      setUploadProgress(0);
+      setText('');
+      attachments.forEach(item => URL.revokeObjectURL(item.previewUrl));
+      setAttachments([]); setReplyingTo(null);
+      setUploadProgress({});
       await loadMessages(activeId, '', { scrollToBottom: true }); await load();
     } catch (sendError) {
-      setUploadFailed(Boolean(file) && sendError.name !== 'AbortError');
-      setError(sendError.name === 'AbortError' ? 'Upload cancelled. Your file is still ready to retry.' : sendError.message);
+      setUploadFailed(Boolean(attachments.length) && sendError.name !== 'AbortError');
+      setError(sendError.name === 'AbortError' ? 'Upload cancelled. Your files are still ready to retry.' : sendError.message);
     } finally { setBusy(false); uploadAbortRef.current = null; }
   };
   const setForwarding = async message => { await studioClient.chat.setForwarding(message.id, !message.allowForward); await loadMessages(activeId); };
+  const forwardMessage = async conversationId => {
+    if (!forwardingMessage) return;
+    setBusy(true); setError('');
+    try {
+      await studioClient.chat.forward(forwardingMessage.id, conversationId);
+      setForwardingMessage(null);
+      setActiveId(conversationId);
+      await load();
+    } catch (forwardError) { setError(forwardError.message); }
+    finally { setBusy(false); }
+  };
   const react = async (message, emoji) => { await studioClient.chat.react(message.id, message.reactions?.[user.id] === emoji ? '' : emoji); await loadMessages(activeId); };
   const saveEdit = async () => {
     if (!editing?.body?.trim()) return;
@@ -252,7 +348,12 @@ export default function ChatWorkspace({ adminMode = false }) {
   const updateTyping = value => {
     setText(value);
     if (!activeId) return;
-    studioClient.chat.typing(activeId, Boolean(value.trim())).catch(() => {});
+    const typing = Boolean(value.trim());
+    const timestamp = Date.now();
+    if (typing !== typingLastSentRef.current.value || timestamp - typingLastSentRef.current.at > 1200) {
+      typingLastSentRef.current = { value: typing, at: timestamp };
+      studioClient.chat.typing(activeId, typing).catch(() => {});
+    }
     window.clearTimeout(typingTimerRef.current);
     typingTimerRef.current = window.setTimeout(() => studioClient.chat.typing(activeId, false).catch(() => {}), 1800);
   };
@@ -262,6 +363,30 @@ export default function ChatWorkspace({ adminMode = false }) {
     try { await loadMessages(activeId, messageQuery, { scrollToTop: true }); }
     catch (searchError) { setError(searchError.message); }
     finally { setSearchBusy(false); }
+  };
+  const loadOlderMessages = async () => {
+    if (!activeId || !nextCursor || loadingOlder) return;
+    const pane = messagesPaneRef.current;
+    const previousHeight = pane?.scrollHeight || 0;
+    setLoadingOlder(true);
+    try {
+      const response = await studioClient.chat.messages(activeId, { before: nextCursor, limit: 60 });
+      const older = response.items || [];
+      setMessages(current => [...older, ...current]);
+      setNextCursor(response.nextCursor || null);
+      window.requestAnimationFrame(() => {
+        if (pane) pane.scrollTop = pane.scrollHeight - previousHeight;
+      });
+    } catch (olderError) { setError(olderError.message); }
+    finally { setLoadingOlder(false); }
+  };
+  const handleMessageScroll = event => {
+    const pane = event.currentTarget;
+    setShowJumpToLatest(pane.scrollHeight - pane.scrollTop - pane.clientHeight > 220);
+  };
+  const jumpToLatest = () => {
+    const pane = messagesPaneRef.current;
+    if (pane) pane.scrollTo({ top: pane.scrollHeight, behavior: 'smooth' });
   };
   const enablePush = async () => {
     try {
@@ -299,14 +424,17 @@ export default function ChatWorkspace({ adminMode = false }) {
     if (recording) { recorderRef.current?.stop(); return; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingStreamRef.current = stream;
       const recorder = new MediaRecorder(stream);
       chunksRef.current = [];
       recorder.ondataavailable = event => { if (event.data.size) chunksRef.current.push(event.data); };
       recorder.onstop = () => {
         const type = recorder.mimeType || 'audio/webm';
         const blob = new Blob(chunksRef.current, { type });
-        setFile(new window.File([blob], `voice-message-${Date.now()}.webm`, { type }));
+        const voiceFile = new window.File([blob], `voice-message-${Date.now()}.webm`, { type });
+        setAttachments(current => [...current, { id: `voice-${Date.now()}`, file: voiceFile, mime: type, previewUrl: URL.createObjectURL(voiceFile) }]);
         stream.getTracks().forEach(track => track.stop());
+        recordingStreamRef.current = null;
         setRecording(false);
       };
       recorderRef.current = recorder;
@@ -316,19 +444,19 @@ export default function ChatWorkspace({ adminMode = false }) {
 
   return (
     <>
-      <div className={`grid min-h-0 overflow-hidden border border-brass/15 bg-carbon lg:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] ${adminMode ? 'h-[calc(100dvh-14rem)] min-h-[430px] sm:h-[calc(100dvh-13rem)] lg:h-[calc(100dvh-12rem)] lg:min-h-[560px]' : 'h-full'}`}>
+      <div className={`grid min-h-0 overflow-hidden border border-brass/15 bg-carbon lg:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] ${adminMode ? 'h-[clamp(360px,calc(100dvh-13rem),760px)]' : 'h-full'}`}>
         <aside className={`${activeId ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col overflow-hidden border-r border-brass/15`}>
           <div className="shrink-0 border-b border-brass/15 p-4">
             <div className="flex items-center justify-between gap-3"><h2 className="font-display text-2xl text-ivory">{adminMode ? 'Studio conversations' : 'Messages'}</h2><div className="flex items-center gap-1">
-              <button type="button" onClick={enablePush} title={pushState === 'enabled' ? 'Disable push alerts' : 'Enable push alerts'} className={`flex h-9 w-9 items-center justify-center border ${pushState === 'enabled' ? 'border-green-400/30 text-green-400' : 'border-brass/15 text-brass'}`}><Bell size={15} /></button>
-              {adminMode && user?.role === 'admin' && <button type="button" onClick={() => setShowAnnouncement(value => !value)} title="New announcement" className="flex h-9 w-9 items-center justify-center border border-brass/15 text-brass"><Megaphone size={15} /></button>}
+              <button type="button" onClick={enablePush} aria-label={pushState === 'enabled' ? 'Disable push alerts' : 'Enable push alerts'} title={pushState === 'enabled' ? 'Disable push alerts' : 'Enable push alerts'} className={`flex h-9 w-9 items-center justify-center border ${pushState === 'enabled' ? 'border-green-400/30 text-green-400' : 'border-brass/15 text-brass'}`}><Bell size={15} /></button>
+              {adminMode && user?.role === 'admin' && <button type="button" onClick={() => setShowAnnouncement(value => !value)} aria-label="New announcement" title="New announcement" className="flex h-9 w-9 items-center justify-center border border-brass/15 text-brass"><Megaphone size={15} /></button>}
             </div></div>
             <p className="mt-1 text-xs text-ivory/35">Private conversations with signed-in members</p>
             <label className="mt-4 flex h-11 items-center gap-2 border border-brass/15 bg-obsidian px-3 text-ivory/55"><Search size={15} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search people or chats" className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></label>
             <button type="button" onClick={() => setShowArchived(value => !value)} className="mt-2 flex items-center gap-2 text-[10px] uppercase tracking-widest text-ivory/40 hover:text-brass"><Archive size={13} />{showArchived ? 'Show active chats' : 'Archived chats'}</button>
             {showAnnouncement && user?.role === 'admin' && <div className="mt-3 space-y-2 border border-brass/15 bg-obsidian p-3"><input value={announcement.title} onChange={event => setAnnouncement(value => ({ ...value, title: event.target.value }))} className="h-10 w-full border border-brass/15 bg-carbon px-3 text-sm text-ivory outline-none" placeholder="Announcement title" /><textarea value={announcement.body} onChange={event => setAnnouncement(value => ({ ...value, body: event.target.value }))} className="h-24 w-full resize-none border border-brass/15 bg-carbon p-3 text-sm text-ivory outline-none" placeholder="Message every signed-in member" /><button type="button" disabled={busy || !announcement.body.trim()} onClick={publishAnnouncement} className="h-10 w-full bg-brass text-xs uppercase tracking-wider text-obsidian disabled:opacity-40">Publish announcement</button></div>}
           </div>
-          {error && <p role="alert" className="border-b border-red-400/20 bg-red-400/5 p-3 text-xs text-red-300">{error}</p>}
+          {error && !activeId && <p role="alert" className="border-b border-red-400/20 bg-red-400/5 p-3 text-xs text-red-300">{error}</p>}
           <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto [scrollbar-gutter:stable]">
             {matchingConversations.map(conversation => {
               const person = conversation.participants?.find(entry => entry.id !== user.id);
@@ -352,6 +480,7 @@ export default function ChatWorkspace({ adminMode = false }) {
               <button onClick={() => setActiveId('')} className="flex h-10 w-10 items-center justify-center text-brass lg:hidden" aria-label="Back to conversations"><ArrowLeft size={19} /></button>
               <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass">{active.type === 'announcement' ? <Megaphone size={17} /> : initials(other?.name)}{other?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
               <div className="min-w-0 flex-1"><p className="truncate font-display text-xl text-ivory">{conversationName(active, user.id)}</p><p className={`truncate text-xs ${active.typingUsers?.length || other?.online ? 'text-green-400' : 'text-ivory/35'}`}>{active.typingUsers?.length ? `${active.typingUsers[0].name} is typing…` : active.type === 'announcement' ? 'Studio updates for every member' : lastSeen(other)}</p></div>
+              {connectionState !== 'connected' && <span className="hidden items-center gap-1 text-[10px] uppercase tracking-wider text-amber-300 sm:flex"><WifiOff size={13} />{connectionState === 'offline' ? 'Offline' : 'Reconnecting'}</span>}
               <button type="button" onClick={() => setSearchingMessages(value => !value)} className="flex h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass" aria-label="Search this conversation"><Search size={17} /></button>
               <div className="relative"><button type="button" onClick={() => setShowConversationMenu(value => !value)} className="flex h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass" aria-label="Conversation options"><MoreVertical size={18} /></button>
                 {showConversationMenu && <div className="absolute right-0 top-11 z-30 w-52 border border-brass/20 bg-carbon p-1 shadow-2xl">
@@ -363,38 +492,41 @@ export default function ChatWorkspace({ adminMode = false }) {
             </header>
             {searchingMessages && <form onSubmit={runMessageSearch} className="flex gap-2 border-b border-brass/15 bg-carbon p-3"><label className="flex min-w-0 flex-1 items-center gap-2 border border-brass/15 bg-obsidian px-3"><Search size={14} className="text-brass" /><input autoFocus value={messageQuery} onChange={event => setMessageQuery(event.target.value)} placeholder="Search messages and files" className="h-10 min-w-0 flex-1 bg-transparent text-sm text-ivory outline-none" /></label><button disabled={searchBusy} className="h-10 border border-brass/20 px-3 text-xs text-brass disabled:opacity-40">{searchBusy ? 'Searching…' : 'Search'}</button><button type="button" onClick={() => { setMessageQuery(''); setSearchingMessages(false); loadMessages(activeId, '', { scrollToBottom: true }); }} className="h-10 w-10 border border-brass/20 text-ivory/50"><X size={15} className="mx-auto" /></button></form>}
             {error && <p role="alert" className="border-b border-red-400/20 bg-red-400/5 p-3 text-xs text-red-300">{error}</p>}
-            {active.blocked && <p className="border-b border-amber-400/20 bg-amber-400/5 p-3 text-center text-xs text-amber-200">This conversation is blocked. Unblock it from the menu to send new messages.</p>}
-            <div ref={messagesPaneRef} className="min-h-0 flex-1 space-y-3 overscroll-contain overflow-y-auto bg-obsidian/35 p-3 [scrollbar-gutter:stable] sm:p-6">
-              {messages.map(message => {
+            {active.blocked && <p className="border-b border-amber-400/20 bg-amber-400/5 p-3 text-center text-xs text-amber-200">{active.blockedByMe ? 'You blocked this conversation. Use the menu to unblock it.' : 'This person is not accepting messages from this conversation.'}</p>}
+            <div ref={messagesPaneRef} onScroll={handleMessageScroll} tabIndex={0} role="log" aria-label={`Messages with ${conversationName(active, user.id)}`} aria-live="polite" className="relative min-h-0 flex-1 space-y-3 overscroll-contain overflow-y-auto bg-obsidian/35 p-3 [scrollbar-gutter:stable] sm:p-6">
+              {nextCursor && !messageQuery && <button type="button" disabled={loadingOlder} onClick={loadOlderMessages} className="mx-auto flex h-9 items-center gap-2 border border-brass/15 px-4 text-xs text-brass disabled:opacity-40">{loadingOlder && <Loader2 size={13} className="animate-spin" />}Load older messages</button>}
+              {messages.map((message, index) => {
                 const mine = message.senderId === user.id;
                 const attachment = message.attachmentUrl ? { url: message.attachmentUrl, name: message.attachmentName, type: message.attachmentType, bytes: message.attachmentBytes } : null;
                 const groupedReactions = Object.values(message.reactions || {}).reduce((result, emoji) => ({ ...result, [emoji]: (result[emoji] || 0) + 1 }), {});
-                return <div key={message.id} className={`group flex ${mine ? 'justify-end' : 'justify-start'}`}><article className={`relative max-w-[90%] border p-3 sm:max-w-[72%] ${mine ? 'border-brass/20 bg-brass/10' : 'border-ivory/10 bg-carbon'}`}>
+                const previous = messages[index - 1];
+                const showDate = !previous || new Date(previous.created_date).toDateString() !== new Date(message.created_date).toDateString();
+                return <div key={message.id}>{showDate && <div className="my-4 flex items-center gap-3" aria-label={`Messages from ${new Date(message.created_date).toLocaleDateString()}`}><span className="h-px flex-1 bg-brass/10" /><span className="text-[10px] uppercase tracking-widest text-ivory/35">{new Date(message.created_date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</span><span className="h-px flex-1 bg-brass/10" /></div>}<div className={`group flex ${mine ? 'justify-end' : 'justify-start'}`}><article className={`relative max-w-[90%] border p-3 sm:max-w-[72%] ${mine ? 'border-brass/20 bg-brass/10' : 'border-ivory/10 bg-carbon'}`}>
                   {message.replyPreview && <div className="mb-2 border-l-2 border-brass/50 bg-black/20 px-3 py-2 text-xs text-ivory/45"><Reply size={12} className="mb-1 inline text-brass" /> {message.replyPreview}</div>}
                   {message.deletedForEveryone ? <p className="flex items-center gap-2 text-sm italic text-ivory/35"><Ban size={14} />This message was deleted.</p> : editing?.id === message.id ? <div className="space-y-2"><textarea autoFocus value={editing.body} onChange={event => setEditing({ ...editing, body: event.target.value })} className="min-h-20 w-full resize-none border border-brass/20 bg-obsidian p-2 text-sm text-ivory outline-none" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="h-8 px-3 text-xs text-ivory/50">Cancel</button><button type="button" onClick={saveEdit} className="h-8 bg-brass px-3 text-xs text-obsidian">Save</button></div></div> : message.body && <p className="whitespace-pre-wrap break-words text-sm leading-6 text-ivory/75">{message.body}</p>}
                   <AttachmentPreview attachment={attachment} onOpen={setPreview} />
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     {!message.deletedForEveryone && <div className="relative flex items-center gap-1"><button type="button" onClick={() => setReplyingTo(message)} title="Reply" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Reply size={13} /></button><button type="button" onClick={() => setReactionPickerId(value => value === message.id ? '' : message.id)} title="React" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Smile size={13} /></button><button type="button" onClick={() => setMessageMenuId(value => value === message.id ? '' : message.id)} title="Message options" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><MoreVertical size={13} /></button>
                       {reactionPickerId === message.id && <div className="absolute bottom-8 left-0 z-20 flex gap-1 border border-brass/15 bg-carbon p-2 shadow-xl">{REACTIONS.map(emoji => <button type="button" key={emoji} onClick={() => { react(message, emoji); setReactionPickerId(''); }} className={`px-1 text-lg ${message.reactions?.[user.id] === emoji ? 'bg-brass/15' : ''}`}>{emoji}</button>)}</div>}
-                      {messageMenuId === message.id && <div className="absolute bottom-8 left-12 z-20 w-44 border border-brass/15 bg-carbon p-1 shadow-xl">{mine && message.body && <button type="button" onClick={() => { setEditing({ id: message.id, body: message.body }); setMessageMenuId(''); }} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs text-ivory/65 hover:bg-brass/10"><Pencil size={12} />Edit message</button>}<button type="button" onClick={() => { removeMessage(message, 'me'); setMessageMenuId(''); }} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs text-ivory/65 hover:bg-brass/10"><Trash2 size={12} />Delete for me</button>{mine && <button type="button" onClick={() => { removeMessage(message, 'everyone'); setMessageMenuId(''); }} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs text-red-300 hover:bg-red-400/10"><Trash2 size={12} />Delete for everyone</button>}</div>}
+                      {messageMenuId === message.id && <div className="absolute bottom-8 left-12 z-20 w-44 border border-brass/15 bg-carbon p-1 shadow-xl">{mine && message.body && <button type="button" onClick={() => { setEditing({ id: message.id, body: message.body }); setMessageMenuId(''); }} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs text-ivory/65 hover:bg-brass/10"><Pencil size={12} />Edit message</button>}{(message.allowForward || ['admin', 'editor', 'support'].includes(user.role)) && <button type="button" onClick={() => { setForwardingMessage(message); setMessageMenuId(''); }} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs text-ivory/65 hover:bg-brass/10"><Forward size={12} />Forward</button>}<button type="button" onClick={() => { removeMessage(message, 'me'); setMessageMenuId(''); }} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs text-ivory/65 hover:bg-brass/10"><Trash2 size={12} />Delete for me</button>{mine && <button type="button" onClick={() => { removeMessage(message, 'everyone'); setMessageMenuId(''); }} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs text-red-300 hover:bg-red-400/10"><Trash2 size={12} />Delete for everyone</button>}</div>}
                     </div>}
                     <div className="flex items-center gap-1 text-[10px] text-ivory/30">{message.editedAt && <span>edited · </span>}{new Date(message.created_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{mine && <CheckCheck size={13} aria-label={message.readAt ? 'Read' : 'Delivered'} className={message.readAt ? 'text-sky-400' : 'text-ivory/35'} />}</div>
                   </div>
                   {Object.keys(groupedReactions).length > 0 && <div className="absolute -bottom-3 right-2 rounded-full border border-brass/15 bg-carbon px-2 py-0.5 text-xs shadow-lg">{Object.entries(groupedReactions).map(([emoji, count]) => <span key={emoji} className="mr-1">{emoji}{count > 1 ? count : ''}</span>)}</div>}
                   {adminMode && attachment && <button type="button" onClick={() => setForwarding(message)} className="mt-3 block text-[10px] uppercase tracking-wider text-brass/70 hover:text-brass">{message.allowForward ? 'Forwarding allowed' : 'Allow customer forwarding'}</button>}
-                </article></div>;
+                </article></div></div>;
               })}
               {!messages.length && <div className="py-16 text-center"><MessageCircle className="mx-auto text-brass/40" /><p className="mt-3 text-sm text-ivory/35">Start the conversation. Messages and files stay with this account.</p></div>}
+              {showJumpToLatest && <button type="button" onClick={jumpToLatest} className="sticky bottom-2 ml-auto flex h-10 items-center gap-2 rounded-full border border-brass/30 bg-carbon px-4 text-xs text-brass shadow-xl"><ArrowDown size={14} />Latest</button>}
             </div>
             <footer className="shrink-0 border-t border-brass/15 bg-carbon p-2.5 sm:p-3">
               {replyingTo && <div className="mb-2 flex items-center gap-3 border-l-2 border-brass bg-obsidian px-3 py-2"><Reply size={14} className="text-brass" /><p className="min-w-0 flex-1 truncate text-xs text-ivory/50">Replying to: {replyingTo.body || replyingTo.attachmentName || 'Attachment'}</p><button type="button" onClick={() => setReplyingTo(null)}><X size={15} /></button></div>}
-              {file && <div className="mb-2 flex items-start gap-3 border border-brass/15 bg-obsidian p-2"><div className="max-w-[240px] flex-1"><AttachmentPreview compact attachment={{ url: filePreview, name: file.name, type: file.type, bytes: file.size }} /></div><button type="button" onClick={() => setFile(null)} className="flex h-8 w-8 items-center justify-center text-ivory/50"><X size={16} /></button></div>}
-              {busy && file && <div className="mb-2 border border-brass/15 bg-obsidian p-3"><div className="flex items-center justify-between text-xs"><span className="truncate text-ivory/55">Uploading {file.name}</span><span className="text-brass">{uploadProgress}%</span></div><div className="mt-2 h-1.5 overflow-hidden bg-ivory/10"><div className="h-full bg-brass transition-all" style={{ width: `${uploadProgress}%` }} /></div><button type="button" onClick={() => uploadAbortRef.current?.abort()} className="mt-2 text-[10px] uppercase tracking-wider text-red-300">Cancel upload</button></div>}
-              {uploadFailed && file && !busy && <button type="button" onClick={send} className="mb-2 flex h-10 w-full items-center justify-center gap-2 border border-red-400/25 text-xs text-red-300"><RotateCcw size={14} />Retry failed upload</button>}
+              {attachments.length > 0 && <div className="mb-2 border border-brass/15 bg-obsidian p-2"><div className="flex max-h-52 gap-2 overflow-x-auto overscroll-contain pb-1 [scrollbar-gutter:stable]">{attachments.map(item => <div key={item.id} className="relative w-40 shrink-0 border border-brass/10 bg-carbon p-2"><AttachmentPreview compact attachment={{ url: item.previewUrl, name: item.file.name, type: item.mime, bytes: item.file.size }} onOpen={setPreview} /><button type="button" disabled={busy} onClick={() => removeAttachment(item.id)} aria-label={`Remove ${item.file.name}`} className="absolute right-1 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/80 text-white disabled:opacity-40"><X size={14} /></button>{busy && <div className="mt-2"><div className="flex justify-between text-[10px] text-ivory/45"><span>Uploading</span><span>{uploadProgress[item.id] || 0}%</span></div><div className="mt-1 h-1 overflow-hidden bg-ivory/10"><div className="h-full bg-brass transition-all" style={{ width: `${uploadProgress[item.id] || 0}%` }} /></div></div>}</div>)}</div><div className="mt-2 flex flex-wrap items-center justify-between gap-3"><span className="text-[10px] uppercase tracking-wider text-ivory/35">{attachments.length} of 10 files selected</span><div className="flex items-center gap-3">{attachments.length < 10 && !busy && <label className="flex min-h-9 cursor-pointer items-center gap-1.5 border border-brass/20 px-3 text-[10px] uppercase tracking-wider text-brass"><Plus size={13} />Add more<input type="file" multiple className="hidden" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} /></label>}{busy && <button type="button" onClick={() => uploadAbortRef.current?.abort()} className="text-[10px] uppercase tracking-wider text-red-300">Cancel upload</button>}</div></div></div>}
+              {uploadFailed && attachments.length > 0 && !busy && <button type="button" onClick={send} className="mb-2 flex h-10 w-full items-center justify-center gap-2 border border-red-400/25 text-xs text-red-300"><RotateCcw size={14} />Retry failed upload</button>}
               <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-2">
-                <label className={`flex h-11 w-11 shrink-0 items-center justify-center border border-brass/20 text-brass ${active.blocked || (active.type === 'announcement' && !adminMode) ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`} title="Attach image, video, audio or document"><Paperclip size={17} /><input type="file" disabled={active.blocked || (active.type === 'announcement' && !adminMode)} className="hidden" accept="image/*,video/*,audio/*,.pdf,.docx,.xlsx,.pptx,.zip" onChange={event => { chooseFile(event.target.files?.[0]); event.target.value = ''; }} /></label>
+                <label className={`flex h-11 w-11 shrink-0 items-center justify-center border border-brass/20 text-brass ${active.blocked || (active.type === 'announcement' && !adminMode) ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`} title="Add images, videos, audio or documents" aria-label="Add attachments"><Paperclip size={17} /><span className="sr-only">Add attachments</span><input type="file" multiple disabled={active.blocked || (active.type === 'announcement' && !adminMode)} className="hidden" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} /></label>
                 <textarea value={text} disabled={recording || active.blocked || (active.type === 'announcement' && !adminMode)} onChange={event => updateTyping(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); } }} rows={2} placeholder={recording ? 'Recording voice message…' : active.type === 'announcement' && !adminMode ? 'Only studio staff can publish announcements' : 'Write a message…'} className="min-w-0 flex-1 resize-none border border-brass/20 bg-obsidian p-3 text-sm text-ivory outline-none disabled:opacity-50" />
-                {!recording && (text.trim() || file) ? <button disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={send} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian disabled:opacity-40" aria-label="Send message">{busy ? <Loader2 className="animate-spin" size={17} /> : <Send size={17} />}</button> : <button type="button" disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={toggleRecording} title={recording ? 'Stop recording' : 'Record voice message'} aria-label={recording ? 'Stop voice recording' : 'Record voice message'} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border disabled:opacity-40 ${recording ? 'animate-pulse border-red-400 bg-red-400/10 text-red-300' : 'border-brass/20 bg-brass text-obsidian'}`}>{recording ? <Square size={15} fill="currentColor" /> : <Mic size={18} />}</button>}
+                {!recording && (text.trim() || attachments.length) ? <button disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={send} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian disabled:opacity-40" aria-label="Send message">{busy ? <Loader2 className="animate-spin" size={17} /> : <Send size={17} />}</button> : <button type="button" disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={toggleRecording} title={recording ? 'Stop recording' : 'Record voice message'} aria-label={recording ? 'Stop voice recording' : 'Record voice message'} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border disabled:opacity-40 ${recording ? 'animate-pulse border-red-400 bg-red-400/10 text-red-300' : 'border-brass/20 bg-brass text-obsidian'}`}>{recording ? <Square size={15} fill="currentColor" /> : <Mic size={18} />}</button>}
               </div>
               {recording && <p className="mt-2 text-xs text-red-300">Recording voice message… press the stop button when you are finished.</p>}
             </footer>
@@ -402,6 +534,7 @@ export default function ChatWorkspace({ adminMode = false }) {
         </section>
       </div>
       <PreviewOverlay attachment={preview} onClose={() => setPreview(null)} />
+      {forwardingMessage && <div className="fixed inset-0 z-[175] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="forward-message-title"><div className="max-h-[80dvh] w-full max-w-md overflow-hidden border border-brass/25 bg-carbon shadow-2xl"><header className="flex items-center justify-between border-b border-brass/15 p-4"><div><h3 id="forward-message-title" className="font-display text-2xl text-ivory">Forward message</h3><p className="text-xs text-ivory/40">Choose one of your conversations</p></div><button type="button" onClick={() => setForwardingMessage(null)} aria-label="Close forward message" className="flex h-10 w-10 items-center justify-center border border-brass/15"><X size={17} /></button></header><div className="max-h-[60dvh] overflow-y-auto p-2">{conversations.filter(item => item.id !== activeId && !item.archived).map(item => <button type="button" disabled={busy} key={item.id} onClick={() => forwardMessage(item.id)} className="flex min-h-14 w-full items-center gap-3 border-b border-brass/10 px-3 text-left hover:bg-brass/10 disabled:opacity-40"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-brass/10 text-xs text-brass">{initials(conversationName(item, user.id))}</span><span className="truncate text-sm text-ivory/70">{conversationName(item, user.id)}</span></button>)}</div></div></div>}
     </>
   );
 }

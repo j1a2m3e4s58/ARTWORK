@@ -51,9 +51,10 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      imgSrc: ["'self'", 'data:', 'https:'],
-      mediaSrc: ["'self'", 'https:'],
-      frameSrc: ["'self'", 'https://www.youtube.com', 'https://player.vimeo.com', 'https://challenges.cloudflare.com'],
+      // Local object URLs power safe, pre-upload previews in chat and forms.
+      imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+      mediaSrc: ["'self'", 'blob:', 'https:'],
+      frameSrc: ["'self'", 'blob:', 'https://www.youtube.com', 'https://player.vimeo.com', 'https://challenges.cloudflare.com'],
       connectSrc: ["'self'", 'https://api.cloudinary.com', 'https://challenges.cloudflare.com'],
       styleSrc: ["'self'", "'unsafe-inline'"],
       fontSrc: ["'self'", 'data:'],
@@ -1574,7 +1575,15 @@ app.post('/api/admin/mfa/recovery-codes', requireAdmin, authLimiter, async (req,
 });
 
 const chatTyping = new Map();
-const chatMember = (conversation, user) => Boolean(user && (staffRoles.has(user.role) || conversation.participantIds?.includes(user.id)));
+const chatStreams = new Map();
+const chatMember = (conversation, user) => Boolean(user && conversation.participantIds?.includes(user.id));
+const emitChatEvent = (userIds, event, data = {}) => {
+  [...new Set(userIds || [])].forEach(userId => {
+    (chatStreams.get(userId) || new Set()).forEach(response => {
+      try { response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch { /* stale stream cleanup happens on close */ }
+    });
+  });
+};
 const chatUser = user => ({
   id: user.id,
   name: user.full_name || user.email.split('@')[0],
@@ -1649,17 +1658,40 @@ app.delete('/api/push/subscriptions', requireVerifiedUser, mutationLimiter, asyn
   res.json({ success: true });
 });
 
+app.get('/api/chat/events', requireVerifiedUser, (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+  const streams = chatStreams.get(req.user.id) || new Set();
+  streams.add(res);
+  chatStreams.set(req.user.id, streams);
+  res.write(`event: ready\ndata: ${JSON.stringify({ connected: true })}\n\n`);
+  const keepAlive = setInterval(() => res.write(': keep-alive\n\n'), 25_000);
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    streams.delete(res);
+    if (!streams.size) chatStreams.delete(req.user.id);
+  });
+});
+
 app.get('/api/chat/directory', requireVerifiedUser, (req, res) => {
   // The directory deliberately exposes only a display name, role and presence;
   // private email addresses are never returned. Every active account is
   // discoverable so customers can find other signed-in community members.
-  const people = db.data.User.filter(item => !item.deleted_at && item.status === 'active' && item.id !== req.user.id);
+  const people = db.data.User.filter(item => !item.deleted_at
+    && item.status === 'active'
+    && item.id !== req.user.id
+    && (item.chatDiscoverable !== false || staffRoles.has(req.user.role)));
   res.json(people.map(chatUser));
 });
 
 app.post('/api/chat/presence', requireVerifiedUser, async (req, res) => {
-  req.user.lastSeenAt = now();
-  await save();
+  const previous = new Date(req.user.lastSeenAt || 0).getTime();
+  if (Date.now() - previous > 45_000) {
+    req.user.lastSeenAt = now();
+    await save();
+  }
   res.json({ online: true });
 });
 
@@ -1673,8 +1705,9 @@ app.get('/api/chat/conversations', requireVerifiedUser, (req, res) => {
 
 app.post('/api/chat/conversations', requireVerifiedUser, mutationLimiter, async (req, res) => {
   let recipient = db.data.User.find(item => item.id === String(req.body.userId || '') && !item.deleted_at && item.status === 'active');
-  if (!recipient) recipient = db.data.User.find(item => item.role === 'admin' && item.status === 'active' && !item.deleted_at);
-  if (!recipient || recipient.id === req.user.id) return res.status(400).json({ error: 'Choose an available person.' });
+  if (!recipient) return res.status(404).json({ error: 'That person is no longer available. Choose another signed-in member.' });
+  if (recipient.id === req.user.id) return res.status(400).json({ error: 'Choose another person.' });
+  if (recipient.chatDiscoverable === false && !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'That person is not accepting new conversations.' });
   const ids = [req.user.id, recipient.id].sort();
   let conversation = db.data.ChatConversation.find(item => !item.deleted_at && item.type !== 'announcement' && JSON.stringify([...(item.participantIds || [])].sort()) === JSON.stringify(ids));
   if (!conversation) {
@@ -1714,6 +1747,7 @@ app.post('/api/chat/conversations/:id/typing', requireVerifiedUser, (req, res) =
   const state = chatTyping.get(conversation.id) || {};
   if (req.body.typing) state[req.user.id] = Date.now(); else delete state[req.user.id];
   chatTyping.set(conversation.id, state);
+  emitChatEvent(conversation.participantIds, 'typing', { conversationId: conversation.id });
   res.json({ success: true });
 });
 
@@ -1729,6 +1763,7 @@ app.patch('/api/chat/conversations/:id/settings', requireVerifiedUser, mutationL
   if (typeof req.body.blocked === 'boolean') toggle('blockedBy', req.body.blocked);
   conversation.updated_date = now();
   await save();
+  emitChatEvent(conversation.participantIds, 'conversation', { conversationId: conversation.id });
   res.json(conversationView(conversation, req.user));
 });
 
@@ -1736,9 +1771,15 @@ app.get('/api/chat/conversations/:id/messages', requireVerifiedUser, (req, res) 
   const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
   if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
   const query = String(req.query.q || '').trim().toLowerCase();
-  res.json(db.data.ChatMessage
+  const allRows = db.data.ChatMessage
     .filter(item => item.conversationId === conversation.id && !item.deleted_at && !(item.hiddenFor || []).includes(req.user.id) && (!query || `${item.body || ''} ${item.attachmentName || ''}`.toLowerCase().includes(query)))
-    .sort((a, b) => String(a.created_date).localeCompare(String(b.created_date))));
+    .sort((a, b) => String(`${a.created_date}|${a.id}`).localeCompare(String(`${b.created_date}|${b.id}`)));
+  const requestedLimit = Math.min(100, Math.max(1, Number(req.query.limit || 0)));
+  if (!req.query.limit || query) return res.json(allRows);
+  const before = String(req.query.before || '');
+  const eligible = before ? allRows.filter(item => `${item.created_date}|${item.id}` < before) : allRows;
+  const items = eligible.slice(-requestedLimit);
+  res.json({ items, nextCursor: eligible.length > items.length && items[0] ? `${items[0].created_date}|${items[0].id}` : null });
 });
 
 app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLimiter, async (req, res) => {
@@ -1773,14 +1814,61 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLi
   recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.message', title: `New message from ${req.user.full_name || req.user.email}`, message: conversation.lastMessage.slice(0, 180), section: 'messages', entity: 'ChatConversation', entityId: conversation.id, priority: 'normal', read: false, created_date: now() }));
   await pushToUsers(recipientIds, { title: `New message from ${req.user.full_name || 'Reigns Atelier'}`, body: conversation.lastMessage.slice(0, 180), url: `/messages?conversation=${conversation.id}`, tag: `chat-${conversation.id}` }, conversation.mutedBy || []);
   await save();
+  emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageId: message.id });
   res.status(201).json(message);
+});
+
+app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
+  if (conversation.type === 'announcement' && !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'Only studio staff can post announcements.' });
+  if (isConversationBlocked(conversation)) return res.status(403).json({ error: 'Unblock this conversation before sending a message.' });
+  const entries = Array.isArray(req.body.messages) ? req.body.messages.slice(0, 10) : [];
+  if (!entries.length) return res.status(400).json({ error: 'Add at least one message or file.' });
+  const replyToId = String(entries[0]?.replyToId || '').trim();
+  const replyTo = replyToId
+    ? db.data.ChatMessage.find(item => item.id === replyToId && item.conversationId === conversation.id && !item.deleted_at)
+    : null;
+  const created = [];
+  for (const [index, entry] of entries.entries()) {
+    const body = String(entry?.body || '').trim().slice(0, 10000);
+    const attachmentUrl = String(entry?.attachmentUrl || '').trim().slice(0, 2048);
+    if (!body && !attachmentUrl) return res.status(400).json({ error: `Message ${index + 1} is empty.` });
+    if (attachmentUrl && !/^https?:\/\//i.test(attachmentUrl) && !attachmentUrl.startsWith('/uploads/')) {
+      return res.status(400).json({ error: `Attachment ${index + 1} has an invalid address.` });
+    }
+    created.push({
+      id: newId(), conversationId: conversation.id, senderId: req.user.id, body,
+      attachmentUrl, attachmentName: String(entry?.attachmentName || '').slice(0, 240),
+      attachmentType: String(entry?.attachmentType || '').slice(0, 120),
+      attachmentBytes: Math.max(0, Number(entry?.attachmentBytes || 0)),
+      replyToId: index === 0 ? replyTo?.id || null : null,
+      replyPreview: index === 0 && replyTo ? String(replyTo.body || replyTo.attachmentName || 'Attachment').slice(0, 180) : '',
+      allowForward: staffRoles.has(req.user.role) ? Boolean(entry?.allowForward) : false,
+      deliveredAt: now(), readBy: [req.user.id], reactions: {}, created_date: now(),
+    });
+  }
+  db.data.ChatMessage.push(...created);
+  const last = created.at(-1);
+  conversation.lastMessageAt = last.created_date;
+  conversation.lastMessage = last.body || last.attachmentName || (created.length > 1 ? `${created.length} attachments` : 'Attachment');
+  const recipientIds = (conversation.participantIds || []).filter(id => id !== req.user.id);
+  recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.message', title: `New message from ${req.user.full_name || req.user.email}`, message: conversation.lastMessage.slice(0, 180), section: 'messages', entity: 'ChatConversation', entityId: conversation.id, priority: 'normal', read: false, created_date: now() }));
+  await pushToUsers(recipientIds, { title: `New message from ${req.user.full_name || 'Reigns Atelier'}`, body: conversation.lastMessage.slice(0, 180), url: `/messages?conversation=${conversation.id}`, tag: `chat-${conversation.id}` }, conversation.mutedBy || []);
+  await save();
+  emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageIds: created.map(item => item.id) });
+  res.status(201).json(created);
 });
 
 app.post('/api/chat/conversations/:id/read', requireVerifiedUser, async (req, res) => {
   const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
   if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
-  db.data.ChatMessage.filter(item => item.conversationId === conversation.id && item.senderId !== req.user.id).forEach(item => { item.readBy = [...new Set([...(item.readBy || []), req.user.id])]; item.readAt = now(); });
+  const firstReadAt = now();
+  db.data.ChatMessage
+    .filter(item => item.conversationId === conversation.id && item.senderId !== req.user.id && !(item.readBy || []).includes(req.user.id))
+    .forEach(item => { item.readBy = [...new Set([...(item.readBy || []), req.user.id])]; item.readAt ||= firstReadAt; });
   await save();
+  emitChatEvent(conversation.participantIds, 'read', { conversationId: conversation.id, userId: req.user.id });
   res.json({ success: true });
 });
 
@@ -1788,7 +1876,33 @@ app.patch('/api/chat/messages/:id/forwarding', requireAdmin, mutationLimiter, as
   const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at);
   if (!message) return res.status(404).json({ error: 'Message not found.' });
   message.allowForward = Boolean(req.body.allowed); message.updated_date = now();
-  await save(); res.json(message);
+  await save();
+  const conversation = db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+  emitChatEvent(conversation?.participantIds, 'message', { conversationId: message.conversationId, messageId: message.id });
+  res.json(message);
+});
+
+app.post('/api/chat/messages/:id/forward', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const source = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at && !item.deletedForEveryone);
+  const sourceConversation = source && db.data.ChatConversation.find(item => item.id === source.conversationId && !item.deleted_at);
+  const target = db.data.ChatConversation.find(item => item.id === String(req.body.conversationId || '') && !item.deleted_at);
+  if (!source || !sourceConversation || !chatMember(sourceConversation, req.user)) return res.status(404).json({ error: 'Message not found.' });
+  if (!target || !chatMember(target, req.user)) return res.status(404).json({ error: 'Destination conversation not found.' });
+  if (target.type === 'announcement' && !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'Only studio staff can post announcements.' });
+  if (!source.allowForward && !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'The sender has not allowed this attachment to be forwarded.' });
+  const forwarded = {
+    id: newId(), conversationId: target.id, senderId: req.user.id,
+    body: source.body, attachmentUrl: source.attachmentUrl, attachmentName: source.attachmentName,
+    attachmentType: source.attachmentType, attachmentBytes: source.attachmentBytes,
+    forwardedFromId: source.id, forwarded: true, allowForward: staffRoles.has(req.user.role),
+    deliveredAt: now(), readBy: [req.user.id], reactions: {}, created_date: now(),
+  };
+  db.data.ChatMessage.push(forwarded);
+  target.lastMessageAt = forwarded.created_date;
+  target.lastMessage = forwarded.body || forwarded.attachmentName || 'Forwarded message';
+  await save();
+  emitChatEvent(target.participantIds, 'message', { conversationId: target.id, messageId: forwarded.id });
+  res.status(201).json(forwarded);
 });
 
 app.post('/api/chat/messages/:id/reaction', requireVerifiedUser, mutationLimiter, async (req, res) => {
@@ -1802,6 +1916,7 @@ app.post('/api/chat/messages/:id/reaction', requireVerifiedUser, mutationLimiter
   else message.reactions[req.user.id] = emoji;
   message.updated_date = now();
   await save();
+  emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageId: message.id });
   res.json(message);
 });
 
@@ -1819,6 +1934,7 @@ app.patch('/api/chat/messages/:id', requireVerifiedUser, mutationLimiter, async 
   message.updated_date = now();
   refreshConversationSummary(conversation);
   await save();
+  emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageId: message.id });
   res.json(message);
 });
 
@@ -1843,6 +1959,7 @@ app.delete('/api/chat/messages/:id', requireVerifiedUser, mutationLimiter, async
   message.updated_date = now();
   refreshConversationSummary(conversation);
   await save();
+  emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageId: message.id });
   res.json({ success: true });
 });
 
