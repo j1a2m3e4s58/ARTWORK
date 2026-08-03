@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive, ArrowLeft, Ban, Bell, BellOff, CheckCheck, Download, File, Image, Loader2,
   Megaphone, MessageCircle, Mic, MoreVertical, Paperclip, Pencil, Reply, RotateCcw,
-  Search, Send, Smile, Trash2, Users, Video, X,
+  Search, Send, Smile, Square, Trash2, Users, Video, X,
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
@@ -110,7 +110,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [error, setError] = useState('');
-  const endRef = useRef(null);
+  const messagesPaneRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
   const uploadAbortRef = useRef(null);
@@ -125,12 +125,23 @@ export default function ChatWorkspace({ adminMode = false }) {
       setActiveId(conversationRows.some(row => row.id === requestedId) ? requestedId : conversationRows[0].id);
     }
   };
-  const loadMessages = async (id, search = messageQuery) => {
+  const loadMessages = async (id, search = messageQuery, options = {}) => {
     if (!id) return;
+    const pane = messagesPaneRef.current;
+    const distanceFromBottom = pane
+      ? pane.scrollHeight - pane.scrollTop - pane.clientHeight
+      : Number.POSITIVE_INFINITY;
+    const shouldFollowLatest = options.scrollToBottom || distanceFromBottom < 120;
     const rows = await studioClient.chat.messages(id, search);
     setMessages(rows);
-    await studioClient.chat.markRead(id);
-    window.setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 40);
+    const hasUnreadIncoming = rows.some(message => message.senderId !== user.id && !(message.readBy || []).includes(user.id));
+    if (hasUnreadIncoming) await studioClient.chat.markRead(id);
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      const currentPane = messagesPaneRef.current;
+      if (!currentPane) return;
+      if (options.scrollToTop) currentPane.scrollTop = 0;
+      else if (shouldFollowLatest) currentPane.scrollTop = currentPane.scrollHeight;
+    }));
   };
 
   useEffect(() => {
@@ -143,7 +154,11 @@ export default function ChatWorkspace({ adminMode = false }) {
     }, 5000);
     return () => window.clearInterval(timer);
   }, [activeId]);
-  useEffect(() => { loadMessages(activeId).catch(loadError => setError(loadError.message)); }, [activeId]);
+  useEffect(() => {
+    setMessageQuery('');
+    setSearchingMessages(false);
+    loadMessages(activeId, '', { scrollToBottom: true }).catch(loadError => setError(loadError.message));
+  }, [activeId]);
   useEffect(() => {
     if (!file) { setFilePreview(''); return undefined; }
     const url = URL.createObjectURL(file);
@@ -205,7 +220,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       await studioClient.chat.send(activeId, { body: text.trim(), ...attachment, replyToId: replyingTo?.id || null, allowForward: false });
       setText(''); setFile(null); setReplyingTo(null);
       setUploadProgress(0);
-      await loadMessages(activeId); await load();
+      await loadMessages(activeId, '', { scrollToBottom: true }); await load();
     } catch (sendError) {
       setUploadFailed(Boolean(file) && sendError.name !== 'AbortError');
       setError(sendError.name === 'AbortError' ? 'Upload cancelled. Your file is still ready to retry.' : sendError.message);
@@ -242,7 +257,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const runMessageSearch = async event => {
     event?.preventDefault();
     setSearchBusy(true);
-    try { await loadMessages(activeId, messageQuery); }
+    try { await loadMessages(activeId, messageQuery, { scrollToTop: true }); }
     catch (searchError) { setError(searchError.message); }
     finally { setSearchBusy(false); }
   };
@@ -344,10 +359,10 @@ export default function ChatWorkspace({ adminMode = false }) {
                 </div>}
               </div>
             </header>
-            {searchingMessages && <form onSubmit={runMessageSearch} className="flex gap-2 border-b border-brass/15 bg-carbon p-3"><label className="flex min-w-0 flex-1 items-center gap-2 border border-brass/15 bg-obsidian px-3"><Search size={14} className="text-brass" /><input autoFocus value={messageQuery} onChange={event => setMessageQuery(event.target.value)} placeholder="Search messages and files" className="h-10 min-w-0 flex-1 bg-transparent text-sm text-ivory outline-none" /></label><button disabled={searchBusy} className="h-10 border border-brass/20 px-3 text-xs text-brass disabled:opacity-40">{searchBusy ? 'Searching…' : 'Search'}</button><button type="button" onClick={() => { setMessageQuery(''); setSearchingMessages(false); loadMessages(activeId, ''); }} className="h-10 w-10 border border-brass/20 text-ivory/50"><X size={15} className="mx-auto" /></button></form>}
+            {searchingMessages && <form onSubmit={runMessageSearch} className="flex gap-2 border-b border-brass/15 bg-carbon p-3"><label className="flex min-w-0 flex-1 items-center gap-2 border border-brass/15 bg-obsidian px-3"><Search size={14} className="text-brass" /><input autoFocus value={messageQuery} onChange={event => setMessageQuery(event.target.value)} placeholder="Search messages and files" className="h-10 min-w-0 flex-1 bg-transparent text-sm text-ivory outline-none" /></label><button disabled={searchBusy} className="h-10 border border-brass/20 px-3 text-xs text-brass disabled:opacity-40">{searchBusy ? 'Searching…' : 'Search'}</button><button type="button" onClick={() => { setMessageQuery(''); setSearchingMessages(false); loadMessages(activeId, '', { scrollToBottom: true }); }} className="h-10 w-10 border border-brass/20 text-ivory/50"><X size={15} className="mx-auto" /></button></form>}
             {error && <p role="alert" className="border-b border-red-400/20 bg-red-400/5 p-3 text-xs text-red-300">{error}</p>}
             {active.blocked && <p className="border-b border-amber-400/20 bg-amber-400/5 p-3 text-center text-xs text-amber-200">This conversation is blocked. Unblock it from the menu to send new messages.</p>}
-            <div className="min-h-0 flex-1 space-y-3 overscroll-contain overflow-y-auto bg-obsidian/35 p-3 [scrollbar-gutter:stable] sm:p-6">
+            <div ref={messagesPaneRef} className="min-h-0 flex-1 space-y-3 overscroll-contain overflow-y-auto bg-obsidian/35 p-3 [scrollbar-gutter:stable] sm:p-6">
               {messages.map(message => {
                 const mine = message.senderId === user.id;
                 const attachment = message.attachmentUrl ? { url: message.attachmentUrl, name: message.attachmentName, type: message.attachmentType, bytes: message.attachmentBytes } : null;
@@ -368,20 +383,18 @@ export default function ChatWorkspace({ adminMode = false }) {
                 </article></div>;
               })}
               {!messages.length && <div className="py-16 text-center"><MessageCircle className="mx-auto text-brass/40" /><p className="mt-3 text-sm text-ivory/35">Start the conversation. Messages and files stay with this account.</p></div>}
-              <div ref={endRef} />
             </div>
             <footer className="shrink-0 border-t border-brass/15 bg-carbon p-2.5 sm:p-3">
               {replyingTo && <div className="mb-2 flex items-center gap-3 border-l-2 border-brass bg-obsidian px-3 py-2"><Reply size={14} className="text-brass" /><p className="min-w-0 flex-1 truncate text-xs text-ivory/50">Replying to: {replyingTo.body || replyingTo.attachmentName || 'Attachment'}</p><button type="button" onClick={() => setReplyingTo(null)}><X size={15} /></button></div>}
               {file && <div className="mb-2 flex items-start gap-3 border border-brass/15 bg-obsidian p-2"><div className="max-w-[240px] flex-1"><AttachmentPreview compact attachment={{ url: filePreview, name: file.name, type: file.type, bytes: file.size }} /></div><button type="button" onClick={() => setFile(null)} className="flex h-8 w-8 items-center justify-center text-ivory/50"><X size={16} /></button></div>}
               {busy && file && <div className="mb-2 border border-brass/15 bg-obsidian p-3"><div className="flex items-center justify-between text-xs"><span className="truncate text-ivory/55">Uploading {file.name}</span><span className="text-brass">{uploadProgress}%</span></div><div className="mt-2 h-1.5 overflow-hidden bg-ivory/10"><div className="h-full bg-brass transition-all" style={{ width: `${uploadProgress}%` }} /></div><button type="button" onClick={() => uploadAbortRef.current?.abort()} className="mt-2 text-[10px] uppercase tracking-wider text-red-300">Cancel upload</button></div>}
               {uploadFailed && file && !busy && <button type="button" onClick={send} className="mb-2 flex h-10 w-full items-center justify-center gap-2 border border-red-400/25 text-xs text-red-300"><RotateCcw size={14} />Retry failed upload</button>}
-              <div className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-end gap-2">
-                <label className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center border border-brass/20 text-brass" title="Attach image, video, audio or document"><Paperclip size={17} /><input type="file" className="hidden" accept="image/*,video/*,audio/*,.pdf,.docx,.xlsx,.pptx,.zip" onChange={event => { chooseFile(event.target.files?.[0]); event.target.value = ''; }} /></label>
-                <button type="button" onClick={toggleRecording} title={recording ? 'Stop recording' : 'Record voice message'} className={`flex h-11 w-11 shrink-0 items-center justify-center border ${recording ? 'animate-pulse border-red-400 bg-red-400/10 text-red-300' : 'border-brass/20 text-brass'}`}><Mic size={17} /></button>
-                <textarea value={text} disabled={active.blocked || (active.type === 'announcement' && !adminMode)} onChange={event => updateTyping(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); } }} rows={2} placeholder={active.type === 'announcement' && !adminMode ? 'Only studio staff can publish announcements' : 'Write a message…'} className="min-w-0 flex-1 resize-none border border-brass/20 bg-obsidian p-3 text-sm text-ivory outline-none disabled:opacity-50" />
-                <button disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode) || (!text.trim() && !file)} onClick={send} className="flex h-11 w-11 shrink-0 items-center justify-center bg-brass text-obsidian disabled:opacity-40" aria-label="Send message">{busy ? <Loader2 className="animate-spin" size={17} /> : <Send size={17} />}</button>
+              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-2">
+                <label className={`flex h-11 w-11 shrink-0 items-center justify-center border border-brass/20 text-brass ${active.blocked || (active.type === 'announcement' && !adminMode) ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`} title="Attach image, video, audio or document"><Paperclip size={17} /><input type="file" disabled={active.blocked || (active.type === 'announcement' && !adminMode)} className="hidden" accept="image/*,video/*,audio/*,.pdf,.docx,.xlsx,.pptx,.zip" onChange={event => { chooseFile(event.target.files?.[0]); event.target.value = ''; }} /></label>
+                <textarea value={text} disabled={recording || active.blocked || (active.type === 'announcement' && !adminMode)} onChange={event => updateTyping(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); } }} rows={2} placeholder={recording ? 'Recording voice message…' : active.type === 'announcement' && !adminMode ? 'Only studio staff can publish announcements' : 'Write a message…'} className="min-w-0 flex-1 resize-none border border-brass/20 bg-obsidian p-3 text-sm text-ivory outline-none disabled:opacity-50" />
+                {!recording && (text.trim() || file) ? <button disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={send} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian disabled:opacity-40" aria-label="Send message">{busy ? <Loader2 className="animate-spin" size={17} /> : <Send size={17} />}</button> : <button type="button" disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={toggleRecording} title={recording ? 'Stop recording' : 'Record voice message'} aria-label={recording ? 'Stop voice recording' : 'Record voice message'} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border disabled:opacity-40 ${recording ? 'animate-pulse border-red-400 bg-red-400/10 text-red-300' : 'border-brass/20 bg-brass text-obsidian'}`}>{recording ? <Square size={15} fill="currentColor" /> : <Mic size={18} />}</button>}
               </div>
-              {recording && <p className="mt-2 text-xs text-red-300">Recording voice message… press the microphone again to stop.</p>}
+              {recording && <p className="mt-2 text-xs text-red-300">Recording voice message… press the stop button when you are finished.</p>}
             </footer>
           </> : <div className="m-auto p-8 text-center"><MessageCircle className="mx-auto text-brass" size={34} /><p className="mt-4 font-display text-2xl text-ivory">Choose a conversation</p><p className="mt-2 text-sm text-ivory/40">Search signed-in people or continue an existing chat.</p></div>}
         </section>
