@@ -90,7 +90,7 @@ services:
       - key: VITE_TURNSTILE_SITE_KEY
         sync: false
       - key: PAYMENT_PROVIDER
-        value: manual
+        value: paystack
       - key: PAYMENT_CURRENCY
         value: GHS
       - key: PAYSTACK_SECRET_KEY

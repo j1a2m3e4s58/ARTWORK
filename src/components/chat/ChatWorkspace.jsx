@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Archive, ArrowDown, ArrowLeft, Ban, Bell, BellOff, CheckCheck, Download, File, Forward, Image, Loader2,
+  Archive, ArrowDown, ArrowLeft, Ban, Bell, BellOff, CheckCheck, Download, File, FileArchive, FileSpreadsheet, FileText, Forward, Image, Loader2,
   Megaphone, MessageCircle, Mic, MoreVertical, Paperclip, Pencil, Plus, Reply, RotateCcw,
-  Search, Send, Smile, Square, Trash2, Users, Video, WifiOff, X,
+  Search, Send, ShoppingBag, Smile, Square, Trash2, Users, WifiOff, X,
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
@@ -18,7 +18,15 @@ const inferMimeType = file => {
   if (extension === 'pdf') return 'application/pdf';
   return 'application/octet-stream';
 };
-const attachmentIcon = type => type?.startsWith('image') ? Image : type?.startsWith('video') ? Video : type?.startsWith('audio') ? Mic : File;
+const fileVisual = (type, name = '') => {
+  const value = `${type || ''} ${name}`.toLowerCase();
+  if (value.includes('pdf')) return { Icon: FileText, label: 'PDF document', color: 'bg-red-600 text-white' };
+  if (/word|document|\.docx?\b/.test(value)) return { Icon: FileText, label: 'Word document', color: 'bg-blue-600 text-white' };
+  if (/sheet|excel|\.xlsx?\b|\.csv\b/.test(value)) return { Icon: FileSpreadsheet, label: 'Spreadsheet', color: 'bg-emerald-600 text-white' };
+  if (/presentation|powerpoint|\.pptx?\b/.test(value)) return { Icon: FileText, label: 'Presentation', color: 'bg-orange-600 text-white' };
+  if (/zip|archive/.test(value)) return { Icon: FileArchive, label: 'Archive', color: 'bg-purple-600 text-white' };
+  return { Icon: File, label: 'Shared file', color: 'bg-brass/15 text-brass' };
+};
 const formatBytes = bytes => {
   if (!bytes) return '';
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -61,11 +69,11 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
       <audio src={url} controls preload="metadata" className="h-9 w-full" />
     </div>
   );
-  const Icon = attachmentIcon(type);
+  const { Icon, label, color } = fileVisual(type, name);
   return (
     <button type="button" onClick={() => onOpen?.(attachment)} className="mt-2 flex w-full min-w-[220px] items-center gap-3 border border-brass/15 bg-obsidian p-3 text-left text-xs text-brass">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center bg-brass/10"><Icon size={19} /></span>
-      <span className="min-w-0 flex-1"><b className="block truncate font-medium">{name || 'Open attachment'}</b><small className="text-ivory/35">{type?.includes('pdf') ? 'PDF document' : 'Shared file'} {formatBytes(bytes) && `· ${formatBytes(bytes)}`}</small></span>
+      <span className={`flex h-11 w-11 shrink-0 items-center justify-center ${color}`}><Icon size={20} /></span>
+      <span className="min-w-0 flex-1"><b className="block truncate font-medium">{name || 'Open attachment'}</b><small className="text-ivory/35">{label} {formatBytes(bytes) && `· ${formatBytes(bytes)}`}</small></span>
       <Download size={16} />
     </button>
   );
@@ -74,16 +82,18 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
 function PreviewOverlay({ attachment, onClose }) {
   if (!attachment) return null;
   const isPdf = attachment.type?.includes('pdf');
+  const previewUrl = attachment.previewUrl || attachment.url;
+  const downloadUrl = attachment.downloadUrl || attachment.url;
   return (
     <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/90 p-3 backdrop-blur-md sm:p-8" role="dialog" aria-modal="true" aria-label="Attachment preview">
       <div className="flex h-full max-h-[900px] w-full max-w-5xl flex-col border border-brass/25 bg-obsidian shadow-2xl">
         <header className="flex items-center justify-between gap-3 border-b border-brass/15 p-3 sm:p-4">
           <div className="min-w-0"><p className="truncate text-sm text-ivory">{attachment.name || 'Attachment preview'}</p><p className="text-xs text-ivory/35">{formatBytes(attachment.bytes)}</p></div>
-          <div className="flex gap-2"><a href={attachment.url} target="_blank" rel="noreferrer" download className="flex h-10 items-center gap-2 border border-brass/20 px-3 text-xs text-brass"><Download size={15} /><span className="hidden sm:inline">Open or download</span></a><button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center border border-brass/20 text-ivory"><X size={18} /></button></div>
+          <div className="flex gap-2"><a href={downloadUrl} target="_blank" rel="noreferrer" download className="flex h-10 items-center gap-2 border border-brass/20 px-3 text-xs text-brass"><Download size={15} /><span className="hidden sm:inline">Download file</span></a><button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center border border-brass/20 text-ivory"><X size={18} /></button></div>
         </header>
         <div className="min-h-0 flex-1 bg-black/40 p-2 sm:p-4">
-          {attachment.type?.startsWith('image/') && <img src={attachment.url} alt={attachment.name || 'Shared image'} className="h-full w-full object-contain" />}
-          {isPdf && <iframe src={attachment.url} title={attachment.name || 'PDF preview'} className="h-full w-full bg-white" />}
+          {attachment.type?.startsWith('image/') && <img src={previewUrl} alt={attachment.name || 'Shared image'} className="h-full w-full object-contain" />}
+          {isPdf && <iframe src={previewUrl} title={attachment.name || 'PDF preview'} className="h-full w-full bg-white" />}
           {!attachment.type?.startsWith('image/') && !isPdf && <div className="flex h-full items-center justify-center"><AttachmentPreview attachment={attachment} /></div>}
         </div>
       </div>
@@ -115,6 +125,11 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [uploadFailed, setUploadFailed] = useState(false);
   const [pushState, setPushState] = useState('unknown');
   const [showAnnouncement, setShowAnnouncement] = useState(false);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [shopPickerOpen, setShopPickerOpen] = useState(false);
+  const [shopProducts, setShopProducts] = useState([]);
+  const [selectedProducts, setSelectedProducts] = useState([]);
+  const [shopLoading, setShopLoading] = useState(false);
   const [announcement, setAnnouncement] = useState({ title: 'Studio announcements', body: '' });
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -129,6 +144,9 @@ export default function ChatWorkspace({ adminMode = false }) {
   const attachmentsRef = useRef([]);
   const chunksRef = useRef([]);
   const uploadAbortRef = useRef(null);
+  const photosInputRef = useRef(null);
+  const documentsInputRef = useRef(null);
+  const audioInputRef = useRef(null);
   const typingTimerRef = useRef(null);
   const initializedSelectionRef = useRef(false);
   const typingLastSentRef = useRef({ value: false, at: 0 });
@@ -271,6 +289,30 @@ export default function ChatWorkspace({ adminMode = false }) {
     if (removed) URL.revokeObjectURL(removed.previewUrl);
     return current.filter(item => item.id !== id);
   });
+  const openShopPicker = async () => {
+    setShowAttachmentMenu(false); setShopPickerOpen(true); setShopLoading(true); setError('');
+    try { setShopProducts(await studioClient.entities.ShopProduct.list('-created_date', 100)); }
+    catch (loadError) { setError(loadError.message); setShopPickerOpen(false); }
+    finally { setShopLoading(false); }
+  };
+  const sendShopSelection = async () => {
+    const chosen = shopProducts.filter(product => selectedProducts.includes(product.id));
+    if (!chosen.length || !activeId) return;
+    setBusy(true); setError('');
+    try {
+      await studioClient.chat.sendBatch(activeId, chosen.map((product, index) => ({
+        body: `${index === 0 ? 'I would like to discuss or negotiate these Art Shop items:\n\n' : ''}${product.title}${product.price != null ? ` — GHS ${Number(product.price).toLocaleString('en-GH', { minimumFractionDigits: 2 })}` : ''}\nView in the Art Shop: ${window.location.origin}/shop`,
+        attachmentUrl: product.imageUrl || '',
+        attachmentName: product.title,
+        attachmentType: product.imageUrl ? 'image/jpeg' : '',
+        attachmentBytes: 0,
+        allowForward: false,
+      })));
+      setSelectedProducts([]); setShopPickerOpen(false);
+      await loadMessages(activeId, '', { scrollToBottom: true }); await load();
+    } catch (sendError) { setError(sendError.message); }
+    finally { setBusy(false); }
+  };
   const send = async () => {
     if ((!text.trim() && !attachments.length) || !activeId) return;
     setBusy(true);
@@ -461,14 +503,14 @@ export default function ChatWorkspace({ adminMode = false }) {
             {matchingConversations.map(conversation => {
               const person = conversation.participants?.find(entry => entry.id !== user.id);
               return <button key={conversation.id} onClick={() => setActiveId(conversation.id)} className={`flex w-full items-center gap-3 border-b border-brass/10 p-4 text-left ${activeId === conversation.id ? 'bg-brass/10' : 'hover:bg-ivory/[0.03]'}`}>
-                <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass">{conversation.type === 'announcement' ? <Megaphone size={17} /> : initials(person?.name)}{person?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
+                <span className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brass/10 text-xs font-semibold text-brass">{conversation.type === 'announcement' ? <Megaphone size={17} /> : person?.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(person?.name)}{person?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
                 <span className="min-w-0 flex-1"><b className="block truncate text-sm text-ivory">{conversationName(conversation, user.id)}</b><small className="block truncate text-ivory/35">{conversation.typingUsers?.length ? `${conversation.typingUsers[0].name} is typing…` : conversation.lastMessage || 'Conversation started'}</small></span>
                 {conversation.unread > 0 && <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-green-500 px-1 text-xs text-white">{conversation.unread}</span>}
               </button>;
             })}
             <div className="border-t border-brass/15 p-4">
               <p className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-widest text-brass"><Users size={13} />Signed-in people</p>
-              {matchingPeople.map(person => <button key={person.id} onClick={() => start(person)} className="flex min-h-12 w-full items-center gap-3 border-b border-brass/10 text-left text-sm text-ivory/60 hover:text-ivory"><span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ivory/5 text-[10px] text-brass">{initials(person.name)}{person.online && <i className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-carbon bg-green-400" />}</span><span className="min-w-0 flex-1 truncate">{person.name}</span><small className="text-brass/60">{person.role === 'customer' ? 'member' : person.role}</small></button>)}
+              {matchingPeople.map(person => <button key={person.id} onClick={() => start(person)} className="flex min-h-12 w-full items-center gap-3 border-b border-brass/10 text-left text-sm text-ivory/60 hover:text-ivory"><span className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-ivory/5 text-[10px] text-brass">{person.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(person.name)}{person.online && <i className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-carbon bg-green-400" />}</span><span className="min-w-0 flex-1 truncate">{person.name}</span><small className="text-brass/60">{person.role === 'customer' ? 'member' : person.role}</small></button>)}
               {!matchingPeople.length && !matchingConversations.length && <p className="py-6 text-center text-xs text-ivory/35">No people match your search.</p>}
             </div>
           </div>
@@ -478,7 +520,7 @@ export default function ChatWorkspace({ adminMode = false }) {
           {active ? <>
             <header className="shrink-0 flex items-center gap-2 border-b border-brass/15 p-3 sm:gap-3 sm:p-4">
               <button onClick={() => setActiveId('')} className="flex h-10 w-10 items-center justify-center text-brass lg:hidden" aria-label="Back to conversations"><ArrowLeft size={19} /></button>
-              <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass">{active.type === 'announcement' ? <Megaphone size={17} /> : initials(other?.name)}{other?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
+              <span className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brass/10 text-xs font-semibold text-brass">{active.type === 'announcement' ? <Megaphone size={17} /> : other?.avatarUrl ? <img src={other.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(other?.name)}{other?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
               <div className="min-w-0 flex-1"><p className="truncate font-display text-xl text-ivory">{conversationName(active, user.id)}</p><p className={`truncate text-xs ${active.typingUsers?.length || other?.online ? 'text-green-400' : 'text-ivory/35'}`}>{active.typingUsers?.length ? `${active.typingUsers[0].name} is typing…` : active.type === 'announcement' ? 'Studio updates for every member' : lastSeen(other)}</p></div>
               {connectionState !== 'connected' && <span className="hidden items-center gap-1 text-[10px] uppercase tracking-wider text-amber-300 sm:flex"><WifiOff size={13} />{connectionState === 'offline' ? 'Offline' : 'Reconnecting'}</span>}
               <button type="button" onClick={() => setSearchingMessages(value => !value)} className="flex h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass" aria-label="Search this conversation"><Search size={17} /></button>
@@ -497,13 +539,13 @@ export default function ChatWorkspace({ adminMode = false }) {
               {nextCursor && !messageQuery && <button type="button" disabled={loadingOlder} onClick={loadOlderMessages} className="mx-auto flex h-9 items-center gap-2 border border-brass/15 px-4 text-xs text-brass disabled:opacity-40">{loadingOlder && <Loader2 size={13} className="animate-spin" />}Load older messages</button>}
               {messages.map((message, index) => {
                 const mine = message.senderId === user.id;
-                const attachment = message.attachmentUrl ? { url: message.attachmentUrl, name: message.attachmentName, type: message.attachmentType, bytes: message.attachmentBytes } : null;
+                const attachment = message.attachmentUrl ? { url: message.attachmentUrl, previewUrl: studioClient.chat.attachmentUrl(message.id), downloadUrl: studioClient.chat.attachmentUrl(message.id, true), name: message.attachmentName, type: message.attachmentType, bytes: message.attachmentBytes, messageId: message.id } : null;
                 const groupedReactions = Object.values(message.reactions || {}).reduce((result, emoji) => ({ ...result, [emoji]: (result[emoji] || 0) + 1 }), {});
                 const previous = messages[index - 1];
                 const showDate = !previous || new Date(previous.created_date).toDateString() !== new Date(message.created_date).toDateString();
                 return <div key={message.id}>{showDate && <div className="my-4 flex items-center gap-3" aria-label={`Messages from ${new Date(message.created_date).toLocaleDateString()}`}><span className="h-px flex-1 bg-brass/10" /><span className="text-[10px] uppercase tracking-widest text-ivory/35">{new Date(message.created_date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</span><span className="h-px flex-1 bg-brass/10" /></div>}<div className={`group flex ${mine ? 'justify-end' : 'justify-start'}`}><article className={`relative max-w-[90%] border p-3 sm:max-w-[72%] ${mine ? 'border-brass/20 bg-brass/10' : 'border-ivory/10 bg-carbon'}`}>
                   {message.replyPreview && <div className="mb-2 border-l-2 border-brass/50 bg-black/20 px-3 py-2 text-xs text-ivory/45"><Reply size={12} className="mb-1 inline text-brass" /> {message.replyPreview}</div>}
-                  {message.deletedForEveryone ? <p className="flex items-center gap-2 text-sm italic text-ivory/35"><Ban size={14} />This message was deleted.</p> : editing?.id === message.id ? <div className="space-y-2"><textarea autoFocus value={editing.body} onChange={event => setEditing({ ...editing, body: event.target.value })} className="min-h-20 w-full resize-none border border-brass/20 bg-obsidian p-2 text-sm text-ivory outline-none" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="h-8 px-3 text-xs text-ivory/50">Cancel</button><button type="button" onClick={saveEdit} className="h-8 bg-brass px-3 text-xs text-obsidian">Save</button></div></div> : message.body && <p className="whitespace-pre-wrap break-words text-sm leading-6 text-ivory/75">{message.body}</p>}
+                  {message.deletedForEveryone ? <div className="flex items-center gap-3"><p className="flex items-center gap-2 text-sm italic text-ivory/35"><Ban size={14} />This message was deleted.</p><button type="button" onClick={() => removeMessage(message, 'me')} className="text-[10px] uppercase tracking-wider text-ivory/30 hover:text-brass">Remove</button></div> : editing?.id === message.id ? <div className="space-y-2"><textarea autoFocus value={editing.body} onChange={event => setEditing({ ...editing, body: event.target.value })} className="min-h-20 w-full resize-none border border-brass/20 bg-obsidian p-2 text-sm text-ivory outline-none" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="h-8 px-3 text-xs text-ivory/50">Cancel</button><button type="button" onClick={saveEdit} className="h-8 bg-brass px-3 text-xs text-obsidian">Save</button></div></div> : message.body && <p className="whitespace-pre-wrap break-words text-sm leading-6 text-ivory/75">{message.body}</p>}
                   <AttachmentPreview attachment={attachment} onOpen={setPreview} />
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     {!message.deletedForEveryone && <div className="relative flex items-center gap-1"><button type="button" onClick={() => setReplyingTo(message)} title="Reply" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Reply size={13} /></button><button type="button" onClick={() => setReactionPickerId(value => value === message.id ? '' : message.id)} title="React" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Smile size={13} /></button><button type="button" onClick={() => setMessageMenuId(value => value === message.id ? '' : message.id)} title="Message options" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><MoreVertical size={13} /></button>
@@ -524,7 +566,18 @@ export default function ChatWorkspace({ adminMode = false }) {
               {attachments.length > 0 && <div className="mb-2 border border-brass/15 bg-obsidian p-2"><div className="flex max-h-52 gap-2 overflow-x-auto overscroll-contain pb-1 [scrollbar-gutter:stable]">{attachments.map(item => <div key={item.id} className="relative w-40 shrink-0 border border-brass/10 bg-carbon p-2"><AttachmentPreview compact attachment={{ url: item.previewUrl, name: item.file.name, type: item.mime, bytes: item.file.size }} onOpen={setPreview} /><button type="button" disabled={busy} onClick={() => removeAttachment(item.id)} aria-label={`Remove ${item.file.name}`} className="absolute right-1 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/80 text-white disabled:opacity-40"><X size={14} /></button>{busy && <div className="mt-2"><div className="flex justify-between text-[10px] text-ivory/45"><span>Uploading</span><span>{uploadProgress[item.id] || 0}%</span></div><div className="mt-1 h-1 overflow-hidden bg-ivory/10"><div className="h-full bg-brass transition-all" style={{ width: `${uploadProgress[item.id] || 0}%` }} /></div></div>}</div>)}</div><div className="mt-2 flex flex-wrap items-center justify-between gap-3"><span className="text-[10px] uppercase tracking-wider text-ivory/35">{attachments.length} of 10 files selected</span><div className="flex items-center gap-3">{attachments.length < 10 && !busy && <label className="flex min-h-9 cursor-pointer items-center gap-1.5 border border-brass/20 px-3 text-[10px] uppercase tracking-wider text-brass"><Plus size={13} />Add more<input type="file" multiple className="hidden" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} /></label>}{busy && <button type="button" onClick={() => uploadAbortRef.current?.abort()} className="text-[10px] uppercase tracking-wider text-red-300">Cancel upload</button>}</div></div></div>}
               {uploadFailed && attachments.length > 0 && !busy && <button type="button" onClick={send} className="mb-2 flex h-10 w-full items-center justify-center gap-2 border border-red-400/25 text-xs text-red-300"><RotateCcw size={14} />Retry failed upload</button>}
               <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-2">
-                <label className={`flex h-11 w-11 shrink-0 items-center justify-center border border-brass/20 text-brass ${active.blocked || (active.type === 'announcement' && !adminMode) ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`} title="Add images, videos, audio or documents" aria-label="Add attachments"><Paperclip size={17} /><span className="sr-only">Add attachments</span><input type="file" multiple disabled={active.blocked || (active.type === 'announcement' && !adminMode)} className="hidden" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} /></label>
+                <div className="relative">
+                  <button type="button" disabled={active.blocked || (active.type === 'announcement' && !adminMode)} onClick={() => setShowAttachmentMenu(value => !value)} className="flex h-11 w-11 shrink-0 items-center justify-center border border-brass/20 text-brass disabled:cursor-not-allowed disabled:opacity-40" title="Add an attachment" aria-label="Open attachment menu"><Paperclip size={17} /></button>
+                  {showAttachmentMenu && <div className="absolute bottom-12 left-0 z-50 w-60 overflow-hidden border border-brass/20 bg-carbon p-1 shadow-2xl">
+                    <button type="button" onClick={() => { setShowAttachmentMenu(false); photosInputRef.current?.click(); }} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Image size={17} className="text-sky-400" /><span><b className="block font-medium">Photos & videos</b><small className="text-ivory/35">Choose one or several</small></span></button>
+                    <button type="button" onClick={() => { setShowAttachmentMenu(false); documentsInputRef.current?.click(); }} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><FileText size={17} className="text-purple-400" /><span><b className="block font-medium">Documents</b><small className="text-ivory/35">PDF, Word, Excel, slides or ZIP</small></span></button>
+                    <button type="button" onClick={() => { setShowAttachmentMenu(false); audioInputRef.current?.click(); }} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Mic size={17} className="text-orange-400" /><span><b className="block font-medium">Audio</b><small className="text-ivory/35">Choose an audio recording</small></span></button>
+                    <button type="button" onClick={openShopPicker} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><ShoppingBag size={17} className="text-brass" /><span><b className="block font-medium">Art Shop items</b><small className="text-ivory/35">Share items for discussion</small></span></button>
+                  </div>}
+                  <input ref={photosInputRef} type="file" multiple className="hidden" accept="image/*,video/*" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} />
+                  <input ref={documentsInputRef} type="file" multiple className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} />
+                  <input ref={audioInputRef} type="file" multiple className="hidden" accept="audio/*" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} />
+                </div>
                 <textarea value={text} disabled={recording || active.blocked || (active.type === 'announcement' && !adminMode)} onChange={event => updateTyping(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); } }} rows={2} placeholder={recording ? 'Recording voice message…' : active.type === 'announcement' && !adminMode ? 'Only studio staff can publish announcements' : 'Write a message…'} className="min-w-0 flex-1 resize-none border border-brass/20 bg-obsidian p-3 text-sm text-ivory outline-none disabled:opacity-50" />
                 {!recording && (text.trim() || attachments.length) ? <button disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={send} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian disabled:opacity-40" aria-label="Send message">{busy ? <Loader2 className="animate-spin" size={17} /> : <Send size={17} />}</button> : <button type="button" disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={toggleRecording} title={recording ? 'Stop recording' : 'Record voice message'} aria-label={recording ? 'Stop voice recording' : 'Record voice message'} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border disabled:opacity-40 ${recording ? 'animate-pulse border-red-400 bg-red-400/10 text-red-300' : 'border-brass/20 bg-brass text-obsidian'}`}>{recording ? <Square size={15} fill="currentColor" /> : <Mic size={18} />}</button>}
               </div>
@@ -534,6 +587,7 @@ export default function ChatWorkspace({ adminMode = false }) {
         </section>
       </div>
       <PreviewOverlay attachment={preview} onClose={() => setPreview(null)} />
+      {shopPickerOpen && <div className="fixed inset-0 z-[176] flex items-center justify-center bg-black/85 p-3 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="shop-picker-title"><section className="flex max-h-[88dvh] w-full max-w-4xl flex-col border border-brass/25 bg-carbon shadow-2xl"><header className="flex items-center justify-between gap-3 border-b border-brass/15 p-4 sm:p-5"><div><p className="text-[10px] uppercase tracking-[.25em] text-brass">Share for negotiation</p><h3 id="shop-picker-title" className="font-display text-2xl text-ivory sm:text-3xl">Choose Art Shop items</h3><p className="mt-1 text-xs text-ivory/40">Select one or several items to send in this conversation.</p></div><button type="button" onClick={() => { setShopPickerOpen(false); setSelectedProducts([]); }} className="flex h-10 w-10 items-center justify-center border border-brass/15"><X size={17} /></button></header><div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">{shopLoading ? <div className="flex min-h-60 items-center justify-center"><Loader2 className="animate-spin text-brass" /></div> : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{shopProducts.map(product => { const selected = selectedProducts.includes(product.id); return <button type="button" key={product.id} onClick={() => setSelectedProducts(current => selected ? current.filter(id => id !== product.id) : [...current, product.id])} className={`overflow-hidden border text-left ${selected ? 'border-brass bg-brass/10' : 'border-brass/10 bg-obsidian'}`}><div className="relative aspect-[4/3] bg-black/30">{product.imageUrl ? <img src={product.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center"><Image className="text-ivory/20" /></div>}{selected && <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-brass text-obsidian"><CheckCheck size={15} /></span>}</div><div className="p-3"><b className="block truncate text-sm text-ivory">{product.title}</b><span className="mt-1 block text-sm text-brass">GHS {Number(product.price || 0).toLocaleString('en-GH', { minimumFractionDigits: 2 })}</span></div></button>; })}</div>}</div><footer className="flex items-center justify-between gap-3 border-t border-brass/15 p-4"><span className="text-xs text-ivory/40">{selectedProducts.length} selected</span><button type="button" disabled={!selectedProducts.length || busy} onClick={sendShopSelection} className="min-h-11 bg-brass px-5 text-xs uppercase tracking-wider text-obsidian disabled:opacity-40">{busy ? 'Sending…' : 'Send selected items'}</button></footer></section></div>}
       {forwardingMessage && <div className="fixed inset-0 z-[175] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="forward-message-title"><div className="max-h-[80dvh] w-full max-w-md overflow-hidden border border-brass/25 bg-carbon shadow-2xl"><header className="flex items-center justify-between border-b border-brass/15 p-4"><div><h3 id="forward-message-title" className="font-display text-2xl text-ivory">Forward message</h3><p className="text-xs text-ivory/40">Choose one of your conversations</p></div><button type="button" onClick={() => setForwardingMessage(null)} aria-label="Close forward message" className="flex h-10 w-10 items-center justify-center border border-brass/15"><X size={17} /></button></header><div className="max-h-[60dvh] overflow-y-auto p-2">{conversations.filter(item => item.id !== activeId && !item.archived).map(item => <button type="button" disabled={busy} key={item.id} onClick={() => forwardMessage(item.id)} className="flex min-h-14 w-full items-center gap-3 border-b border-brass/10 px-3 text-left hover:bg-brass/10 disabled:opacity-40"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-brass/10 text-xs text-brass">{initials(conversationName(item, user.id))}</span><span className="truncate text-sm text-ivory/70">{conversationName(item, user.id)}</span></button>)}</div></div></div>}
     </>
   );

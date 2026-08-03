@@ -238,7 +238,9 @@ test('API keeps public reads open while blocking unverified customer mutations',
 
     const deleteResponse = await fetch(`${baseUrl}/api/chat/messages/${chatMessage.id}?mode=everyone`, { method: 'DELETE', headers: securedHeaders });
     assert.equal(deleteResponse.status, 200);
-    const deletedMessage = (await (await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, { headers: { Cookie: adminCookieHeader } })).json()).find(item => item.id === chatMessage.id);
+    const adminMessagesAfterDelete = await (await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, { headers: { Cookie: adminCookieHeader } })).json();
+    assert.equal(adminMessagesAfterDelete.find(item => item.id === chatMessage.id), undefined, 'The person who deletes for everyone should get a clean chat immediately.');
+    const deletedMessage = (await (await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, { headers: { Cookie: cookieHeader } })).json()).find(item => item.id === chatMessage.id);
     assert.equal(deletedMessage.deletedForEveryone, true);
 
     const pushConfigResponse = await fetch(`${baseUrl}/api/push/config`, { headers: { Cookie: adminCookieHeader } });

@@ -1588,6 +1588,7 @@ const chatUser = user => ({
   id: user.id,
   name: user.full_name || user.email.split('@')[0],
   role: user.role,
+  avatarUrl: user.avatarUrl || '',
   online: Date.now() - new Date(user.lastSeenAt || 0).getTime() < 90_000,
   lastSeenAt: user.lastSeenAt || null,
 });
@@ -1938,6 +1939,43 @@ app.patch('/api/chat/messages/:id', requireVerifiedUser, mutationLimiter, async 
   res.json(message);
 });
 
+app.get('/api/chat/messages/:id/attachment', requireVerifiedUser, async (req, res) => {
+  const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at && !item.deletedForEveryone);
+  const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+  if (!message || !conversation || !chatMember(conversation, req.user) || !message.attachmentUrl) {
+    return res.status(404).json({ error: 'Attachment not found.' });
+  }
+  const filename = String(message.attachmentName || 'attachment').replace(/[\r\n"\\]/g, '_').slice(0, 180);
+  const disposition = req.query.download === '1' ? 'attachment' : 'inline';
+  res.setHeader('Content-Disposition', `${disposition}; filename="${filename}"`);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  if (message.attachmentUrl.startsWith('/uploads/')) {
+    const localName = path.basename(message.attachmentUrl);
+    return res.type(message.attachmentType || 'application/octet-stream').sendFile(path.join(uploadDir, localName));
+  }
+  let remote;
+  try {
+    remote = new URL(message.attachmentUrl);
+  } catch {
+    return res.status(400).json({ error: 'Attachment address is invalid.' });
+  }
+  if (remote.protocol !== 'https:' || remote.hostname !== 'res.cloudinary.com') {
+    return res.status(403).json({ error: 'This attachment host is not permitted.' });
+  }
+  try {
+    const upstream = await fetch(remote, { signal: AbortSignal.timeout(60_000) });
+    if (!upstream.ok) return res.status(502).json({ error: 'The stored attachment could not be opened.' });
+    const length = Number(upstream.headers.get('content-length') || 0);
+    if (length > 80 * 1024 * 1024) return res.status(413).json({ error: 'Attachment is too large to preview.' });
+    const body = Buffer.from(await upstream.arrayBuffer());
+    if (body.length > 80 * 1024 * 1024) return res.status(413).json({ error: 'Attachment is too large to preview.' });
+    res.type(message.attachmentType || upstream.headers.get('content-type') || 'application/octet-stream').send(body);
+  } catch (error) {
+    reportOperationalError('chat_attachment_proxy_failed', error, { messageId: message.id });
+    res.status(502).json({ error: 'The stored attachment could not be opened.' });
+  }
+});
+
 app.delete('/api/chat/messages/:id', requireVerifiedUser, mutationLimiter, async (req, res) => {
   const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at);
   const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
@@ -1953,6 +1991,7 @@ app.delete('/api/chat/messages/:id', requireVerifiedUser, mutationLimiter, async
     message.deletedForEveryone = true;
     message.deletedBy = req.user.id;
     message.deletedAt = now();
+    message.hiddenFor = [...new Set([...(message.hiddenFor || []), req.user.id])];
   } else {
     message.hiddenFor = [...new Set([...(message.hiddenFor || []), req.user.id])];
   }
@@ -2626,7 +2665,8 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
   const uploadPurpose = String(req.body?.purpose || '');
   const isPublicApplicationUpload = uploadPurpose === 'internship-letter';
   const isChatAttachment = uploadPurpose === 'chat-attachment';
-  if (staffRoles.has(req.user.role) && !isPublicApplicationUpload && !isChatAttachment && !hasAdminAccess(req, req.user)) {
+  const isProfileAvatar = uploadPurpose === 'profile-avatar';
+  if (staffRoles.has(req.user.role) && !isPublicApplicationUpload && !isChatAttachment && !isProfileAvatar && !hasAdminAccess(req, req.user)) {
     return res.status(403).json({ error: 'Re-enter your password to unlock Studio Control.', code: 'admin_unlock_required' });
   }
   if (!req.file) return res.status(400).json({ error: 'Choose a supported image, video, or PDF file.' });
@@ -2641,6 +2681,9 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   ]);
   if (!detected || !allowed.has(detected.mime)) return res.status(400).json({ error: 'Choose a supported image, video, audio, PDF, Word, Excel, PowerPoint or ZIP file.' });
+  if (isProfileAvatar && !detected.mime.startsWith('image/')) {
+    return res.status(400).json({ error: 'Profile photos must be JPG, PNG, WebP, AVIF or GIF images.' });
+  }
   const fileId = newId();
   const stored = await storeFile({ buffer: req.file.buffer, mime: detected.mime, extension: detected.ext, uploadDir, id: fileId });
   const media = {
@@ -2653,10 +2696,10 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     publicId: stored.publicId,
     resourceType: stored.resourceType,
     userId: req.user.id,
-    purpose: isPublicApplicationUpload ? 'internship-letter' : isChatAttachment ? 'chat-attachment' : staffRoles.has(req.user.role) ? 'content-library' : 'customer-reference',
+    purpose: isPublicApplicationUpload ? 'internship-letter' : isChatAttachment ? 'chat-attachment' : isProfileAvatar ? 'profile-avatar' : staffRoles.has(req.user.role) ? 'content-library' : 'customer-reference',
     altText: '',
-    sourceName: isPublicApplicationUpload ? 'Internship applicant upload' : isChatAttachment ? 'Private chat attachment' : staffRoles.has(req.user.role) ? 'Studio upload' : 'Customer upload',
-    contentStatus: staffRoles.has(req.user.role) && !isPublicApplicationUpload && !isChatAttachment ? 'original' : 'customer-reference',
+    sourceName: isPublicApplicationUpload ? 'Internship applicant upload' : isChatAttachment ? 'Private chat attachment' : isProfileAvatar ? 'Profile photo' : staffRoles.has(req.user.role) ? 'Studio upload' : 'Customer upload',
+    contentStatus: staffRoles.has(req.user.role) && !isPublicApplicationUpload && !isChatAttachment && !isProfileAvatar ? 'original' : 'customer-reference',
     created_date: now(),
   };
   db.data.Media.push(media);
@@ -2713,6 +2756,13 @@ app.patch('/api/account/profile', requireUser, mutationLimiter, async (req, res)
   if (!fullName) return res.status(400).json({ error: 'Enter your full name.' });
   req.user.full_name = fullName;
   if (typeof req.body.chatDiscoverable === 'boolean') req.user.chatDiscoverable = req.body.chatDiscoverable;
+  if (typeof req.body.avatarUrl === 'string') {
+    const avatarUrl = req.body.avatarUrl.trim().slice(0, 2048);
+    if (avatarUrl && !/^https:\/\//i.test(avatarUrl) && !avatarUrl.startsWith('/uploads/')) {
+      return res.status(400).json({ error: 'Profile image address is invalid.' });
+    }
+    req.user.avatarUrl = avatarUrl;
+  }
   req.user.updated_date = now();
   await audit(req.user, 'account.profile_updated', 'User', req.user.id);
   await save();

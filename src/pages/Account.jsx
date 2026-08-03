@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, CreditCard, Download, Lock, MessageSquare, Package, Palette, Save, Trash2, Upload } from 'lucide-react';
+import { Bell, CreditCard, Download, ImagePlus, Lock, MessageSquare, Package, Palette, Save, Trash2, Upload } from 'lucide-react';
 import PageTransition from '@/components/PageTransition';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
@@ -20,6 +20,8 @@ export default function Account() {
   const [data, setData] = useState({ messages: [], commissions: [], artRequests: [], filmRequests: [], orders: [], notifications: [] });
   const [name, setName] = useState(user?.full_name || '');
   const [chatDiscoverable, setChatDiscoverable] = useState(user?.chatDiscoverable !== false);
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || '');
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '' });
   const [closePassword, setClosePassword] = useState('');
   const [notice, setNotice] = useState('');
@@ -56,10 +58,26 @@ export default function Account() {
   const updateProfile = async event => {
     event.preventDefault();
     setError('');
-    const updated = await studioClient.account.updateProfile({ full_name: name, chatDiscoverable });
+    const updated = await studioClient.account.updateProfile({ full_name: name, chatDiscoverable, avatarUrl });
     await checkUserAuth();
     setName(updated.full_name);
+    setAvatarUrl(updated.avatarUrl || '');
     setNotice('Profile updated.');
+  };
+  const uploadAvatar = async file => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return setError('Choose a JPG, PNG, WebP, or other image file.');
+    if (file.size > 8 * 1024 * 1024) return setError('Profile images must be 8 MB or smaller.');
+    setUploadingAvatar(true); setError('');
+    try {
+      const uploaded = await studioClient.integrations.Core.UploadFile({ file, purpose: 'profile-avatar' });
+      setAvatarUrl(uploaded.file_url);
+      const updated = await studioClient.account.updateProfile({ full_name: name, chatDiscoverable, avatarUrl: uploaded.file_url });
+      await checkUserAuth();
+      setAvatarUrl(updated.avatarUrl || uploaded.file_url);
+      setNotice('Profile photo updated.');
+    } catch (uploadError) { setError(uploadError.message); }
+    finally { setUploadingAvatar(false); }
   };
 
   const changePassword = async event => {
@@ -262,6 +280,10 @@ export default function Account() {
             <aside className="space-y-6">
               <form onSubmit={updateProfile} className="border border-brass/10 bg-carbon p-5">
                 <h2 className="font-display text-2xl">Profile</h2>
+                <div className="mt-4 flex items-center gap-4">
+                  <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-brass/25 bg-obsidian text-xl text-brass">{avatarUrl ? <img src={avatarUrl} alt={`${name || 'Account'} profile`} className="h-full w-full object-cover" /> : (name || user?.email || '?').slice(0, 2).toUpperCase()}</div>
+                  <div><label className="inline-flex min-h-10 cursor-pointer items-center gap-2 border border-brass/20 px-3 text-xs text-brass"><ImagePlus size={14} />{uploadingAvatar ? 'Uploading…' : 'Choose profile photo'}<input type="file" accept="image/*" className="hidden" disabled={uploadingAvatar} onChange={event => { uploadAvatar(event.target.files?.[0]); event.target.value = ''; }} /></label><p className="mt-2 text-xs text-ivory/35">Shown in your account and private conversations.</p></div>
+                </div>
                 <label className="mt-4 block text-xs uppercase tracking-wider text-ivory/35">Full name
                   <input value={name} onChange={event => setName(event.target.value)} className="mt-2 w-full border border-brass/15 bg-obsidian px-3 py-2 text-sm" />
                 </label>

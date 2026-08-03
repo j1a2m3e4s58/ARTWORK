@@ -2,10 +2,12 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const provider = process.env.PAYMENT_PROVIDER || 'manual';
 const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
+const paymentMode = paystackSecret?.startsWith('sk_live_') ? 'live' : paystackSecret?.startsWith('sk_test_') ? 'test' : 'unknown';
 
 export const paymentStatus = {
   provider,
   configured: provider === 'paystack' && Boolean(paystackSecret),
+  mode: paymentMode,
   currency: process.env.PAYMENT_CURRENCY || 'GHS',
 };
 

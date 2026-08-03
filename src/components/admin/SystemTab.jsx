@@ -78,7 +78,9 @@ export default function SystemTab() {
           { label: 'Storage', value: health?.services?.storage?.provider || 'Checking', icon: DatabaseBackup, good: health?.services?.storage?.ok },
           {
             label: 'Payments',
-            value: health?.services?.payment?.configured ? `${health.services.payment.provider} sandbox` : 'Manual testing mode',
+            value: health?.services?.payment?.configured
+              ? `${health.services.payment.provider} ${health.services.payment.mode === 'live' ? 'live' : 'test'}`
+              : 'Secure payment needs setup',
             icon: CreditCard,
             good: health?.services?.payment?.configured,
           },
@@ -118,7 +120,7 @@ export default function SystemTab() {
         {testing && <p className="mt-3 text-xs text-ivory/45">{testing} is running…</p>}
         {!health?.services?.payment?.configured && (
           <p className="mt-4 border-l border-yellow-300/40 pl-3 text-xs leading-relaxed text-ivory/45">
-            Checkout remains in manual mode until Paystack test credentials are configured and the sandbox rehearsal succeeds.
+            Secure checkout is unavailable. Confirm that PAYMENT_PROVIDER is set to paystack and that PAYSTACK_SECRET_KEY contains the intended test or live secret key on Render.
           </p>
         )}
       </section>
