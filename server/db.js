@@ -13,7 +13,7 @@ const databasePath = path.join(dataDir, 'db.json');
 
 const entityNames = [
   'Artwork', 'ArtworkLike', 'ArtRequest', 'Award', 'AuditLog', 'BlogPost', 'ChatConversation', 'ChatMessage', 'CommissionRequest', 'FilmRequest', 'InternshipApplication', 'HeroSlide', 'Message', 'NewsletterSubscriber',
-  'Media', 'Notification', 'Order', 'Outbox', 'PaymentEvent', 'PartnerApplication', 'PartnerPayout', 'PriceGuide', 'Quote', 'ShopProduct', 'SiteContent',
+  'Media', 'Notification', 'Order', 'Outbox', 'PaymentEvent', 'PartnerApplication', 'PartnerPayout', 'PriceGuide', 'PushSubscription', 'Quote', 'ShopProduct', 'SiteContent',
   'Testimonial', 'User', 'Video',
 ];
 const tokenCollections = ['passwordResetTokens', 'inviteTokens', 'emailVerificationTokens'];
@@ -41,6 +41,7 @@ const tableNames = {
   PartnerApplication: 'partner_applications',
   PartnerPayout: 'partner_payouts',
   PriceGuide: 'price_guides',
+  PushSubscription: 'push_subscriptions',
   Quote: 'quotes',
   ShopProduct: 'shop_products',
   SiteContent: 'site_content',

@@ -32,6 +32,33 @@
   return data;
 };
 
+const readCsrfToken = () => document.cookie
+  .split('; ')
+  .find(cookie => cookie.startsWith('atelier_csrf='))
+  ?.split('=').slice(1).join('=');
+
+const uploadWithProgress = ({ file, purpose = '', onProgress, signal }) => new Promise((resolve, reject) => {
+  const xhr = new XMLHttpRequest();
+  const body = new FormData();
+  body.append('file', file);
+  if (purpose) body.append('purpose', purpose);
+  xhr.open('POST', '/api/upload');
+  xhr.withCredentials = true;
+  const csrf = readCsrfToken();
+  if (csrf) xhr.setRequestHeader('X-CSRF-Token', decodeURIComponent(csrf));
+  xhr.upload.onprogress = event => event.lengthComputable && onProgress?.(Math.round((event.loaded / event.total) * 100));
+  xhr.onload = () => {
+    let data = {};
+    try { data = JSON.parse(xhr.responseText || '{}'); } catch { /* use fallback */ }
+    if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+    else reject(new Error(data.error || 'Upload failed.'));
+  };
+  xhr.onerror = () => reject(new Error('Upload failed because the connection was interrupted.'));
+  xhr.onabort = () => reject(new DOMException('Upload cancelled.', 'AbortError'));
+  signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+  xhr.send(body);
+});
+
 const createEntity = name => ({
   list(sort, limit) {
     const params = new URLSearchParams();
@@ -144,12 +171,22 @@ export const studioClient = {
     conversations: () => request('/api/chat/conversations'),
     directory: () => request('/api/chat/directory'),
     start: userId => request('/api/chat/conversations', { method: 'POST', body: JSON.stringify({ userId }) }),
-    messages: id => request(`/api/chat/conversations/${encodeURIComponent(id)}/messages`),
+    messages: (id, query = '') => request(`/api/chat/conversations/${encodeURIComponent(id)}/messages${query ? `?q=${encodeURIComponent(query)}` : ''}`),
     send: (id, data) => request(`/api/chat/conversations/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify(data) }),
     markRead: id => request(`/api/chat/conversations/${encodeURIComponent(id)}/read`, { method: 'POST' }),
     setForwarding: (messageId, allowed) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/forwarding`, { method: 'PATCH', body: JSON.stringify({ allowed }) }),
     react: (messageId, emoji) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/reaction`, { method: 'POST', body: JSON.stringify({ emoji }) }),
+    edit: (messageId, body) => request(`/api/chat/messages/${encodeURIComponent(messageId)}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
+    remove: (messageId, mode = 'me') => request(`/api/chat/messages/${encodeURIComponent(messageId)}?mode=${encodeURIComponent(mode)}`, { method: 'DELETE' }),
+    typing: (id, typing) => request(`/api/chat/conversations/${encodeURIComponent(id)}/typing`, { method: 'POST', body: JSON.stringify({ typing }) }),
+    settings: (id, data) => request(`/api/chat/conversations/${encodeURIComponent(id)}/settings`, { method: 'PATCH', body: JSON.stringify(data) }),
+    announce: data => request('/api/chat/announcements', { method: 'POST', body: JSON.stringify(data) }),
     heartbeat: () => request('/api/chat/presence', { method: 'POST' }),
+  },
+  push: {
+    config: () => request('/api/push/config'),
+    subscribe: subscription => request('/api/push/subscriptions', { method: 'POST', body: JSON.stringify({ subscription }) }),
+    unsubscribe: endpoint => request('/api/push/subscriptions', { method: 'DELETE', body: JSON.stringify({ endpoint }) }),
   },
   integrations: {
     Core: {
@@ -159,6 +196,7 @@ export const studioClient = {
         if (purpose) body.append('purpose', purpose);
         return request('/api/upload', { method: 'POST', body });
       },
+      UploadFileProgress: uploadWithProgress,
       SendEmail(message) {
         return request('/api/email/send', { method: 'POST', body: JSON.stringify(message) });
       },

@@ -157,6 +157,53 @@ test('API keeps public reads open while blocking unverified customer mutations',
     assert.equal(reactionResponse.status, 200);
     assert.equal(Object.values((await reactionResponse.json()).reactions)[0], '👍');
 
+    const typingResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/typing`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'X-CSRF-Token': csrf }, body: JSON.stringify({ typing: true }),
+    });
+    assert.equal(typingResponse.status, 200);
+    const conversationList = await (await fetch(`${baseUrl}/api/chat/conversations`, { headers: { Cookie: adminCookieHeader } })).json();
+    assert.equal(conversationList.find(item => item.id === conversation.id).typingUsers[0].name, 'Test Collector');
+
+    const editResponse = await fetch(`${baseUrl}/api/chat/messages/${chatMessage.id}`, {
+      method: 'PATCH', headers: securedHeaders, body: JSON.stringify({ body: 'Welcome to the upgraded studio messenger.' }),
+    });
+    assert.equal(editResponse.status, 200);
+    assert.ok((await editResponse.json()).editedAt);
+    const searchResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages?q=upgraded`, { headers: { Cookie: adminCookieHeader } });
+    assert.equal(searchResponse.status, 200);
+    assert.equal((await searchResponse.json()).length, 1);
+
+    const muteResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/settings`, {
+      method: 'PATCH', headers: securedHeaders, body: JSON.stringify({ muted: true, archived: true, blocked: true }),
+    });
+    assert.equal(muteResponse.status, 200);
+    const mutedConversation = await muteResponse.json();
+    assert.equal(mutedConversation.muted, true);
+    assert.equal(mutedConversation.archived, true);
+    assert.equal(mutedConversation.blockedByMe, true);
+    const blockedSend = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'X-CSRF-Token': csrf }, body: JSON.stringify({ body: 'This must be blocked.' }),
+    });
+    assert.equal(blockedSend.status, 403);
+    await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/settings`, {
+      method: 'PATCH', headers: securedHeaders, body: JSON.stringify({ blocked: false }),
+    });
+
+    const announcementResponse = await fetch(`${baseUrl}/api/chat/announcements`, {
+      method: 'POST', headers: securedHeaders, body: JSON.stringify({ title: 'Studio news', body: 'A new collection is available.' }),
+    });
+    assert.equal(announcementResponse.status, 201);
+    assert.equal((await announcementResponse.json()).type, 'announcement');
+
+    const deleteResponse = await fetch(`${baseUrl}/api/chat/messages/${chatMessage.id}?mode=everyone`, { method: 'DELETE', headers: securedHeaders });
+    assert.equal(deleteResponse.status, 200);
+    const deletedMessage = (await (await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, { headers: { Cookie: adminCookieHeader } })).json()).find(item => item.id === chatMessage.id);
+    assert.equal(deletedMessage.deletedForEveryone, true);
+
+    const pushConfigResponse = await fetch(`${baseUrl}/api/push/config`, { headers: { Cookie: adminCookieHeader } });
+    assert.equal(pushConfigResponse.status, 200);
+    assert.equal((await pushConfigResponse.json()).configured, false);
+
     const forgotResponse = await fetch(`${baseUrl}/api/auth/forgot-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -49,6 +49,10 @@ Configure:
 
 Customers select Mobile Money or card on Paystack's secure page. Mobile Money authorization and the customer's PIN remain between the customer, Paystack, and the mobile network; this application never requests or stores the PIN.
 
+### Messaging push alerts
+
+Run `npm run push:keys` once, then add the generated values to Render as `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`. Set `VAPID_SUBJECT` to a monitored `mailto:` address. Existing browser subscriptions remain valid only while the same key pair is retained.
+
 ## Container deployment
 
 `Dockerfile` builds the frontend and runs the hardened API. `docker-compose.yml` provides a PostgreSQL-backed production-like environment:

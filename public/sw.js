@@ -28,13 +28,21 @@ self.addEventListener('push', event => {
     body: payload.body || 'You have a new studio action to review.',
     icon: '/brand/reigns-app-icon-192.png',
     badge: '/brand/reigns-app-icon-192.png',
+    tag: payload.tag || 'reigns-atelier',
+    renotify: true,
     data: { url: payload.url || '/admin?section=alerts' },
+    actions: [{ action: 'open', title: 'Open message' }],
   }));
 });
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  event.waitUntil(clients.openWindow(event.notification.data?.url || '/admin?section=alerts'));
+  const target = event.notification.data?.url || '/messages';
+  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windows => {
+    const existing = windows.find(client => new URL(client.url).origin === self.location.origin);
+    if (existing) { existing.navigate(target); return existing.focus(); }
+    return clients.openWindow(target);
+  }));
 });
 
 self.addEventListener('fetch', event => {

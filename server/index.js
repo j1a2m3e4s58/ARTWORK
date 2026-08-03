@@ -22,6 +22,7 @@ import { validateEntity } from './validation.js';
 import { storageProvider, storeFile, deleteStoredFile, checkStorage } from './storage.js';
 import { authenticator } from 'otplib';
 import QRCode from 'qrcode';
+import webpush from 'web-push';
 import { initializePayment, paymentStatus, verifyPayment, verifyPaymentWebhook } from './payments.js';
 import { blocksEntityReadForPendingMfa, canUseProtectedFeature, passwordProblem, requiresProductionMfa } from './security.js';
 import { reportOperationalError } from './operations.js';
@@ -74,6 +75,14 @@ app.use((_req, res, next) => {
 });
 const allowedOrigins = (process.env.APP_ORIGIN || 'http://127.0.0.1:43127').split(',').map(origin => origin.trim());
 const publicOrigin = String(process.env.SITE_URL || allowedOrigins[0]).replace(/\/+$/, '');
+const pushConfigured = Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
+if (pushConfigured) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || `mailto:${process.env.ADMIN_EMAIL || 'admin@reignsatelier.com'}`,
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY,
+  );
+}
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: false }));
@@ -1564,6 +1573,7 @@ app.post('/api/admin/mfa/recovery-codes', requireAdmin, authLimiter, async (req,
   res.json({ success: true, recoveryCodes });
 });
 
+const chatTyping = new Map();
 const chatMember = (conversation, user) => Boolean(user && (staffRoles.has(user.role) || conversation.participantIds?.includes(user.id)));
 const chatUser = user => ({
   id: user.id,
@@ -1571,6 +1581,72 @@ const chatUser = user => ({
   role: user.role,
   online: Date.now() - new Date(user.lastSeenAt || 0).getTime() < 90_000,
   lastSeenAt: user.lastSeenAt || null,
+});
+const isConversationBlocked = conversation => Boolean(conversation.blockedBy?.length);
+const latestVisibleChatMessage = conversationId => db.data.ChatMessage
+  .filter(item => item.conversationId === conversationId && !item.deleted_at)
+  .sort((a, b) => String(b.created_date).localeCompare(String(a.created_date)))[0];
+const refreshConversationSummary = conversation => {
+  const latest = latestVisibleChatMessage(conversation.id);
+  conversation.lastMessageAt = latest?.created_date || conversation.created_date;
+  conversation.lastMessage = latest ? (latest.body || latest.attachmentName || 'Attachment') : 'Conversation started';
+};
+const pushToUsers = async (userIds, payload, mutedBy = []) => {
+  if (!pushConfigured) return;
+  const recipients = db.data.PushSubscription.filter(item => userIds.includes(item.userId) && !mutedBy.includes(item.userId) && !item.deleted_at);
+  await Promise.all(recipients.map(async item => {
+    try {
+      await webpush.sendNotification(item.subscription, JSON.stringify(payload));
+      item.lastUsedAt = now();
+    } catch (error) {
+      if ([404, 410].includes(error.statusCode)) item.deleted_at = now();
+      else reportOperationalError('push_delivery_failed', error, { userId: item.userId });
+    }
+  }));
+};
+const conversationView = (item, viewer) => {
+  const typing = chatTyping.get(item.id) || {};
+  const typingUsers = Object.entries(typing)
+    .filter(([id, at]) => id !== viewer.id && Date.now() - at < 6_000)
+    .map(([id]) => db.data.User.find(user => user.id === id))
+    .filter(Boolean)
+    .map(chatUser);
+  return {
+    ...item,
+    participants: (item.participantIds || []).map(id => db.data.User.find(user => user.id === id)).filter(Boolean).map(chatUser),
+    unread: db.data.ChatMessage.filter(message => message.conversationId === item.id && message.senderId !== viewer.id && !(message.readBy || []).includes(viewer.id) && !(message.hiddenFor || []).includes(viewer.id) && !message.deleted_at).length,
+    muted: Boolean(item.mutedBy?.includes(viewer.id)),
+    archived: Boolean(item.archivedBy?.includes(viewer.id)),
+    blocked: Boolean(item.blockedBy?.length),
+    blockedByMe: Boolean(item.blockedBy?.includes(viewer.id)),
+    typingUsers,
+  };
+};
+
+app.get('/api/push/config', requireVerifiedUser, (_req, res) => {
+  res.json({ configured: pushConfigured, publicKey: pushConfigured ? process.env.VAPID_PUBLIC_KEY : '' });
+});
+
+app.post('/api/push/subscriptions', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const subscription = req.body?.subscription;
+  if (!pushConfigured) return res.status(503).json({ error: 'Push notifications are not configured yet.' });
+  if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) return res.status(400).json({ error: 'The browser subscription is incomplete.' });
+  let record = db.data.PushSubscription.find(item => item.subscription?.endpoint === subscription.endpoint);
+  if (!record) {
+    record = { id: newId(), userId: req.user.id, subscription, userAgent: String(req.get('user-agent') || '').slice(0, 500), created_date: now() };
+    db.data.PushSubscription.push(record);
+  } else {
+    record.userId = req.user.id; record.subscription = subscription; record.deleted_at = null; record.updated_date = now();
+  }
+  await save();
+  res.status(201).json({ success: true });
+});
+
+app.delete('/api/push/subscriptions', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const endpoint = String(req.body?.endpoint || '');
+  db.data.PushSubscription.filter(item => item.userId === req.user.id && (!endpoint || item.subscription?.endpoint === endpoint)).forEach(item => { item.deleted_at = now(); });
+  await save();
+  res.json({ success: true });
 });
 
 app.get('/api/chat/directory', requireVerifiedUser, (req, res) => {
@@ -1591,7 +1667,7 @@ app.get('/api/chat/conversations', requireVerifiedUser, (req, res) => {
   const conversations = db.data.ChatConversation
     .filter(item => !item.deleted_at && chatMember(item, req.user))
     .sort((a, b) => String(b.lastMessageAt || b.created_date).localeCompare(String(a.lastMessageAt || a.created_date)))
-    .map(item => ({ ...item, participants: (item.participantIds || []).map(id => db.data.User.find(user => user.id === id)).filter(Boolean).map(chatUser), unread: db.data.ChatMessage.filter(message => message.conversationId === item.id && message.senderId !== req.user.id && !(message.readBy || []).includes(req.user.id)).length }));
+    .map(item => conversationView(item, req.user));
   res.json(conversations);
 });
 
@@ -1600,7 +1676,7 @@ app.post('/api/chat/conversations', requireVerifiedUser, mutationLimiter, async 
   if (!recipient) recipient = db.data.User.find(item => item.role === 'admin' && item.status === 'active' && !item.deleted_at);
   if (!recipient || recipient.id === req.user.id) return res.status(400).json({ error: 'Choose an available person.' });
   const ids = [req.user.id, recipient.id].sort();
-  let conversation = db.data.ChatConversation.find(item => !item.deleted_at && JSON.stringify([...(item.participantIds || [])].sort()) === JSON.stringify(ids));
+  let conversation = db.data.ChatConversation.find(item => !item.deleted_at && item.type !== 'announcement' && JSON.stringify([...(item.participantIds || [])].sort()) === JSON.stringify(ids));
   if (!conversation) {
     conversation = { id: newId(), participantIds: ids, createdBy: req.user.id, lastMessageAt: now(), created_date: now() };
     db.data.ChatConversation.push(conversation);
@@ -1609,15 +1685,67 @@ app.post('/api/chat/conversations', requireVerifiedUser, mutationLimiter, async 
   res.status(201).json(conversation);
 });
 
+app.post('/api/chat/announcements', requireAdmin, mutationLimiter, async (req, res) => {
+  const title = String(req.body.title || 'Studio announcements').trim().slice(0, 100);
+  const body = String(req.body.body || '').trim().slice(0, 10_000);
+  if (!body) return res.status(400).json({ error: 'Write an announcement.' });
+  const participantIds = db.data.User.filter(item => !item.deleted_at && item.status === 'active').map(item => item.id);
+  let conversation = db.data.ChatConversation.find(item => item.type === 'announcement' && !item.deleted_at);
+  if (!conversation) {
+    conversation = { id: newId(), type: 'announcement', title, participantIds, createdBy: req.user.id, created_date: now() };
+    db.data.ChatConversation.push(conversation);
+  } else {
+    conversation.title = title;
+    conversation.participantIds = [...new Set([...conversation.participantIds, ...participantIds])];
+  }
+  const message = { id: newId(), conversationId: conversation.id, senderId: req.user.id, body, announcement: true, deliveredAt: now(), readBy: [req.user.id], reactions: {}, created_date: now() };
+  db.data.ChatMessage.push(message);
+  refreshConversationSummary(conversation);
+  const recipients = participantIds.filter(id => id !== req.user.id);
+  recipients.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.announcement', title, message: body.slice(0, 180), section: 'messages', entity: 'ChatConversation', entityId: conversation.id, priority: 'normal', read: false, created_date: now() }));
+  await pushToUsers(recipients, { title, body: body.slice(0, 180), url: `/messages?conversation=${conversation.id}`, tag: `chat-${conversation.id}` }, conversation.mutedBy || []);
+  await save();
+  res.status(201).json(conversationView(conversation, req.user));
+});
+
+app.post('/api/chat/conversations/:id/typing', requireVerifiedUser, (req, res) => {
+  const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
+  const state = chatTyping.get(conversation.id) || {};
+  if (req.body.typing) state[req.user.id] = Date.now(); else delete state[req.user.id];
+  chatTyping.set(conversation.id, state);
+  res.json({ success: true });
+});
+
+app.patch('/api/chat/conversations/:id/settings', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
+  const toggle = (field, enabled) => {
+    conversation[field] ||= [];
+    conversation[field] = enabled ? [...new Set([...conversation[field], req.user.id])] : conversation[field].filter(id => id !== req.user.id);
+  };
+  if (typeof req.body.muted === 'boolean') toggle('mutedBy', req.body.muted);
+  if (typeof req.body.archived === 'boolean') toggle('archivedBy', req.body.archived);
+  if (typeof req.body.blocked === 'boolean') toggle('blockedBy', req.body.blocked);
+  conversation.updated_date = now();
+  await save();
+  res.json(conversationView(conversation, req.user));
+});
+
 app.get('/api/chat/conversations/:id/messages', requireVerifiedUser, (req, res) => {
   const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
   if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
-  res.json(db.data.ChatMessage.filter(item => item.conversationId === conversation.id && !item.deleted_at).sort((a, b) => String(a.created_date).localeCompare(String(b.created_date))));
+  const query = String(req.query.q || '').trim().toLowerCase();
+  res.json(db.data.ChatMessage
+    .filter(item => item.conversationId === conversation.id && !item.deleted_at && !(item.hiddenFor || []).includes(req.user.id) && (!query || `${item.body || ''} ${item.attachmentName || ''}`.toLowerCase().includes(query)))
+    .sort((a, b) => String(a.created_date).localeCompare(String(b.created_date))));
 });
 
 app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLimiter, async (req, res) => {
   const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
   if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
+  if (conversation.type === 'announcement' && !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'Only studio staff can post announcements.' });
+  if (isConversationBlocked(conversation)) return res.status(403).json({ error: 'Unblock this conversation before sending a message.' });
   const body = String(req.body.body || '').trim().slice(0, 10000);
   const attachmentUrl = String(req.body.attachmentUrl || '').trim().slice(0, 2048);
   if (!body && !attachmentUrl) return res.status(400).json({ error: 'Write a message or attach a file.' });
@@ -1643,6 +1771,7 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLi
   conversation.lastMessage = body || message.attachmentName || 'Attachment';
   const recipientIds = (conversation.participantIds || []).filter(id => id !== req.user.id);
   recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.message', title: `New message from ${req.user.full_name || req.user.email}`, message: conversation.lastMessage.slice(0, 180), section: 'messages', entity: 'ChatConversation', entityId: conversation.id, priority: 'normal', read: false, created_date: now() }));
+  await pushToUsers(recipientIds, { title: `New message from ${req.user.full_name || 'Reigns Atelier'}`, body: conversation.lastMessage.slice(0, 180), url: `/messages?conversation=${conversation.id}`, tag: `chat-${conversation.id}` }, conversation.mutedBy || []);
   await save();
   res.status(201).json(message);
 });
@@ -1674,6 +1803,47 @@ app.post('/api/chat/messages/:id/reaction', requireVerifiedUser, mutationLimiter
   message.updated_date = now();
   await save();
   res.json(message);
+});
+
+app.patch('/api/chat/messages/:id', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at);
+  const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+  if (!message || !conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Message not found.' });
+  if (message.senderId !== req.user.id) return res.status(403).json({ error: 'You can only edit your own messages.' });
+  if (message.deletedForEveryone) return res.status(400).json({ error: 'A deleted message cannot be edited.' });
+  if (Date.now() - new Date(message.created_date).getTime() > 15 * 60_000) return res.status(400).json({ error: 'Messages can be edited for 15 minutes after sending.' });
+  const body = String(req.body.body || '').trim().slice(0, 10_000);
+  if (!body && !message.attachmentUrl) return res.status(400).json({ error: 'The message cannot be empty.' });
+  message.body = body;
+  message.editedAt = now();
+  message.updated_date = now();
+  refreshConversationSummary(conversation);
+  await save();
+  res.json(message);
+});
+
+app.delete('/api/chat/messages/:id', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at);
+  const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+  if (!message || !conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Message not found.' });
+  const mode = String(req.query.mode || 'me');
+  if (mode === 'everyone') {
+    if (message.senderId !== req.user.id && !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'You can only remove your own messages for everyone.' });
+    if (!staffRoles.has(req.user.role) && Date.now() - new Date(message.created_date).getTime() > 60 * 60_000) return res.status(400).json({ error: 'Messages can be removed for everyone for one hour after sending.' });
+    message.body = '';
+    message.attachmentUrl = '';
+    message.attachmentName = '';
+    message.attachmentType = '';
+    message.deletedForEveryone = true;
+    message.deletedBy = req.user.id;
+    message.deletedAt = now();
+  } else {
+    message.hiddenFor = [...new Set([...(message.hiddenFor || []), req.user.id])];
+  }
+  message.updated_date = now();
+  refreshConversationSummary(conversation);
+  await save();
+  res.json({ success: true });
 });
 
 app.get('/api/entities/:name', async (req, res) => {

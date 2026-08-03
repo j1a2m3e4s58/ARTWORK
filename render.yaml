@@ -111,6 +111,12 @@ services:
         value: "90"
       - key: BACKGROUND_JOBS_ENABLED
         value: "true"
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
 
 databases:
   - name: reigns-atelier-db
