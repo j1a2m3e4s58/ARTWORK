@@ -15,6 +15,18 @@ const safeUrl = z.string().trim().max(2048).refine(value => {
 }, 'Enter a valid web address.');
 
 export const schemas = {
+  ArtRequest: z.object({
+    title: text(240), category: optionalText(120), description: text(6000).min(10),
+    budget: optionalText(80), preferredDate: optionalText(40), referenceImageUrl: safeUrl.optional().default(''),
+  }).passthrough(),
+  FilmRequest: z.object({
+    topic: text(240), details: text(6000).min(10), skillLevel: optionalText(80), preferredFormat: optionalText(80),
+  }).passthrough(),
+  Award: z.object({
+    title: text(240), issuer: optionalText(240), year: optionalText(20), description: optionalText(4000),
+    imageUrl: safeUrl.optional().default(''), certificateUrl: safeUrl.optional().default(''),
+    status: z.enum(['draft', 'published']).optional().default('published'), sortOrder: z.coerce.number().int().min(0).max(999).optional().default(0),
+  }).passthrough(),
   Message: z.object({
     name: text(120),
     email: email.optional(),

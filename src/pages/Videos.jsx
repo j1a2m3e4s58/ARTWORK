@@ -1,7 +1,7 @@
 ﻿import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef } from 'react';
-import { Play, X, Eye, Clock } from 'lucide-react';
+import { Play, X, Eye, Clock, Clapperboard, Send } from 'lucide-react';
 import ResourceFeedback from '@/components/ResourceFeedback';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
@@ -11,6 +11,7 @@ import { useCollectionResource } from '@/hooks/useCollectionResource';
 import { imageSrcSet, imageVariant } from '@/lib/media';
 import { useAuth } from '@/lib/AuthContext';
 import { Link } from 'react-router-dom';
+import { studioClient } from '@/api/studioClient';
 
 function formatViews(n) {
   if (!n) return 'New';
@@ -27,6 +28,10 @@ function embedUrl(value) {
       return `https://www.youtube.com/embed/${url.searchParams.get('v')}?autoplay=1`;
     }
     if (url.hostname.includes('vimeo.com')) return `https://player.vimeo.com/video/${url.pathname.split('/').filter(Boolean).at(-1)}?autoplay=1`;
+    if (url.hostname.includes('tiktok.com')) {
+      const id = url.pathname.match(/\/video\/(\d+)/)?.[1];
+      return id ? `https://www.tiktok.com/player/v1/${id}?autoplay=1` : null;
+    }
   } catch {
     return null;
   }
@@ -88,6 +93,7 @@ export default function Videos() {
   const { data: dbVideos, loading, error, retry } = useCollectionResource('Video');
   const [activeCategory, setActiveCategory] = useState('All');
   const [playing, setPlaying] = useState(null);
+  const [requestOpen, setRequestOpen] = useState(false);
   const closeButtonRef = useRef(null);
 
   const allVideos = dbVideos;
@@ -135,6 +141,7 @@ export default function Videos() {
               {page.videos_subtitle || 'Process videos, time-lapses, tutorials, and behind-the-scenes glimpses into the atelier.'}
             </p>
           </ScrollReveal>
+          <div className="mt-7 flex flex-wrap gap-3"><button onClick={()=>setRequestOpen(true)} className="inline-flex min-h-12 items-center gap-2 bg-brass px-5 text-xs uppercase tracking-widest text-obsidian"><Clapperboard size={16}/> Request a Studio Lesson</button>{page.videos_youtube_url&&<a href={page.videos_youtube_url} target="_blank" rel="noreferrer" className="inline-flex min-h-12 items-center border border-brass/30 px-5 text-xs uppercase tracking-widest text-brass">YouTube channel</a>}{page.videos_tiktok_url&&<a href={page.videos_tiktok_url} target="_blank" rel="noreferrer" className="inline-flex min-h-12 items-center border border-brass/30 px-5 text-xs uppercase tracking-widest text-brass">TikTok studio</a>}</div>
         </div>
 
         {/* Category filters */}
@@ -263,10 +270,15 @@ export default function Videos() {
               {playing.description && (
                 <p className="text-ivory/40 text-sm mt-4 leading-relaxed">{playing.description}</p>
               )}
+              <div className="mt-4 border border-brass/20 bg-carbon p-4"><p className="font-display text-xl text-ivory">{page.videos_follow_title || 'Continue the creative journey'}</p><p className="mt-1 text-sm text-ivory/50">{page.videos_follow_body || 'Follow Reigns Atelier on YouTube and TikTok for new studio films, drawing lessons, and process stories.'}</p><div className="mt-3 flex flex-wrap gap-2">{page.videos_youtube_url&&<a href={page.videos_youtube_url} target="_blank" rel="noreferrer" className="bg-brass px-4 py-2 text-xs text-obsidian">Subscribe on YouTube</a>}{page.videos_tiktok_url&&<a href={page.videos_tiktok_url} target="_blank" rel="noreferrer" className="border border-brass/30 px-4 py-2 text-xs text-brass">Follow on TikTok</a>}</div></div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+      {requestOpen&&<FilmRequestModal user={user} onClose={()=>setRequestOpen(false)}/>}
     </PageTransition>
   );
 }
+
+function FilmRequestModal({user,onClose}){const [form,setForm]=useState({topic:'',details:'',skillLevel:'Beginner',preferredFormat:'Short lesson'});const [notice,setNotice]=useState('');const submit=async e=>{e.preventDefault();try{await studioClient.entities.FilmRequest.create(form);setNotice('Your lesson idea is with the artist. Follow the private reply in My Account.')}catch(error){setNotice(error.message)}};return <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3"><button className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose}/><section className="relative w-full max-w-xl border border-brass/25 bg-carbon p-5 sm:p-8"><button onClick={onClose} className="absolute right-3 top-3 h-11 w-11 text-ivory/50"><X/></button><p className="text-[10px] uppercase tracking-[.3em] text-brass">Made for your practice</p><h2 className="mt-2 font-display text-4xl text-ivory">Request a Studio Lesson</h2><p className="mt-3 text-sm leading-6 text-ivory/50">Ask for a focused film on shading, anatomy, materials, colour, or another art technique.</p>{!user?<Link to="/login?redirect=/videos" className="mt-6 inline-flex bg-brass px-5 py-3 text-xs text-obsidian">Sign in to request</Link>:<form onSubmit={submit} className="mt-6 space-y-4"><Field label="Lesson topic" value={form.topic} onChange={e=>setForm({...form,topic:e.target.value})}/><label className="block text-xs uppercase tracking-wider text-ivory/45">What should the artist demonstrate?<textarea required minLength={10} rows={5} value={form.details} onChange={e=>setForm({...form,details:e.target.value})} className="mt-2 w-full border border-brass/20 bg-obsidian p-3 text-sm text-ivory"/></label><div className="grid gap-4 sm:grid-cols-2"><Field label="Your skill level" value={form.skillLevel} onChange={e=>setForm({...form,skillLevel:e.target.value})}/><Field label="Preferred format" value={form.preferredFormat} onChange={e=>setForm({...form,preferredFormat:e.target.value})}/></div><button className="flex min-h-12 w-full items-center justify-center gap-2 bg-brass text-xs uppercase tracking-widest text-obsidian"><Send size={15}/>Send lesson request</button>{notice&&<p className="border border-brass/20 p-3 text-sm text-ivory/60">{notice}</p>}</form>}</section></div>}
+function Field({label,...props}){return <label className="block text-xs uppercase tracking-wider text-ivory/45">{label}<input required {...props} className="mt-2 min-h-11 w-full border border-brass/20 bg-obsidian px-3 text-sm normal-case text-ivory"/></label>}

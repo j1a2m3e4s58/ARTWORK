@@ -99,7 +99,7 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHea
 const mutationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 120, standardHeaders: true });
 const publicFormLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 20, standardHeaders: true });
 const limitPublicForms = (req, res, next) => (
-  ['Message', 'CommissionRequest', 'InternshipApplication', 'NewsletterSubscriber', 'Order'].includes(req.params.name)
+  ['Message', 'ArtRequest', 'FilmRequest', 'CommissionRequest', 'InternshipApplication', 'NewsletterSubscriber', 'Order'].includes(req.params.name)
     ? publicFormLimiter(req, res, next)
     : next()
 );
@@ -128,11 +128,11 @@ async function verifyHuman(req, res, next) {
   }
 }
 
-const publicRead = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'PriceGuide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
-const authenticatedCreate = new Set(['CommissionRequest', 'InternshipApplication', 'Message', 'Order', 'PartnerApplication']);
+const publicRead = new Set(['Artwork', 'Award', 'BlogPost', 'HeroSlide', 'PriceGuide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
+const authenticatedCreate = new Set(['ArtRequest', 'CommissionRequest', 'FilmRequest', 'InternshipApplication', 'Message', 'Order', 'PartnerApplication']);
 const staffRoles = new Set(['admin', 'editor', 'support']);
-const contentEntities = new Set(['Artwork', 'BlogPost', 'HeroSlide', 'Media', 'PriceGuide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
-const supportEntities = new Set(['CommissionRequest', 'InternshipApplication', 'Message', 'Order']);
+const contentEntities = new Set(['Artwork', 'Award', 'BlogPost', 'HeroSlide', 'Media', 'PriceGuide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
+const supportEntities = new Set(['ArtRequest', 'CommissionRequest', 'FilmRequest', 'InternshipApplication', 'Message', 'Order']);
 const hiddenUserFields = ({
   passwordHash, mfaSecret, pendingMfaSecret, mfaRecoveryCodeHashes,
   managedPasswordFingerprint, ...user
@@ -1564,6 +1564,83 @@ app.post('/api/admin/mfa/recovery-codes', requireAdmin, authLimiter, async (req,
   res.json({ success: true, recoveryCodes });
 });
 
+const chatMember = (conversation, user) => Boolean(user && (staffRoles.has(user.role) || conversation.participantIds?.includes(user.id)));
+const chatUser = user => ({ id: user.id, name: user.full_name || user.email.split('@')[0], role: user.role, online: Date.now() - new Date(user.lastSeenAt || 0).getTime() < 90_000 });
+
+app.get('/api/chat/directory', requireVerifiedUser, (req, res) => {
+  const people = db.data.User.filter(item => !item.deleted_at && item.status === 'active' && item.id !== req.user.id && (staffRoles.has(item.role) || item.chatDiscoverable === true));
+  res.json(people.map(chatUser));
+});
+
+app.post('/api/chat/presence', requireVerifiedUser, async (req, res) => {
+  req.user.lastSeenAt = now();
+  await save();
+  res.json({ online: true });
+});
+
+app.get('/api/chat/conversations', requireVerifiedUser, (req, res) => {
+  const conversations = db.data.ChatConversation
+    .filter(item => !item.deleted_at && chatMember(item, req.user))
+    .sort((a, b) => String(b.lastMessageAt || b.created_date).localeCompare(String(a.lastMessageAt || a.created_date)))
+    .map(item => ({ ...item, participants: (item.participantIds || []).map(id => db.data.User.find(user => user.id === id)).filter(Boolean).map(chatUser), unread: db.data.ChatMessage.filter(message => message.conversationId === item.id && message.senderId !== req.user.id && !(message.readBy || []).includes(req.user.id)).length }));
+  res.json(conversations);
+});
+
+app.post('/api/chat/conversations', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  let recipient = db.data.User.find(item => item.id === String(req.body.userId || '') && !item.deleted_at && item.status === 'active');
+  if (!recipient) recipient = db.data.User.find(item => item.role === 'admin' && item.status === 'active' && !item.deleted_at);
+  if (!recipient || recipient.id === req.user.id) return res.status(400).json({ error: 'Choose an available person.' });
+  if (!staffRoles.has(recipient.role) && recipient.chatDiscoverable !== true && !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'This person is not accepting new conversations.' });
+  const ids = [req.user.id, recipient.id].sort();
+  let conversation = db.data.ChatConversation.find(item => !item.deleted_at && JSON.stringify([...(item.participantIds || [])].sort()) === JSON.stringify(ids));
+  if (!conversation) {
+    conversation = { id: newId(), participantIds: ids, createdBy: req.user.id, lastMessageAt: now(), created_date: now() };
+    db.data.ChatConversation.push(conversation);
+    await save();
+  }
+  res.status(201).json(conversation);
+});
+
+app.get('/api/chat/conversations/:id/messages', requireVerifiedUser, (req, res) => {
+  const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
+  res.json(db.data.ChatMessage.filter(item => item.conversationId === conversation.id && !item.deleted_at).sort((a, b) => String(a.created_date).localeCompare(String(b.created_date))));
+});
+
+app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
+  const body = String(req.body.body || '').trim().slice(0, 10000);
+  const attachmentUrl = String(req.body.attachmentUrl || '').trim().slice(0, 2048);
+  if (!body && !attachmentUrl) return res.status(400).json({ error: 'Write a message or attach a file.' });
+  if (attachmentUrl && !/^https?:\/\//i.test(attachmentUrl) && !attachmentUrl.startsWith('/uploads/')) {
+    return res.status(400).json({ error: 'The attachment address is not valid.' });
+  }
+  const message = { id: newId(), conversationId: conversation.id, senderId: req.user.id, body, attachmentUrl, attachmentName: String(req.body.attachmentName || '').slice(0, 240), attachmentType: String(req.body.attachmentType || '').slice(0, 80), allowForward: staffRoles.has(req.user.role) ? Boolean(req.body.allowForward) : false, deliveredAt: now(), readBy: [req.user.id], created_date: now() };
+  db.data.ChatMessage.push(message);
+  conversation.lastMessageAt = message.created_date;
+  conversation.lastMessage = body || message.attachmentName || 'Attachment';
+  const recipientIds = (conversation.participantIds || []).filter(id => id !== req.user.id);
+  recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.message', title: `New message from ${req.user.full_name || req.user.email}`, message: conversation.lastMessage.slice(0, 180), section: 'messages', entity: 'ChatConversation', entityId: conversation.id, priority: 'normal', read: false, created_date: now() }));
+  await save();
+  res.status(201).json(message);
+});
+
+app.post('/api/chat/conversations/:id/read', requireVerifiedUser, async (req, res) => {
+  const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
+  db.data.ChatMessage.filter(item => item.conversationId === conversation.id && item.senderId !== req.user.id).forEach(item => { item.readBy = [...new Set([...(item.readBy || []), req.user.id])]; item.readAt = now(); });
+  await save();
+  res.json({ success: true });
+});
+
+app.patch('/api/chat/messages/:id/forwarding', requireAdmin, mutationLimiter, async (req, res) => {
+  const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!message) return res.status(404).json({ error: 'Message not found.' });
+  message.allowForward = Boolean(req.body.allowed); message.updated_date = now();
+  await save(); res.json(message);
+});
+
 app.get('/api/entities/:name', async (req, res) => {
   const { name } = req.params;
   if (!Array.isArray(db.data[name])) return res.status(404).json({ error: 'Unknown entity.' });
@@ -1573,7 +1650,7 @@ app.get('/api/entities/:name', async (req, res) => {
   if (blocksEntityReadForPendingMfa(user, publicAccess)) {
     return res.status(403).json({ error: 'Enable multi-factor authentication before accessing studio records.', code: 'mfa_required' });
   }
-  const ownData = ['CommissionRequest', 'InternshipApplication', 'Message', 'Notification', 'Order', 'PartnerApplication'].includes(name);
+  const ownData = ['ArtRequest', 'CommissionRequest', 'FilmRequest', 'InternshipApplication', 'Message', 'Notification', 'Order', 'PartnerApplication'].includes(name);
   const staffAccess = !pendingAdminMfa && canManage(user, name) && hasAdminAccess(req, user);
   if (!publicAccess && !staffAccess && !(user && ownData)) {
     return res.status(403).json({ error: 'You do not have access to these records.' });
@@ -1603,6 +1680,7 @@ app.get('/api/entities/:name', async (req, res) => {
     }
     if (name === 'BlogPost') records = records.filter(record => record.status === 'published' || !record.status);
     if (name === 'PriceGuide') records = records.filter(record => record.status === 'published' || !record.status);
+    if (name === 'Award') records = records.filter(record => record.status === 'published' || !record.status);
     if (name === 'Testimonial') records = records.filter(record => record.status === 'approved');
     if (['Artwork', 'HeroSlide', 'ShopProduct', 'Video'].includes(name)) {
       records = records.filter(record => (
@@ -1781,6 +1859,11 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
     record.status = 'unread';
     record.replies = [];
   }
+  if (['ArtRequest', 'FilmRequest'].includes(name)) {
+    record.status = 'received';
+    record.replies = [];
+    record.statusHistory = [{ status: 'received', at: now(), actorId: user.id }];
+  }
   if (name === 'CommissionRequest') {
     record.status = 'pending';
     record.statusHistory = [{ status: 'pending', at: now(), actorId: user.id }];
@@ -1814,6 +1897,12 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
   db.data[name].push(record);
   if (name === 'Message') {
     notifyStudioStaff({ title: 'New customer message', message: `${record.name || record.email || 'A customer'} sent a message that needs a reply.`, section: 'inbox', entity: name, entityId: record.id, priority: 'high' });
+  }
+  if (name === 'ArtRequest') {
+    notifyStudioStaff({ title: 'New Studio Art Finder request', message: `${user.full_name || user.email} is looking for “${record.title}”.`, section: 'studio-requests', entity: name, entityId: record.id, priority: 'high' });
+  }
+  if (name === 'FilmRequest') {
+    notifyStudioStaff({ title: 'New Studio Film Request', message: `${user.full_name || user.email} requested “${record.topic}”.`, section: 'studio-requests', entity: name, entityId: record.id, priority: 'normal' });
   }
   if (name === 'CommissionRequest') {
     notifyStudioStaff({ title: 'New commission request', message: `${record.name || 'A customer'} requested a ${record.artworkType || 'new'} commission.`, section: 'commissions', entity: name, entityId: record.id, priority: 'high' });
@@ -2052,8 +2141,56 @@ app.patch('/api/entities/:name/:id', requireStaff, mutationLimiter, async (req, 
       });
     }
   }
+  if (['ArtRequest', 'FilmRequest'].includes(req.params.name)) {
+    const previousReplyCount = Array.isArray(record.replies) ? record.replies.length : 0;
+    const nextReplyCount = Array.isArray(changes.replies) ? changes.replies.length : previousReplyCount;
+    if (changes.status && changes.status !== record.status) {
+      record.statusHistory ||= [];
+      record.statusHistory.push({ status: changes.status, at: now(), actorId: req.user.id });
+    }
+    if (nextReplyCount > previousReplyCount && record.userId) {
+      const newestReply = changes.replies[nextReplyCount - 1];
+      const requestLabel = req.params.name === 'ArtRequest' ? 'Studio Art Finder' : 'Studio film request';
+      db.data.Notification.push({
+        id: newId(), userId: record.userId, type: `${req.params.name}.reply`,
+        title: `${requestLabel} replied`, message: String(newestReply?.text || 'The studio sent you a new reply.').slice(0, 240),
+        section: 'account', entity: req.params.name, entityId: record.id,
+        priority: 'normal', read: false, created_date: now(),
+      });
+      if (record.accountEmail) {
+        record.replyEmailDelivery = await deliverEmail({
+          to: record.accountEmail,
+          subject: `${requestLabel} update — Reigns Atelier`,
+          text: `${String(newestReply?.text || 'The studio sent you a new reply.')}\n\nSign in to My Account to review your request and continue the conversation.`,
+        });
+      }
+    }
+  }
   if (req.params.name === 'User' && ['suspended', 'active'].includes(changes.status)) {
     record.sessionVersion = (record.sessionVersion || 0) + 1;
+  }
+  if (['ArtRequest', 'FilmRequest'].includes(req.params.name)) {
+    const previousReplyCount = Array.isArray(record.replies) ? record.replies.length : 0;
+    const nextReplyCount = Array.isArray(changes.replies) ? changes.replies.length : previousReplyCount;
+    const hasNewReply = nextReplyCount > previousReplyCount;
+    if (hasNewReply || (changes.status && changes.status !== record.status)) {
+      const label = req.params.name === 'ArtRequest' ? 'Studio Art Finder request' : 'Studio Film request';
+      const latestReply = hasNewReply ? changes.replies[nextReplyCount - 1]?.text : '';
+      db.data.Notification.push({
+        id: newId(), userId: record.userId, type: `${req.params.name}.updated`,
+        title: `${label} updated`,
+        message: latestReply || `Status changed to ${String(changes.status || record.status || 'updated').replaceAll('_', ' ')}.`,
+        section: 'account', entity: req.params.name, entityId: record.id,
+        priority: 'normal', read: false, created_date: now(),
+      });
+      if (record.accountEmail) {
+        record.replyEmailDelivery = await deliverEmail({
+          to: record.accountEmail,
+          subject: `${label} update — Reigns Atelier`,
+          text: `${latestReply || 'Your request status has been updated.'}\n\nSign in to your Reigns Atelier account to view the full request and continue the conversation.`,
+        });
+      }
+    }
   }
   Object.assign(record, changes, { updated_date: now() });
   await audit(req.user, `${req.params.name.toLowerCase()}.updated`, req.params.name, record.id, { fields: Object.keys(changes) });
@@ -2243,6 +2380,7 @@ app.patch('/api/account/profile', requireUser, mutationLimiter, async (req, res)
   const fullName = String(req.body.full_name || '').trim().slice(0, 120);
   if (!fullName) return res.status(400).json({ error: 'Enter your full name.' });
   req.user.full_name = fullName;
+  if (typeof req.body.chatDiscoverable === 'boolean') req.user.chatDiscoverable = req.body.chatDiscoverable;
   req.user.updated_date = now();
   await audit(req.user, 'account.profile_updated', 'User', req.user.id);
   await save();

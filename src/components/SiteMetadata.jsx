@@ -4,7 +4,8 @@ import { useSettings } from '@/hooks/useSettings';
 
 const pageNames = {
   '/': 'Fine Art Studio', '/gallery': 'Gallery', '/commission': 'Bespoke Commissions',
-  '/shop': 'Art Shop — Originals & Studio Supplies', '/videos': 'Art Films', '/about': 'About the Artist',
+  '/shop': 'Art Shop — Originals & Studio Supplies', '/videos': 'Art Films', '/honours': 'Honours & Recognition',
+  '/messages': 'Studio Messages', '/about': 'About the Artist',
   '/blog': 'Art Journal', '/contact': 'Contact', '/testimonials': 'Collector Stories',
   '/account': 'My Account', '/admin': 'Studio Administration', '/privacy': 'Privacy Policy',
   '/terms': 'Terms of Service', '/login': 'Sign In', '/register': 'Create Account',
@@ -32,7 +33,7 @@ export default function SiteMetadata() {
     const description = settings.seo_description || 'Bespoke fine art portraits, original works and commissioned artwork crafted with devotion.';
     const baseUrl = (settings.site_url || window.location.origin).replace(/\/$/, '');
     const canonicalUrl = `${baseUrl}${location.pathname}`;
-    const privatePage = ['/admin', '/account', '/login', '/register', '/forgot-password', '/reset-password', '/accept-invite', '/verify-email'].some(path => location.pathname.startsWith(path));
+    const privatePage = ['/admin', '/account', '/messages', '/login', '/register', '/forgot-password', '/reset-password', '/accept-invite', '/verify-email'].some(path => location.pathname.startsWith(path));
     document.title = title;
     setMeta('meta[name="description"]', 'name', 'description', description);
     setMeta('meta[name="robots"]', 'name', 'robots', privatePage ? 'noindex,nofollow' : 'index,follow');

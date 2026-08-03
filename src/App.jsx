@@ -40,6 +40,8 @@ const OrderTracking = lazy(() => import('@/pages/OrderTracking'));
 const Wishlist = lazy(() => import('@/pages/Wishlist'));
 const PartnerWithUs = lazy(() => import('@/pages/PartnerWithUs'));
 const PartnerPortal = lazy(() => import('@/pages/PartnerPortal'));
+const Awards = lazy(() => import('@/pages/Awards'));
+const Messages = lazy(() => import('@/pages/Messages'));
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings } = useAuth();
@@ -75,6 +77,8 @@ const AuthenticatedApp = () => {
         <Route path="/wishlist" element={<Wishlist />} />
         <Route path="/partner-with-us" element={<PartnerWithUs />} />
         <Route path="/partner-portal" element={<PartnerPortal />} />
+        <Route path="/honours" element={<Awards />} />
+        <Route path="/messages" element={<Messages />} />
       </Route>
       <Route element={<AdminRoute><AdminAccessGate><AdminLayout /></AdminAccessGate></AdminRoute>}>
         <Route path="/admin" element={<Admin />} />

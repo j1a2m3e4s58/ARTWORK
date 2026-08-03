@@ -17,8 +17,9 @@ const formatMoney = (value, currency = 'GHS') => new Intl.NumberFormat('en-GH', 
 
 export default function Account() {
   const { user, checkUserAuth, logout } = useAuth();
-  const [data, setData] = useState({ messages: [], commissions: [], orders: [], notifications: [] });
+  const [data, setData] = useState({ messages: [], commissions: [], artRequests: [], filmRequests: [], orders: [], notifications: [] });
   const [name, setName] = useState(user?.full_name || '');
+  const [chatDiscoverable, setChatDiscoverable] = useState(Boolean(user?.chatDiscoverable));
   const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '' });
   const [closePassword, setClosePassword] = useState('');
   const [notice, setNotice] = useState('');
@@ -29,10 +30,12 @@ export default function Account() {
     Promise.all([
       studioClient.entities.Message.list('-created_date', 50),
       studioClient.entities.CommissionRequest.list('-created_date', 50),
+      studioClient.entities.ArtRequest.list('-created_date', 50),
+      studioClient.entities.FilmRequest.list('-created_date', 50),
       studioClient.entities.Order.list('-created_date', 50),
       studioClient.entities.Notification.list('-created_date', 50),
-    ]).then(([messages, commissions, orders, notifications]) => {
-      setData({ messages, commissions, orders, notifications });
+    ]).then(([messages, commissions, artRequests, filmRequests, orders, notifications]) => {
+      setData({ messages, commissions, artRequests, filmRequests, orders, notifications });
     }).catch(loadError => setError(loadError.message));
   }, []);
   useEffect(() => {
@@ -53,7 +56,7 @@ export default function Account() {
   const updateProfile = async event => {
     event.preventDefault();
     setError('');
-    const updated = await studioClient.account.updateProfile({ full_name: name });
+    const updated = await studioClient.account.updateProfile({ full_name: name, chatDiscoverable });
     await checkUserAuth();
     setName(updated.full_name);
     setNotice('Profile updated.');
@@ -207,6 +210,12 @@ export default function Account() {
               </div>
 
               <div className="border border-brass/10 bg-carbon p-5">
+                <h2 className="font-display text-2xl">Studio Requests</h2>
+                <p className="mt-1 text-xs text-ivory/35">Artwork sourcing and custom film lessons requested from the artist.</p>
+                <div className="mt-4 space-y-3">{[...data.artRequests.map(item=>({...item,heading:item.title,body:item.description})),...data.filmRequests.map(item=>({...item,heading:item.topic,body:item.details}))].map(item=><article key={item.id} className="border border-ivory/5 bg-obsidian p-4"><div className="flex justify-between gap-3"><strong>{item.heading}</strong><span className={`px-2 py-1 text-[10px] uppercase ${statusClass(item.status)}`}>{item.status}</span></div><p className="mt-2 text-sm text-ivory/45">{item.body}</p>{(item.replies||[]).map((reply,index)=><div key={index} className="mt-3 border-l-2 border-brass/40 bg-brass/5 p-3 text-sm text-ivory/65"><p className="text-[10px] uppercase tracking-wider text-brass">Studio reply</p><p className="mt-1">{reply.text}</p></div>)}</article>)}{!data.artRequests.length&&!data.filmRequests.length&&<p className="text-sm text-ivory/35">No studio requests yet.</p>}</div>
+              </div>
+
+              <div className="border border-brass/10 bg-carbon p-5">
                 <h2 className="font-display text-2xl">Art Shop Orders</h2>
                 <p className="mt-1 text-xs text-ivory/35">Keep your tracking code for WhatsApp, payment, and delivery updates.</p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -257,6 +266,7 @@ export default function Account() {
                   <input value={name} onChange={event => setName(event.target.value)} className="mt-2 w-full border border-brass/15 bg-obsidian px-3 py-2 text-sm" />
                 </label>
                 <p className="mt-3 text-sm text-ivory/45">{user?.email}</p>
+                <label className="mt-4 flex gap-3 border border-brass/10 p-3 text-sm text-ivory/55"><input type="checkbox" checked={chatDiscoverable} onChange={event=>setChatDiscoverable(event.target.checked)} className="accent-brass"/><span><b className="block text-ivory/75">Art community messages</b>Let other signed-in customers find and start a conversation with me. Off keeps me private; the studio can always reply.</span></label>
                 <button className="mt-4 flex items-center gap-2 bg-brass px-4 py-2 text-sm text-obsidian"><Save size={15} /> Save profile</button>
               </form>
 

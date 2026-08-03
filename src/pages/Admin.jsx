@@ -30,6 +30,9 @@ import InternshipsTab from '@/components/admin/InternshipsTab';
 import CommerceSettingsTab from '@/components/admin/CommerceSettingsTab';
 import PriceGuidesTab from '@/components/admin/PriceGuidesTab';
 import PartnersTab from '@/components/admin/PartnersTab';
+import StudioRequestsTab from '@/components/admin/StudioRequestsTab';
+import AwardsTab from '@/components/admin/AwardsTab';
+import ChatWorkspace from '@/components/chat/ChatWorkspace';
 import ResponsiveSelect from '@/components/ResponsiveSelect';
 import { DEFAULT_STUDIO_OPTIONS, parseStudioOptions } from '@/lib/studioOptions';
 
@@ -40,6 +43,7 @@ const allTabs = [
   { id: 'banners', label: 'Home Banners', icon: PanelsTopLeft, group: 'Content' },
   { id: 'media', label: 'Media Library', icon: Library, group: 'Content' },
   { id: 'videos', label: 'Art Films', icon: Video, group: 'Content' },
+  { id: 'awards', label: 'Honours & Recognition', icon: Star, group: 'Content' },
   { id: 'testimonials', label: 'Testimonials', icon: Star, group: 'Content' },
   { id: 'quotes', label: 'Art Quotes', icon: FileText, group: 'Content' },
   { id: 'pages', label: 'Page Content', icon: FileText, group: 'Content' },
@@ -49,12 +53,14 @@ const allTabs = [
   { id: 'orders', label: 'Orders', icon: PackageCheck, group: 'Sales' },
   { id: 'commerce', label: 'Delivery & Payments', icon: Truck, group: 'Sales' },
   { id: 'partners', label: 'Partner Marketplace', icon: Handshake, group: 'Sales' },
+  { id: 'studio-requests', label: 'Studio Requests', icon: MessageSquare, group: 'Communication' },
   { id: 'commissions', label: 'Commissions', icon: MessageSquare, group: 'Sales' },
   { id: 'commission-packages', label: 'Commission Options', icon: PackageCheck, group: 'Sales' },
   { id: 'commission-pricing', label: 'Sizes & Prices', icon: PackageCheck, group: 'Sales' },
   { id: 'commission-form', label: 'Forms & Categories', icon: FileText, group: 'Sales' },
   { id: 'internships', label: 'Internships', icon: Users, group: 'People' },
   { id: 'inbox', label: 'Inbox', icon: MessageSquare, group: 'Communication' },
+  { id: 'messages', label: 'Customer Chat', icon: MessageSquare, group: 'Communication' },
   { id: 'subscribers', label: 'Subscribers', icon: Users, group: 'Communication' },
   { id: 'users', label: 'People & Access', icon: Users, group: 'People' },
   { id: 'settings', label: 'Settings', icon: Settings, group: 'System' },
@@ -75,8 +81,8 @@ const STATUS_COLORS = {
 
 const ROLE_TABS = {
   admin: allTabs.map(tab => tab.id),
-  editor: ['overview', 'alerts', 'gallery', 'banners', 'media', 'recycle', 'videos', 'shop', 'price-guides', 'testimonials', 'quotes', 'pages', 'blog', 'commission-packages', 'commission-pricing', 'commission-form', 'internships'],
-  support: ['overview', 'alerts', 'inbox', 'commissions', 'orders'],
+  editor: ['overview', 'alerts', 'gallery', 'banners', 'media', 'recycle', 'videos', 'awards', 'shop', 'price-guides', 'testimonials', 'quotes', 'pages', 'blog', 'commission-packages', 'commission-pricing', 'commission-form', 'internships'],
+  support: ['overview', 'alerts', 'inbox', 'messages', 'studio-requests', 'commissions', 'orders'],
 };
 
 function ConfirmDelete({ onConfirm, onCancel }) {
@@ -754,6 +760,9 @@ export default function Admin() {
           {activeTab === 'orders' && <OrdersTab />}
           {activeTab === 'commerce' && <CommerceSettingsTab />}
           {activeTab === 'partners' && <PartnersTab />}
+          {activeTab === 'studio-requests' && <StudioRequestsTab />}
+          {activeTab === 'awards' && <AwardsTab />}
+          {activeTab === 'messages' && <ChatWorkspace adminMode />}
           {activeTab === 'price-guides' && <PriceGuidesTab />}
           {activeTab === 'users' && <UsersTab currentUser={user} />}
 
@@ -936,7 +945,7 @@ export default function Admin() {
                     className="w-full bg-obsidian border border-brass/20 text-ivory/80 px-4 py-2.5 text-sm focus:outline-none focus:border-brass/40 transition-colors" />
                 </div>
                 <FileUploadField label="Video File / Embed URL *" value={newVideo.videoUrl}
-                  onChange={url => setNewVideo(p => ({ ...p, videoUrl: url }))} accept="video/*" placeholder="Paste YouTube/Vimeo URL or upload .mp4" />
+                  onChange={url => setNewVideo(p => ({ ...p, videoUrl: url }))} accept="video/*" placeholder="Paste YouTube, TikTok, Vimeo URL or upload .mp4" />
                 <FileUploadField label="Thumbnail Image" value={newVideo.thumbnailUrl}
                   onChange={url => setNewVideo(p => ({ ...p, thumbnailUrl: url }))} accept="image/*" placeholder="Paste URL or upload image" />
                 <div>

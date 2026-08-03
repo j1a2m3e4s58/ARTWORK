@@ -67,7 +67,7 @@ const createEntity = name => ({
 });
 
 const entityNames = [
-  'Artwork', 'AuditLog', 'BlogPost', 'CommissionRequest', 'InternshipApplication', 'HeroSlide', 'Media', 'Message', 'NewsletterSubscriber',
+  'Artwork', 'ArtRequest', 'Award', 'AuditLog', 'BlogPost', 'CommissionRequest', 'FilmRequest', 'InternshipApplication', 'HeroSlide', 'Media', 'Message', 'NewsletterSubscriber',
   'Notification', 'Order', 'Outbox', 'PartnerApplication', 'PartnerPayout', 'PriceGuide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'User', 'Video',
 ];
 
@@ -139,6 +139,16 @@ export const studioClient = {
     overview: () => request('/api/partner/overview'),
     submitProduct: data => request('/api/partner/products', { method: 'POST', body: JSON.stringify(data) }),
     updateProduct: (id, data) => request(`/api/partner/products/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  },
+  chat: {
+    conversations: () => request('/api/chat/conversations'),
+    directory: () => request('/api/chat/directory'),
+    start: userId => request('/api/chat/conversations', { method: 'POST', body: JSON.stringify({ userId }) }),
+    messages: id => request(`/api/chat/conversations/${encodeURIComponent(id)}/messages`),
+    send: (id, data) => request(`/api/chat/conversations/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify(data) }),
+    markRead: id => request(`/api/chat/conversations/${encodeURIComponent(id)}/read`, { method: 'POST' }),
+    setForwarding: (messageId, allowed) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/forwarding`, { method: 'PATCH', body: JSON.stringify({ allowed }) }),
+    heartbeat: () => request('/api/chat/presence', { method: 'POST' }),
   },
   integrations: {
     Core: {

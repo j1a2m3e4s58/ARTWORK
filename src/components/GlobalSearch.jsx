@@ -9,6 +9,7 @@ const sources = [
   { entity: 'Artwork', label: 'Artwork', path: item => `/gallery?artwork=${item.id}`, image: item => item.imageUrl, text: item => `${item.title} ${item.category || ''} ${item.medium || ''} ${item.description || ''}` },
   { entity: 'ShopProduct', label: 'Art shop', path: () => '/shop', image: item => item.imageUrl, text: item => `${item.title} ${item.type || ''} ${item.description || ''}` },
   { entity: 'Video', label: 'Art film', path: () => '/videos', image: item => item.thumbnailUrl, text: item => `${item.title} ${item.category || ''} ${item.description || ''}` },
+  { entity: 'Award', label: 'Honour', path: () => '/honours', image: item => item.imageUrl, text: item => `${item.title} ${item.year || ''} ${item.issuer || ''} ${item.description || ''}` },
   { entity: 'BlogPost', label: 'Journal', path: item => `/blog/${item.slug}`, image: item => item.imageUrl || item.coverImageUrl, text: item => `${item.title} ${item.excerpt || ''} ${item.content || ''}` },
 ];
 

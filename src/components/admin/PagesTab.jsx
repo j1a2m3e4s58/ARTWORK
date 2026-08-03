@@ -49,6 +49,13 @@ const PAGE_CONTENT_DEFAULTS = [
   { key: 'videos_label', label: 'Section Label', value: 'Video Portal', group: 'Videos Page', page: 'Videos' },
   { key: 'videos_title', label: 'Page Title', value: 'Art in Motion', group: 'Videos Page', page: 'Videos' },
   { key: 'videos_subtitle', label: 'Page Subtitle', value: 'Process videos, time-lapses, tutorials, and behind-the-scenes glimpses into the atelier.', group: 'Videos Page', page: 'Videos' },
+  { key: 'videos_follow_title', label: 'Viewer Follow Prompt Title', value: 'Continue the creative journey', group: 'Videos Page', page: 'Videos' },
+  { key: 'videos_follow_body', label: 'Viewer Follow Prompt Text', value: 'Follow Reigns Atelier on YouTube and TikTok for new studio films, drawing lessons, and process stories.', group: 'Videos Page', page: 'Videos' },
+  { key: 'videos_youtube_url', label: 'YouTube Channel URL', value: '', group: 'Videos Page', page: 'Videos' },
+  { key: 'videos_tiktok_url', label: 'TikTok Profile URL', value: '', group: 'Videos Page', page: 'Videos' },
+  { key: 'awards_label', label: 'Honours Eyebrow', value: 'The artist’s journey', group: 'Awards Page', page: 'Awards' },
+  { key: 'awards_title', label: 'Honours Page Title', value: 'Honours & Recognition', group: 'Awards Page', page: 'Awards' },
+  { key: 'awards_subtitle', label: 'Honours Page Introduction', value: 'Milestones, exhibitions, juried recognition, and moments that mark a lifetime devoted to art.', group: 'Awards Page', page: 'Awards' },
   { key: 'blog_label', label: 'Section Label', value: 'Art Journal', group: 'Blog Page', page: 'Blog' },
   { key: 'blog_title', label: 'Page Title', value: 'Stories & Process', group: 'Blog Page', page: 'Blog' },
   { key: 'testimonials_label', label: 'Section Label', value: 'Client Words', group: 'Testimonials Page', page: 'Testimonials' },
@@ -70,8 +77,8 @@ const PAGE_CONTENT_DEFAULTS = [
   { key: 'stat_awards', label: 'Stat: Awards Won', value: '—', group: 'Home Page', page: 'Home' },
 ];
 
-const GROUP_ORDER = ['Home Page', 'Gallery Page', 'Shop Page', 'Videos Page', 'Blog Page', 'Testimonials Page', 'Commission Page', 'Commission Packages', 'Commission FAQs', 'About Page', 'Contact Page', 'Legal Pages'];
-const GROUP_ICONS = { 'Home Page': Globe, 'Gallery Page': Globe, 'Shop Page': Globe, 'Videos Page': Globe, 'Blog Page': Globe, 'Testimonials Page': Globe, 'Commission Page': MessageCircle, 'Commission Packages': MessageCircle, 'Commission FAQs': MessageCircle, 'About Page': User, 'Contact Page': Globe, 'Legal Pages': Globe };
+const GROUP_ORDER = ['Home Page', 'Gallery Page', 'Shop Page', 'Videos Page', 'Awards Page', 'Blog Page', 'Testimonials Page', 'Commission Page', 'Commission Packages', 'Commission FAQs', 'About Page', 'Contact Page', 'Legal Pages'];
+const GROUP_ICONS = { 'Home Page': Globe, 'Gallery Page': Globe, 'Shop Page': Globe, 'Videos Page': Globe, 'Awards Page': Globe, 'Blog Page': Globe, 'Testimonials Page': Globe, 'Commission Page': MessageCircle, 'Commission Packages': MessageCircle, 'Commission FAQs': MessageCircle, 'About Page': User, 'Contact Page': Globe, 'Legal Pages': Globe };
 
 function FieldRow({ def, record, onSave }) {
   const [val, setVal] = useState(record?.value ?? def.value);
@@ -116,7 +123,7 @@ export default function PagesTab() {
   const [loading, setLoading] = useState(true);
   const [initializing, setInitializing] = useState(false);
 
-  const pages = ['Home', 'Gallery', 'Shop', 'Videos', 'Blog', 'Testimonials', 'Commission', 'About', 'Contact', 'Legal'];
+  const pages = ['Home', 'Gallery', 'Shop', 'Videos', 'Awards', 'Blog', 'Testimonials', 'Commission', 'About', 'Contact', 'Legal'];
 
   useEffect(() => {
     Promise.all(pages.map(p => studioClient.entities.SiteContent.filter({ page: p }))).then(results => {

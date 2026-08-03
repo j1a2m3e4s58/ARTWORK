@@ -1,11 +1,12 @@
 ﻿import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, ArrowUpRight, UserRound, ShieldCheck, Search, Heart, PackageSearch } from 'lucide-react';
+import { Menu, X, ArrowUpRight, UserRound, ShieldCheck, Search, Heart, PackageSearch, MessageCircle } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
 import InstallAppButton from './InstallAppButton';
 import { useAuth } from '@/lib/AuthContext';
 import GlobalSearch from './GlobalSearch';
+import { studioClient } from '@/api/studioClient';
 
 const navLinks = [
   { label: 'Home', path: '/' },
@@ -13,12 +14,13 @@ const navLinks = [
   { label: 'Commission', path: '/commission' },
   { label: 'Internships', path: '/internships', settingKey: 'show_internships' },
   { label: 'Art Shop', path: '/shop', settingKey: 'show_shop' },
+  { label: 'Art Films', path: '/videos', settingKey: 'show_videos' },
   { label: 'About', path: '/about' },
   { label: 'Contact', path: '/contact' },
 ];
 const secondaryLinks = [
   { label: 'Track order', path: '/track-order' },
-  { label: 'Art Films', path: '/videos', settingKey: 'show_videos' },
+  { label: 'Honours', path: '/honours', settingKey: 'show_awards' },
   { label: 'Journal', path: '/blog', settingKey: 'show_blog' },
 ];
 
@@ -28,6 +30,7 @@ export default function Navbar() {
   const isVisible = link => {
     const key = link.settingKey || `show_${link.label.toLowerCase()}`;
     if (['show_videos', 'show_blog', 'show_internships'].includes(key)) return settings[key] === 'true';
+    if (key === 'show_awards') return settings[key] !== 'false';
     return settings[key] !== 'false';
   };
   const visiblePrimaryLinks = navLinks.filter(isVisible);
@@ -36,6 +39,7 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [chatUnread, setChatUnread] = useState(0);
   const location = useLocation();
   const menuButtonRef = useRef(null);
   const logoPressTimer = useRef(null);
@@ -75,6 +79,22 @@ export default function Navbar() {
   useEffect(() => () => clearLogoPress(), []);
 
   useEffect(() => setMenuOpen(false), [location]);
+  useEffect(() => {
+    if (!user) {
+      setChatUnread(0);
+      return undefined;
+    }
+    let mounted = true;
+    const refreshUnread = () => studioClient.chat.conversations()
+      .then(rows => mounted && setChatUnread(rows.reduce((sum, row) => sum + Number(row.unread || 0), 0)))
+      .catch(() => mounted && setChatUnread(0));
+    refreshUnread();
+    const timer = window.setInterval(refreshUnread, 15000);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
+  }, [user?.id, location.pathname]);
   useEffect(() => {
     document.body.style.overflow = menuOpen ? 'hidden' : '';
     const closeOnEscape = event => {
@@ -151,6 +171,7 @@ export default function Navbar() {
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2 lg:ml-0">
             <button onClick={() => setSearchOpen(true)} aria-label="Search the site" className="flex h-10 w-10 items-center justify-center text-ivory/65 transition-colors hover:text-brass"><Search size={19} /></button>
             <Link to="/wishlist" aria-label="Open my wishlist" className={`flex h-10 w-10 items-center justify-center transition-colors hover:text-brass ${location.pathname === '/wishlist' ? 'text-brass' : 'text-ivory/65'}`}><Heart size={19} /></Link>
+            {user && <Link to="/messages" aria-label={`Open studio messages${chatUnread ? `, ${chatUnread} unread` : ''}`} className={`relative flex h-10 w-10 items-center justify-center transition-colors hover:text-brass ${location.pathname === '/messages' ? 'text-brass' : 'text-ivory/65'}`}><MessageCircle size={19}/>{chatUnread > 0 && <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-green-500 px-1 text-[9px] font-semibold text-white">{chatUnread > 99 ? '99+' : chatUnread}</span>}</Link>}
             <Link to="/track-order" aria-label="Track an order" className={`hidden h-10 items-center gap-1.5 px-1.5 font-tight text-xs tracking-wide transition-colors xl:flex ${location.pathname === '/track-order' ? 'text-brass' : 'text-ivory/55 hover:text-brass'}`}><PackageSearch size={16} /> <span>Track</span></Link>
             {!user ? (
               <div className="hidden lg:flex items-center gap-3">
