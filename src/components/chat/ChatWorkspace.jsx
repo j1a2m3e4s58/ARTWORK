@@ -115,12 +115,14 @@ export default function ChatWorkspace({ adminMode = false }) {
   const chunksRef = useRef([]);
   const uploadAbortRef = useRef(null);
   const typingTimerRef = useRef(null);
+  const initializedSelectionRef = useRef(false);
 
   const load = async () => {
     const [conversationRows, people] = await Promise.all([studioClient.chat.conversations(), studioClient.chat.directory()]);
     setConversations(conversationRows);
     setDirectory(people);
-    if (!activeId && conversationRows[0]) {
+    if (!initializedSelectionRef.current && conversationRows[0]) {
+      initializedSelectionRef.current = true;
       const requestedId = new URLSearchParams(window.location.search).get('conversation');
       setActiveId(conversationRows.some(row => row.id === requestedId) ? requestedId : conversationRows[0].id);
     }
