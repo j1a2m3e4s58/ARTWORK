@@ -11,10 +11,10 @@ import { studioClient } from '@/api/studioClient';
 const navLinks = [
   { label: 'Home', path: '/' },
   { label: 'Gallery', path: '/gallery' },
+  { label: 'Art Films', path: '/videos' },
   { label: 'Commission', path: '/commission' },
   { label: 'Internships', path: '/internships', settingKey: 'show_internships' },
   { label: 'Art Shop', path: '/shop', settingKey: 'show_shop' },
-  { label: 'Art Films', path: '/videos', settingKey: 'show_videos' },
   { label: 'About', path: '/about' },
   { label: 'Contact', path: '/contact' },
 ];

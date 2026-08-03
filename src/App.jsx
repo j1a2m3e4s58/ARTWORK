@@ -66,7 +66,7 @@ const AuthenticatedApp = () => {
         <Route path="/about" element={<About />} />
         <Route path="/blog" element={<FeatureRoute setting="show_blog" defaultEnabled={false}><Blog /></FeatureRoute>} />
         <Route path="/blog/:slug" element={<FeatureRoute setting="show_blog" defaultEnabled={false}><BlogPost /></FeatureRoute>} />
-        <Route path="/videos" element={<FeatureRoute setting="show_videos"><Videos /></FeatureRoute>} />
+        <Route path="/videos" element={<Videos />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/testimonials" element={<FeatureRoute setting="show_testimonials" defaultEnabled={false}><Testimonials /></FeatureRoute>} />
         <Route path="/privacy" element={<LegalPage type="privacy" />} />
