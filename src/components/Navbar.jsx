@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, ArrowUpRight, UserRound, ShieldCheck, Search, Heart, PackageSearch, MessageCircle } from 'lucide-react';
+import { Menu, X, ArrowUpRight, UserRound, ShieldCheck, Search, Heart, MessageCircle } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
 import InstallAppButton from './InstallAppButton';
 import { useAuth } from '@/lib/AuthContext';
@@ -120,7 +120,7 @@ export default function Navbar() {
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.8, delay: 0.2 }}
       >
-        <div className="mx-auto flex h-20 max-w-[1440px] items-center gap-3 px-5 sm:px-6 lg:grid lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:gap-4 lg:px-8 xl:px-12">
+        <div className="mx-auto flex h-20 max-w-[1440px] items-center gap-3 px-5 sm:px-6 xl:grid xl:grid-cols-[auto_minmax(0,1fr)_auto] xl:gap-5 xl:px-10 2xl:px-12">
           <div className="flex shrink-0 flex-col leading-none group select-none">
             <Link
               to="/"
@@ -142,12 +142,12 @@ export default function Navbar() {
           </div>
 
           {/* Desktop nav */}
-          <div className="hidden min-w-0 items-center justify-center gap-4 lg:flex xl:gap-5">
+          <div className="hidden min-w-0 items-center justify-center gap-4 xl:flex 2xl:gap-5">
             {visiblePrimaryLinks.map((link) => (
               <Link
                 key={link.path}
                 to={link.path}
-                className={`shrink-0 font-tight text-xs tracking-wide transition-all duration-300 relative group xl:text-sm ${
+                className={`relative shrink-0 font-tight text-[13px] font-medium tracking-[0.025em] transition-all duration-300 group ${
                   location.pathname === link.path ? 'text-brass' : 'text-ivory/60 hover:text-ivory'
                 }`}
               >
@@ -159,7 +159,7 @@ export default function Navbar() {
             ))}
             {visibleSecondaryLinks.length > 0 && (
               <details className="group relative">
-                <summary className="cursor-pointer list-none whitespace-nowrap font-tight text-xs tracking-wide text-ivory/60 hover:text-ivory xl:text-sm">Explore</summary>
+                <summary className="cursor-pointer list-none whitespace-nowrap font-tight text-[13px] font-medium tracking-[0.025em] text-ivory/60 hover:text-ivory">Explore</summary>
                 <div className="absolute left-1/2 top-8 min-w-40 -translate-x-1/2 border border-brass/15 bg-carbon/95 p-2 shadow-2xl backdrop-blur-xl">
                   {visibleSecondaryLinks.map(link => <Link key={link.path} to={link.path} className="block px-3 py-2 text-sm text-ivory/55 hover:bg-brass/10 hover:text-brass">{link.label}</Link>)}
                 </div>
@@ -168,27 +168,26 @@ export default function Navbar() {
           </div>
 
           {/* Right actions */}
-          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2 lg:ml-0">
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2 xl:ml-0">
             <button onClick={() => setSearchOpen(true)} aria-label="Search the site" className="flex h-10 w-10 items-center justify-center text-ivory/65 transition-colors hover:text-brass"><Search size={19} /></button>
             <Link to="/wishlist" aria-label="Open my wishlist" className={`flex h-10 w-10 items-center justify-center transition-colors hover:text-brass ${location.pathname === '/wishlist' ? 'text-brass' : 'text-ivory/65'}`}><Heart size={19} /></Link>
             {user && <Link to="/messages" aria-label={`Open studio messages${chatUnread ? `, ${chatUnread} unread` : ''}`} className={`relative flex h-10 w-10 items-center justify-center transition-colors hover:text-brass ${location.pathname === '/messages' ? 'text-brass' : 'text-ivory/65'}`}><MessageCircle size={19}/>{chatUnread > 0 && <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-green-500 px-1 text-[9px] font-semibold text-white">{chatUnread > 99 ? '99+' : chatUnread}</span>}</Link>}
-            <Link to="/track-order" aria-label="Track an order" className={`hidden h-10 items-center gap-1.5 px-1.5 font-tight text-xs tracking-wide transition-colors xl:flex ${location.pathname === '/track-order' ? 'text-brass' : 'text-ivory/55 hover:text-brass'}`}><PackageSearch size={16} /> <span>Track</span></Link>
             {!user ? (
-              <div className="hidden lg:flex items-center gap-3">
-                <Link to="/login" className="font-tight text-xs text-ivory/55 hover:text-brass">Log in</Link>
-                <Link to="/register" className="font-tight text-xs border border-brass/30 px-3 py-2 text-brass hover:bg-brass/10">Sign up</Link>
+              <div className="hidden items-center gap-3 xl:flex">
+                <Link to="/login" className="font-tight text-[13px] font-medium text-ivory/55 hover:text-brass">Log in</Link>
+                <Link to="/register" className="border border-brass/30 px-3 py-2 font-tight text-[13px] font-medium text-brass hover:bg-brass/10">Sign up</Link>
               </div>
             ) : (
-              <div className="hidden items-center gap-3 lg:flex">
-                {['admin', 'editor', 'support'].includes(user.role) && <Link to="/admin" className="flex items-center gap-1.5 font-tight text-xs text-brass/80 hover:text-brass"><ShieldCheck size={15} /> Admin</Link>}
-                <Link to="/account" className="flex items-center gap-1.5 font-tight text-xs text-ivory/55 hover:text-brass"><UserRound size={15} /> Account</Link>
-                <button onClick={() => logout()} className="font-tight text-xs text-ivory/45 hover:text-brass">Sign out</button>
+              <div className="hidden items-center gap-3 xl:flex">
+                {['admin', 'editor', 'support'].includes(user.role) && <Link to="/admin" className="flex items-center gap-1.5 font-tight text-[13px] font-medium text-brass/80 hover:text-brass"><ShieldCheck size={15} /> Admin</Link>}
+                <Link to="/account" className="flex items-center gap-1.5 font-tight text-[13px] font-medium text-ivory/55 hover:text-brass"><UserRound size={15} /> Account</Link>
+                <button onClick={() => logout()} className="font-tight text-[13px] font-medium text-ivory/45 hover:text-brass">Sign out</button>
               </div>
             )}
             {/* Hamburger */}
             <button
               ref={menuButtonRef}
-              className="flex h-11 w-11 items-center justify-center text-ivory/70 hover:text-brass transition-colors lg:hidden"
+              className="flex h-11 w-11 items-center justify-center text-ivory/70 transition-colors hover:text-brass xl:hidden"
               onClick={() => setMenuOpen(!menuOpen)}
               aria-expanded={menuOpen}
               aria-controls="mobile-site-menu"
@@ -205,7 +204,7 @@ export default function Navbar() {
         {menuOpen && (
           <motion.div
             id="mobile-site-menu"
-            className="fixed inset-0 z-[60] overflow-y-auto bg-black/55 px-4 pb-24 pt-24 backdrop-blur-sm lg:hidden"
+            className="fixed inset-0 z-[60] overflow-y-auto bg-black/55 px-4 pb-24 pt-24 backdrop-blur-sm xl:hidden"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

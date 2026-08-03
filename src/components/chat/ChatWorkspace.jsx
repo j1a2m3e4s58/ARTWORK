@@ -299,9 +299,9 @@ export default function ChatWorkspace({ adminMode = false }) {
 
   return (
     <>
-      <div className="grid min-h-[620px] max-h-[calc(100dvh-8rem)] overflow-hidden border border-brass/15 bg-carbon lg:grid-cols-[330px_1fr]">
-        <aside className={`${activeId ? 'hidden lg:flex' : 'flex'} min-h-0 flex-col border-r border-brass/15`}>
-          <div className="border-b border-brass/15 p-4">
+      <div className={`grid h-[calc(100dvh-14rem)] min-h-[430px] overflow-hidden border border-brass/15 bg-carbon sm:h-[calc(100dvh-13rem)] lg:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] ${adminMode ? 'lg:h-[calc(100dvh-12rem)]' : 'lg:h-[calc(100dvh-10rem)]'} lg:min-h-[560px]`}>
+        <aside className={`${activeId ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col overflow-hidden border-r border-brass/15`}>
+          <div className="shrink-0 border-b border-brass/15 p-4">
             <div className="flex items-center justify-between gap-3"><h2 className="font-display text-2xl text-ivory">{adminMode ? 'Studio conversations' : 'Messages'}</h2><div className="flex items-center gap-1">
               <button type="button" onClick={enablePush} title={pushState === 'enabled' ? 'Disable push alerts' : 'Enable push alerts'} className={`flex h-9 w-9 items-center justify-center border ${pushState === 'enabled' ? 'border-green-400/30 text-green-400' : 'border-brass/15 text-brass'}`}><Bell size={15} /></button>
               {adminMode && user?.role === 'admin' && <button type="button" onClick={() => setShowAnnouncement(value => !value)} title="New announcement" className="flex h-9 w-9 items-center justify-center border border-brass/15 text-brass"><Megaphone size={15} /></button>}
@@ -312,7 +312,7 @@ export default function ChatWorkspace({ adminMode = false }) {
             {showAnnouncement && user?.role === 'admin' && <div className="mt-3 space-y-2 border border-brass/15 bg-obsidian p-3"><input value={announcement.title} onChange={event => setAnnouncement(value => ({ ...value, title: event.target.value }))} className="h-10 w-full border border-brass/15 bg-carbon px-3 text-sm text-ivory outline-none" placeholder="Announcement title" /><textarea value={announcement.body} onChange={event => setAnnouncement(value => ({ ...value, body: event.target.value }))} className="h-24 w-full resize-none border border-brass/15 bg-carbon p-3 text-sm text-ivory outline-none" placeholder="Message every signed-in member" /><button type="button" disabled={busy || !announcement.body.trim()} onClick={publishAnnouncement} className="h-10 w-full bg-brass text-xs uppercase tracking-wider text-obsidian disabled:opacity-40">Publish announcement</button></div>}
           </div>
           {error && <p role="alert" className="border-b border-red-400/20 bg-red-400/5 p-3 text-xs text-red-300">{error}</p>}
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto [scrollbar-gutter:stable]">
             {matchingConversations.map(conversation => {
               const person = conversation.participants?.find(entry => entry.id !== user.id);
               return <button key={conversation.id} onClick={() => setActiveId(conversation.id)} className={`flex w-full items-center gap-3 border-b border-brass/10 p-4 text-left ${activeId === conversation.id ? 'bg-brass/10' : 'hover:bg-ivory/[0.03]'}`}>
@@ -329,9 +329,9 @@ export default function ChatWorkspace({ adminMode = false }) {
           </div>
         </aside>
 
-        <section className={`${!activeId ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col`}>
+        <section className={`${!activeId ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col overflow-hidden`}>
           {active ? <>
-            <header className="flex items-center gap-3 border-b border-brass/15 p-3 sm:p-4">
+            <header className="shrink-0 flex items-center gap-2 border-b border-brass/15 p-3 sm:gap-3 sm:p-4">
               <button onClick={() => setActiveId('')} className="flex h-10 w-10 items-center justify-center text-brass lg:hidden" aria-label="Back to conversations"><ArrowLeft size={19} /></button>
               <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass">{active.type === 'announcement' ? <Megaphone size={17} /> : initials(other?.name)}{other?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
               <div className="min-w-0 flex-1"><p className="truncate font-display text-xl text-ivory">{conversationName(active, user.id)}</p><p className={`truncate text-xs ${active.typingUsers?.length || other?.online ? 'text-green-400' : 'text-ivory/35'}`}>{active.typingUsers?.length ? `${active.typingUsers[0].name} is typing…` : active.type === 'announcement' ? 'Studio updates for every member' : lastSeen(other)}</p></div>
@@ -347,7 +347,7 @@ export default function ChatWorkspace({ adminMode = false }) {
             {searchingMessages && <form onSubmit={runMessageSearch} className="flex gap-2 border-b border-brass/15 bg-carbon p-3"><label className="flex min-w-0 flex-1 items-center gap-2 border border-brass/15 bg-obsidian px-3"><Search size={14} className="text-brass" /><input autoFocus value={messageQuery} onChange={event => setMessageQuery(event.target.value)} placeholder="Search messages and files" className="h-10 min-w-0 flex-1 bg-transparent text-sm text-ivory outline-none" /></label><button disabled={searchBusy} className="h-10 border border-brass/20 px-3 text-xs text-brass disabled:opacity-40">{searchBusy ? 'Searching…' : 'Search'}</button><button type="button" onClick={() => { setMessageQuery(''); setSearchingMessages(false); loadMessages(activeId, ''); }} className="h-10 w-10 border border-brass/20 text-ivory/50"><X size={15} className="mx-auto" /></button></form>}
             {error && <p role="alert" className="border-b border-red-400/20 bg-red-400/5 p-3 text-xs text-red-300">{error}</p>}
             {active.blocked && <p className="border-b border-amber-400/20 bg-amber-400/5 p-3 text-center text-xs text-amber-200">This conversation is blocked. Unblock it from the menu to send new messages.</p>}
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-obsidian/35 p-3 sm:p-6">
+            <div className="min-h-0 flex-1 space-y-3 overscroll-contain overflow-y-auto bg-obsidian/35 p-3 [scrollbar-gutter:stable] sm:p-6">
               {messages.map(message => {
                 const mine = message.senderId === user.id;
                 const attachment = message.attachmentUrl ? { url: message.attachmentUrl, name: message.attachmentName, type: message.attachmentType, bytes: message.attachmentBytes } : null;
@@ -370,12 +370,12 @@ export default function ChatWorkspace({ adminMode = false }) {
               {!messages.length && <div className="py-16 text-center"><MessageCircle className="mx-auto text-brass/40" /><p className="mt-3 text-sm text-ivory/35">Start the conversation. Messages and files stay with this account.</p></div>}
               <div ref={endRef} />
             </div>
-            <footer className="border-t border-brass/15 bg-carbon p-3">
+            <footer className="shrink-0 border-t border-brass/15 bg-carbon p-2.5 sm:p-3">
               {replyingTo && <div className="mb-2 flex items-center gap-3 border-l-2 border-brass bg-obsidian px-3 py-2"><Reply size={14} className="text-brass" /><p className="min-w-0 flex-1 truncate text-xs text-ivory/50">Replying to: {replyingTo.body || replyingTo.attachmentName || 'Attachment'}</p><button type="button" onClick={() => setReplyingTo(null)}><X size={15} /></button></div>}
               {file && <div className="mb-2 flex items-start gap-3 border border-brass/15 bg-obsidian p-2"><div className="max-w-[240px] flex-1"><AttachmentPreview compact attachment={{ url: filePreview, name: file.name, type: file.type, bytes: file.size }} /></div><button type="button" onClick={() => setFile(null)} className="flex h-8 w-8 items-center justify-center text-ivory/50"><X size={16} /></button></div>}
               {busy && file && <div className="mb-2 border border-brass/15 bg-obsidian p-3"><div className="flex items-center justify-between text-xs"><span className="truncate text-ivory/55">Uploading {file.name}</span><span className="text-brass">{uploadProgress}%</span></div><div className="mt-2 h-1.5 overflow-hidden bg-ivory/10"><div className="h-full bg-brass transition-all" style={{ width: `${uploadProgress}%` }} /></div><button type="button" onClick={() => uploadAbortRef.current?.abort()} className="mt-2 text-[10px] uppercase tracking-wider text-red-300">Cancel upload</button></div>}
               {uploadFailed && file && !busy && <button type="button" onClick={send} className="mb-2 flex h-10 w-full items-center justify-center gap-2 border border-red-400/25 text-xs text-red-300"><RotateCcw size={14} />Retry failed upload</button>}
-              <div className="flex items-end gap-2">
+              <div className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-end gap-2">
                 <label className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center border border-brass/20 text-brass" title="Attach image, video, audio or document"><Paperclip size={17} /><input type="file" className="hidden" accept="image/*,video/*,audio/*,.pdf,.docx,.xlsx,.pptx,.zip" onChange={event => { chooseFile(event.target.files?.[0]); event.target.value = ''; }} /></label>
                 <button type="button" onClick={toggleRecording} title={recording ? 'Stop recording' : 'Record voice message'} className={`flex h-11 w-11 shrink-0 items-center justify-center border ${recording ? 'animate-pulse border-red-400 bg-red-400/10 text-red-300' : 'border-brass/20 text-brass'}`}><Mic size={17} /></button>
                 <textarea value={text} disabled={active.blocked || (active.type === 'announcement' && !adminMode)} onChange={event => updateTyping(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); } }} rows={2} placeholder={active.type === 'announcement' && !adminMode ? 'Only studio staff can publish announcements' : 'Write a message…'} className="min-w-0 flex-1 resize-none border border-brass/20 bg-obsidian p-3 text-sm text-ivory outline-none disabled:opacity-50" />
