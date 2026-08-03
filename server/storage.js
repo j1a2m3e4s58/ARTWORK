@@ -22,7 +22,11 @@ export async function storeFile({ buffer, mime, extension, uploadDir, id }) {
   if (storageProvider === 'cloudinary') {
     const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
     if (!cloudName || (!signedCloudinary && !unsignedCloudinary)) throw new Error('Cloud storage is selected but not fully configured.');
-    const resourceType = mime.startsWith('video/') ? 'video' : mime === 'application/pdf' ? 'raw' : 'image';
+    const resourceType = mime.startsWith('video/') || mime.startsWith('audio/')
+      ? 'video'
+      : mime.startsWith('image/')
+        ? 'image'
+        : 'raw';
     const form = new FormData();
     form.append('folder', 'reigns-atelier');
     if (signedCloudinary) {
@@ -48,7 +52,11 @@ export async function storeFile({ buffer, mime, extension, uploadDir, id }) {
   }
   const filename = `${id}.${extension}`;
   await writeFile(path.join(uploadDir, filename), buffer);
-  return { url: `/uploads/${filename}`, publicId: filename, resourceType: mime.startsWith('video/') ? 'video' : mime === 'application/pdf' ? 'raw' : 'image' };
+  return {
+    url: `/uploads/${filename}`,
+    publicId: filename,
+    resourceType: mime.startsWith('video/') || mime.startsWith('audio/') ? 'video' : mime.startsWith('image/') ? 'image' : 'raw',
+  };
 }
 
 export async function deleteStoredFile({ publicId, resourceType = 'image', uploadDir }) {

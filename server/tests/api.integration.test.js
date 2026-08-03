@@ -132,6 +132,31 @@ test('API keeps public reads open while blocking unverified customer mutations',
     });
     assert.equal(verifiedMessage.status, 201);
 
+    const chatDirectoryResponse = await fetch(`${baseUrl}/api/chat/directory`, { headers: { Cookie: adminCookieHeader } });
+    assert.equal(chatDirectoryResponse.status, 200);
+    const chatDirectory = await chatDirectoryResponse.json();
+    const collectorDirectoryEntry = chatDirectory.find(item => item.name === 'Test Collector');
+    assert.ok(collectorDirectoryEntry, 'All active signed-in customers should appear in the private chat directory.');
+    assert.equal('email' in collectorDirectoryEntry, false, 'The chat directory must not reveal private email addresses.');
+
+    const conversationResponse = await fetch(`${baseUrl}/api/chat/conversations`, {
+      method: 'POST', headers: securedHeaders, body: JSON.stringify({ userId: collectorDirectoryEntry.id }),
+    });
+    assert.equal(conversationResponse.status, 201);
+    const conversation = await conversationResponse.json();
+    const chatMessageResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, {
+      method: 'POST', headers: securedHeaders, body: JSON.stringify({ body: 'Welcome to the studio messenger.' }),
+    });
+    assert.equal(chatMessageResponse.status, 201);
+    const chatMessage = await chatMessageResponse.json();
+    const reactionResponse = await fetch(`${baseUrl}/api/chat/messages/${chatMessage.id}/reaction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ emoji: '👍' }),
+    });
+    assert.equal(reactionResponse.status, 200);
+    assert.equal(Object.values((await reactionResponse.json()).reactions)[0], '👍');
+
     const forgotResponse = await fetch(`${baseUrl}/api/auth/forgot-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

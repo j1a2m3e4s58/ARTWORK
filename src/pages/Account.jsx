@@ -19,7 +19,6 @@ export default function Account() {
   const { user, checkUserAuth, logout } = useAuth();
   const [data, setData] = useState({ messages: [], commissions: [], artRequests: [], filmRequests: [], orders: [], notifications: [] });
   const [name, setName] = useState(user?.full_name || '');
-  const [chatDiscoverable, setChatDiscoverable] = useState(Boolean(user?.chatDiscoverable));
   const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '' });
   const [closePassword, setClosePassword] = useState('');
   const [notice, setNotice] = useState('');
@@ -56,7 +55,7 @@ export default function Account() {
   const updateProfile = async event => {
     event.preventDefault();
     setError('');
-    const updated = await studioClient.account.updateProfile({ full_name: name, chatDiscoverable });
+    const updated = await studioClient.account.updateProfile({ full_name: name });
     await checkUserAuth();
     setName(updated.full_name);
     setNotice('Profile updated.');
@@ -266,7 +265,7 @@ export default function Account() {
                   <input value={name} onChange={event => setName(event.target.value)} className="mt-2 w-full border border-brass/15 bg-obsidian px-3 py-2 text-sm" />
                 </label>
                 <p className="mt-3 text-sm text-ivory/45">{user?.email}</p>
-                <label className="mt-4 flex gap-3 border border-brass/10 p-3 text-sm text-ivory/55"><input type="checkbox" checked={chatDiscoverable} onChange={event=>setChatDiscoverable(event.target.checked)} className="accent-brass"/><span><b className="block text-ivory/75">Art community messages</b>Let other signed-in customers find and start a conversation with me. Off keeps me private; the studio can always reply.</span></label>
+                <p className="mt-4 border border-brass/10 bg-obsidian/40 p-3 text-sm text-ivory/55"><b className="block text-ivory/75">Studio community messages</b>Your display name is available in the private signed-in member directory. Your email address and account details are never shown.</p>
                 <button className="mt-4 flex items-center gap-2 bg-brass px-4 py-2 text-sm text-obsidian"><Save size={15} /> Save profile</button>
               </form>
 

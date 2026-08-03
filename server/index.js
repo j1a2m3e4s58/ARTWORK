@@ -69,7 +69,7 @@ app.use(helmet({
   },
 }));
 app.use((_req, res, next) => {
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
   next();
 });
 const allowedOrigins = (process.env.APP_ORIGIN || 'http://127.0.0.1:43127').split(',').map(origin => origin.trim());
@@ -1565,10 +1565,19 @@ app.post('/api/admin/mfa/recovery-codes', requireAdmin, authLimiter, async (req,
 });
 
 const chatMember = (conversation, user) => Boolean(user && (staffRoles.has(user.role) || conversation.participantIds?.includes(user.id)));
-const chatUser = user => ({ id: user.id, name: user.full_name || user.email.split('@')[0], role: user.role, online: Date.now() - new Date(user.lastSeenAt || 0).getTime() < 90_000 });
+const chatUser = user => ({
+  id: user.id,
+  name: user.full_name || user.email.split('@')[0],
+  role: user.role,
+  online: Date.now() - new Date(user.lastSeenAt || 0).getTime() < 90_000,
+  lastSeenAt: user.lastSeenAt || null,
+});
 
 app.get('/api/chat/directory', requireVerifiedUser, (req, res) => {
-  const people = db.data.User.filter(item => !item.deleted_at && item.status === 'active' && item.id !== req.user.id && (staffRoles.has(item.role) || item.chatDiscoverable === true));
+  // The directory deliberately exposes only a display name, role and presence;
+  // private email addresses are never returned. Every active account is
+  // discoverable so customers can find other signed-in community members.
+  const people = db.data.User.filter(item => !item.deleted_at && item.status === 'active' && item.id !== req.user.id);
   res.json(people.map(chatUser));
 });
 
@@ -1590,7 +1599,6 @@ app.post('/api/chat/conversations', requireVerifiedUser, mutationLimiter, async 
   let recipient = db.data.User.find(item => item.id === String(req.body.userId || '') && !item.deleted_at && item.status === 'active');
   if (!recipient) recipient = db.data.User.find(item => item.role === 'admin' && item.status === 'active' && !item.deleted_at);
   if (!recipient || recipient.id === req.user.id) return res.status(400).json({ error: 'Choose an available person.' });
-  if (!staffRoles.has(recipient.role) && recipient.chatDiscoverable !== true && !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'This person is not accepting new conversations.' });
   const ids = [req.user.id, recipient.id].sort();
   let conversation = db.data.ChatConversation.find(item => !item.deleted_at && JSON.stringify([...(item.participantIds || [])].sort()) === JSON.stringify(ids));
   if (!conversation) {
@@ -1616,7 +1624,20 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLi
   if (attachmentUrl && !/^https?:\/\//i.test(attachmentUrl) && !attachmentUrl.startsWith('/uploads/')) {
     return res.status(400).json({ error: 'The attachment address is not valid.' });
   }
-  const message = { id: newId(), conversationId: conversation.id, senderId: req.user.id, body, attachmentUrl, attachmentName: String(req.body.attachmentName || '').slice(0, 240), attachmentType: String(req.body.attachmentType || '').slice(0, 80), allowForward: staffRoles.has(req.user.role) ? Boolean(req.body.allowForward) : false, deliveredAt: now(), readBy: [req.user.id], created_date: now() };
+  const replyToId = String(req.body.replyToId || '').trim();
+  const replyTo = replyToId
+    ? db.data.ChatMessage.find(item => item.id === replyToId && item.conversationId === conversation.id && !item.deleted_at)
+    : null;
+  const message = {
+    id: newId(), conversationId: conversation.id, senderId: req.user.id, body,
+    attachmentUrl, attachmentName: String(req.body.attachmentName || '').slice(0, 240),
+    attachmentType: String(req.body.attachmentType || '').slice(0, 120),
+    attachmentBytes: Math.max(0, Number(req.body.attachmentBytes || 0)),
+    replyToId: replyTo?.id || null,
+    replyPreview: replyTo ? String(replyTo.body || replyTo.attachmentName || 'Attachment').slice(0, 180) : '',
+    allowForward: staffRoles.has(req.user.role) ? Boolean(req.body.allowForward) : false,
+    deliveredAt: now(), readBy: [req.user.id], reactions: {}, created_date: now(),
+  };
   db.data.ChatMessage.push(message);
   conversation.lastMessageAt = message.created_date;
   conversation.lastMessage = body || message.attachmentName || 'Attachment';
@@ -1639,6 +1660,20 @@ app.patch('/api/chat/messages/:id/forwarding', requireAdmin, mutationLimiter, as
   if (!message) return res.status(404).json({ error: 'Message not found.' });
   message.allowForward = Boolean(req.body.allowed); message.updated_date = now();
   await save(); res.json(message);
+});
+
+app.post('/api/chat/messages/:id/reaction', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at);
+  const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+  if (!message || !conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Message not found.' });
+  const emoji = String(req.body.emoji || '').slice(0, 8);
+  message.reactions ||= {};
+  if (!emoji) delete message.reactions[req.user.id];
+  else if (!['👍', '❤️', '😂', '😮', '😢', '🙏'].includes(emoji)) return res.status(400).json({ error: 'Choose a supported reaction.' });
+  else message.reactions[req.user.id] = emoji;
+  message.updated_date = now();
+  await save();
+  res.json(message);
 });
 
 app.get('/api/entities/:name', async (req, res) => {
@@ -2301,14 +2336,24 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     next();
   });
 }, async (req, res) => {
-  const isPublicApplicationUpload = req.body?.purpose === 'internship-letter';
-  if (staffRoles.has(req.user.role) && !isPublicApplicationUpload && !hasAdminAccess(req, req.user)) {
+  const uploadPurpose = String(req.body?.purpose || '');
+  const isPublicApplicationUpload = uploadPurpose === 'internship-letter';
+  const isChatAttachment = uploadPurpose === 'chat-attachment';
+  if (staffRoles.has(req.user.role) && !isPublicApplicationUpload && !isChatAttachment && !hasAdminAccess(req, req.user)) {
     return res.status(403).json({ error: 'Re-enter your password to unlock Studio Control.', code: 'admin_unlock_required' });
   }
   if (!req.file) return res.status(400).json({ error: 'Choose a supported image, video, or PDF file.' });
   const detected = await fileTypeFromBuffer(req.file.buffer);
-  const allowed = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'video/mp4', 'video/webm', 'application/pdf']);
-  if (!detected || !allowed.has(detected.mime)) return res.status(400).json({ error: 'Only PDF, JPG, PNG, WebP, AVIF, MP4 and WebM files are accepted.' });
+  const allowed = new Set([
+    'image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif',
+    'video/mp4', 'video/webm', 'video/quicktime',
+    'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/ogg', 'audio/webm',
+    'application/pdf', 'application/zip',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  ]);
+  if (!detected || !allowed.has(detected.mime)) return res.status(400).json({ error: 'Choose a supported image, video, audio, PDF, Word, Excel, PowerPoint or ZIP file.' });
   const fileId = newId();
   const stored = await storeFile({ buffer: req.file.buffer, mime: detected.mime, extension: detected.ext, uploadDir, id: fileId });
   const media = {
@@ -2321,10 +2366,10 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     publicId: stored.publicId,
     resourceType: stored.resourceType,
     userId: req.user.id,
-    purpose: isPublicApplicationUpload ? 'internship-letter' : staffRoles.has(req.user.role) ? 'content-library' : 'customer-reference',
+    purpose: isPublicApplicationUpload ? 'internship-letter' : isChatAttachment ? 'chat-attachment' : staffRoles.has(req.user.role) ? 'content-library' : 'customer-reference',
     altText: '',
-    sourceName: isPublicApplicationUpload ? 'Internship applicant upload' : staffRoles.has(req.user.role) ? 'Studio upload' : 'Customer upload',
-    contentStatus: staffRoles.has(req.user.role) && !isPublicApplicationUpload ? 'original' : 'customer-reference',
+    sourceName: isPublicApplicationUpload ? 'Internship applicant upload' : isChatAttachment ? 'Private chat attachment' : staffRoles.has(req.user.role) ? 'Studio upload' : 'Customer upload',
+    contentStatus: staffRoles.has(req.user.role) && !isPublicApplicationUpload && !isChatAttachment ? 'original' : 'customer-reference',
     created_date: now(),
   };
   db.data.Media.push(media);
