@@ -119,6 +119,7 @@ export default function Contact() {
                   <div className="space-y-6">
                     {[
                       { icon: Mail, label: 'Email', value: settings.contact_email, href: settings.contact_email ? `mailto:${settings.contact_email}` : '' },
+                      { icon: Phone, label: 'Call the studio', value: settings.contact_phone || '+233 55 915 5792', href: `tel:${String(settings.contact_phone || '+233 55 915 5792').replace(/[^\d+]/g, '')}` },
                       { icon: Phone, label: 'WhatsApp', value: settings.whatsapp_number, href: settings.whatsapp_number ? `https://wa.me/${settings.whatsapp_number.replace(/[^\d]/g, '')}` : '' },
                       { icon: MapPin, label: 'Studio', value: page.contact_studio_location, href: null },
                     ].filter(item => item.value).map(({ icon: Icon, label, value, href }) => (

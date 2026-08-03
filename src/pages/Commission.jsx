@@ -1,6 +1,6 @@
 ﻿import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, CalendarDays, Check, ChevronDown, Upload, Sparkles, Loader2, Frame, Image as ImageIcon, X } from 'lucide-react';
+import { ArrowRight, CalendarDays, Check, ChevronDown, Upload, Sparkles, Loader2, Frame, Image as ImageIcon, PhoneCall, X } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import ScrollReveal from '@/components/ScrollReveal';
 import SectionLabel from '@/components/SectionLabel';
@@ -180,6 +180,11 @@ export default function Commission() {
               Thank you, {form.name}. Your commission request has been received. I will review it and respond within 24 hours with next steps.
             </p>
             <div className="flex flex-col gap-3">
+              <a href={`tel:${String(settings.contact_phone || '+233 55 915 5792').replace(/[^\d+]/g, '')}`}
+                className="flex items-center justify-center gap-2 border border-brass/30 text-brass py-3 font-tight text-sm tracking-wide hover:border-brass transition-colors"
+              >
+                <PhoneCall size={16} /> Call the studio
+              </a>
               {settings.whatsapp_number ? <a href={`https://wa.me/${settings.whatsapp_number.replace(/[^\d]/g, '')}?text=Hello, I just submitted a commission request as ${encodeURIComponent(form.name)}`}
                 target="_blank" rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 bg-[#25D366] text-white py-3 font-tight text-sm tracking-wide hover:bg-[#20BA5A] transition-colors"

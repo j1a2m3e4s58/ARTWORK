@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft, Banknote, Check, Copy, CreditCard, ImagePlus, MapPin, MessageCircle,
-  Minus, PackageCheck, PackageSearch, Plus, ShoppingBag, Truck, Upload, X,
+  Minus, PackageCheck, PackageSearch, PhoneCall, Plus, ShoppingBag, Truck, Upload, X,
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { paymentMethodLabel, renderWhatsAppOrderMessage } from '@/lib/commerceOptions';
@@ -48,6 +48,8 @@ export default function CommerceCheckout({
     return paystackEnabled ? ['paystack'] : manual;
   }, [commerce.paymentMethods, paystackEnabled]);
   const whatsappNumber = String(commerce.whatsapp?.number || settings.whatsapp_number || '').replace(/\D/g, '');
+  const studioPhone = String(settings.contact_phone || '+233 55 915 5792').trim();
+  const studioPhoneHref = `tel:${studioPhone.replace(/[^\d+]/g, '')}`;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -270,6 +272,10 @@ export default function CommerceCheckout({
 
               {view === 'checkout' && (
                 <div className="space-y-6">
+                  <section className="flex flex-col gap-3 border border-brass/20 bg-brass/[0.04] p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div><p className="text-sm font-medium text-ivory">Need help before placing your order?</p><p className="mt-1 text-xs leading-5 text-ivory/45">Call the studio for help with delivery, artwork, or payment.</p></div>
+                    <a href={studioPhoneHref} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 border border-brass/35 px-4 text-sm text-brass transition-colors hover:border-brass hover:bg-brass/10"><PhoneCall size={16} /> Call {studioPhone}</a>
+                  </section>
                   <section className="border border-brass/10 bg-obsidian/45 p-4 sm:p-5">
                     <div className="flex items-center gap-3"><MapPin className="text-brass" size={19} /><h3 className="font-display text-xl">Customer & delivery details</h3></div>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -356,7 +362,7 @@ export default function CommerceCheckout({
             </div>
 
             <footer className="border-t border-brass/10 bg-carbon px-5 py-5 sm:px-7">
-              {view === 'bag' && cart.length > 0 && <><div className="mb-4 flex items-end justify-between"><span className="text-sm text-ivory/40">Subtotal</span><strong className="font-display text-3xl text-brass">{formatMoney(subtotal)}</strong></div><button onClick={() => setView('checkout')} className="flex min-h-[52px] w-full items-center justify-center gap-2 bg-brass text-sm uppercase tracking-widest text-obsidian">Continue to checkout <ArrowLeft className="rotate-180" size={16} /></button><button onClick={close} className="mt-2 min-h-11 w-full border border-ivory/10 text-sm text-ivory/50">Continue shopping</button></>}
+              {view === 'bag' && cart.length > 0 && <><div className="mb-4 flex items-end justify-between"><span className="text-sm text-ivory/40">Subtotal</span><strong className="font-display text-3xl text-brass">{formatMoney(subtotal)}</strong></div><button onClick={() => setView('checkout')} className="flex min-h-[52px] w-full items-center justify-center gap-2 bg-brass text-sm uppercase tracking-widest text-obsidian">Continue to checkout <ArrowLeft className="rotate-180" size={16} /></button><a href={studioPhoneHref} className="mt-2 flex min-h-11 w-full items-center justify-center gap-2 border border-brass/25 text-sm text-brass transition-colors hover:border-brass hover:bg-brass/10"><PhoneCall size={16} /> Need help? Call {studioPhone}</a><button onClick={close} className="mt-2 min-h-11 w-full border border-ivory/10 text-sm text-ivory/50">Continue shopping</button></>}
               {view === 'checkout' && (
                 <>
                   <div className="mb-4 grid grid-cols-3 gap-2 border border-ivory/10 p-3 text-center text-xs">

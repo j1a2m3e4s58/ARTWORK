@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { CheckCircle2, MapPin, PackageSearch, Search } from 'lucide-react';
+import { CheckCircle2, MapPin, PackageSearch, PhoneCall, Search } from 'lucide-react';
 import PageTransition from '@/components/PageTransition';
 import { studioClient } from '@/api/studioClient';
+import { useSettings } from '@/hooks/useSettings';
 
 const label = value => String(value || 'pending').replaceAll('_', ' ');
 const money = (value, currency = 'GHS') => new Intl.NumberFormat('en-GH', { style: 'currency', currency }).format(Number(value) || 0);
 
 export default function OrderTracking() {
+  const settings = useSettings();
   const location = useLocation();
   const initial = new URLSearchParams(location.search);
   const [form, setForm] = useState({ trackingCode: initial.get('code') || '', email: '' });
@@ -55,6 +57,7 @@ export default function OrderTracking() {
           <label className="text-xs uppercase tracking-wider text-ivory/45">Tracking code<input required value={form.trackingCode} onChange={event => setForm(current => ({ ...current, trackingCode: event.target.value }))} placeholder="RA-12345678" className="mt-2 min-h-12 w-full border border-brass/20 bg-obsidian px-3 text-sm text-ivory" /></label>
           <label className="text-xs uppercase tracking-wider text-ivory/45">Checkout email<input required type="email" autoComplete="email" value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} placeholder="you@email.com" className="mt-2 min-h-12 w-full border border-brass/20 bg-obsidian px-3 text-sm text-ivory" /></label>
           <button disabled={loading} className="mt-2 flex min-h-12 items-center justify-center gap-2 bg-brass px-5 text-xs font-semibold uppercase tracking-wider text-obsidian disabled:opacity-50"><Search size={15} />{loading ? 'Checking…' : 'Track order'}</button>
+          <a href={`tel:${String(settings.contact_phone || '+233 55 915 5792').replace(/[^\d+]/g, '')}`} className="mt-2 flex min-h-11 items-center justify-center gap-2 border border-brass/25 px-4 text-xs uppercase tracking-wider text-brass transition-colors hover:border-brass hover:bg-brass/10"><PhoneCall size={15} /> Call the studio for help</a>
         </form>
 
         <section className="border border-brass/15 bg-carbon p-5 sm:p-7">

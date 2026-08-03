@@ -22,6 +22,7 @@ const SETTING_DEFAULTS = [
   { key: 'show_blog', label: 'Show Blog Navigation', value: 'false', group: 'Navigation', icon: 'globe' },
   { key: 'show_testimonials', label: 'Enable Testimonials Page', value: 'false', group: 'Navigation', icon: 'globe' },
   { key: 'show_contact', label: 'Show Contact Navigation', value: 'true', group: 'Navigation', icon: 'globe' },
+  { key: 'contact_phone', label: 'Call / Phone Number', value: '+233 55 915 5792', group: 'Contact', icon: 'phone', hint: 'Used by the Call the studio buttons across checkout, tracking, and contact pages.' },
   { key: 'whatsapp_number', label: 'WhatsApp Number', value: '', group: 'Contact', icon: 'phone', hint: 'Include country code e.g. +233...' },
   { key: 'contact_email', label: 'Contact Email', value: '', group: 'Contact', icon: 'mail' },
   { key: 'show_contact_map', label: 'Show Contact Map', value: 'false', group: 'Contact', icon: 'globe' },

@@ -667,6 +667,7 @@ async function ensureSeeds() {
     }
   }
   const operationalDefaults = [
+    ['contact_phone', '+233 55 915 5792', 'Call / Phone Number'],
     ['show_shop', 'false', 'Show Shop Navigation'],
     ['show_blog', 'false', 'Show Blog Navigation'],
     ['show_testimonials', 'false', 'Enable Testimonials Page'],
