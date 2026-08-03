@@ -316,7 +316,7 @@ export default function ChatWorkspace({ adminMode = false }) {
 
   return (
     <>
-      <div className={`grid h-[calc(100dvh-14rem)] min-h-[430px] overflow-hidden border border-brass/15 bg-carbon sm:h-[calc(100dvh-13rem)] lg:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] ${adminMode ? 'lg:h-[calc(100dvh-12rem)]' : 'lg:h-[calc(100dvh-10rem)]'} lg:min-h-[560px]`}>
+      <div className={`grid min-h-0 overflow-hidden border border-brass/15 bg-carbon lg:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] ${adminMode ? 'h-[calc(100dvh-14rem)] min-h-[430px] sm:h-[calc(100dvh-13rem)] lg:h-[calc(100dvh-12rem)] lg:min-h-[560px]' : 'h-full'}`}>
         <aside className={`${activeId ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col overflow-hidden border-r border-brass/15`}>
           <div className="shrink-0 border-b border-brass/15 p-4">
             <div className="flex items-center justify-between gap-3"><h2 className="font-display text-2xl text-ivory">{adminMode ? 'Studio conversations' : 'Messages'}</h2><div className="flex items-center gap-1">
