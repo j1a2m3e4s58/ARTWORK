@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import Footer from './Footer';
 import FloatingSocial from './FloatingSocial';
@@ -7,16 +7,19 @@ import MobileBottomNav from './MobileBottomNav';
 import ServiceNotice from './ServiceNotice';
 
 export default function Layout() {
+  const location = useLocation();
+  const isMessageWorkspace = location.pathname === '/messages';
+
   return (
-    <div className="min-h-screen bg-obsidian pb-20 text-ivory md:pb-0">
+    <div className={`${isMessageWorkspace ? 'h-dvh overflow-hidden' : 'min-h-screen pb-20 md:pb-0'} bg-obsidian text-ivory`}>
       <Navbar />
       <ServiceNotice />
-      <FloatingSocial />
-      <main>
+      {!isMessageWorkspace && <FloatingSocial />}
+      <main className={isMessageWorkspace ? 'h-full overflow-hidden' : undefined}>
         <Outlet />
       </main>
-      <Footer />
-      <FloatingActions />
+      {!isMessageWorkspace && <Footer />}
+      {!isMessageWorkspace && <FloatingActions />}
       <MobileBottomNav />
     </div>
   );
