@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Archive, ArrowDown, ArrowLeft, Ban, Bell, BellOff, CheckCheck, Download, File, FileArchive, FileSpreadsheet, FileText, Forward, Image, Loader2,
+  Archive, ArrowDown, ArrowLeft, Ban, Bell, BellOff, CheckCheck, Clapperboard, Download, File, FileArchive, FileSpreadsheet, FileText, Forward, Image, Images, Loader2,
   Megaphone, MessageCircle, Mic, MoreVertical, Paperclip, Pencil, Plus, Reply, RotateCcw,
   Search, Send, ShoppingBag, Smile, Square, Trash2, Users, WifiOff, X,
 } from 'lucide-react';
@@ -54,18 +54,18 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
   if (type?.startsWith('image/')) return (
     <button type="button" onClick={() => onOpen?.(attachment)} className="mt-2 block overflow-hidden border border-brass/15 bg-obsidian text-left">
       <img src={url} alt={name || 'Shared image'} className={`${compact ? 'max-h-40' : 'max-h-72'} w-full object-contain`} />
-      {name && <span className="block truncate px-3 py-2 text-xs text-ivory/60">{name}</span>}
+      {name && <span title={name} className="block truncate px-3 py-2 text-xs text-ivory/60">{name}</span>}
     </button>
   );
   if (type?.startsWith('video/')) return (
     <div className="mt-2 overflow-hidden border border-brass/15 bg-black">
       <video src={url} controls preload="metadata" playsInline className={`${compact ? 'max-h-40' : 'max-h-72'} w-full`} />
-      <p className="flex justify-between gap-3 px-3 py-2 text-xs text-ivory/60"><span className="truncate">{name || 'Video'}</span><span>{formatBytes(bytes)}</span></p>
+      <p className="flex justify-between gap-3 px-3 py-2 text-xs text-ivory/60"><span title={name || 'Video'} className="truncate">{name || 'Video'}</span><span>{formatBytes(bytes)}</span></p>
     </div>
   );
   if (type?.startsWith('audio/')) return (
     <div className="mt-2 w-full min-w-0 max-w-full border border-brass/15 bg-obsidian p-3">
-      <p className="mb-2 flex items-center gap-2 truncate text-xs text-brass"><Mic size={15} />{name || 'Voice message'}</p>
+      <p title={name || 'Voice message'} className="mb-2 flex items-center gap-2 truncate text-xs text-brass"><Mic size={15} />{name || 'Voice message'}</p>
       <audio src={url} controls preload="metadata" className="h-9 w-full" />
     </div>
   );
@@ -73,7 +73,7 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
   return (
     <button type="button" onClick={() => onOpen?.(attachment)} className="mt-2 flex w-full min-w-0 max-w-full items-center gap-3 overflow-hidden border border-brass/15 bg-obsidian p-3 text-left text-xs text-brass">
       <span className={`flex h-11 w-11 shrink-0 items-center justify-center ${color}`}><Icon size={20} /></span>
-      <span className="min-w-0 flex-1"><b className="block truncate font-medium">{name || 'Open attachment'}</b><small className="text-ivory/35">{label} {formatBytes(bytes) && `· ${formatBytes(bytes)}`}</small></span>
+      <span className="min-w-0 flex-1"><b title={name || 'Open attachment'} className="block truncate font-medium">{name || 'Open attachment'}</b><small className="text-ivory/35">{label} {formatBytes(bytes) && `· ${formatBytes(bytes)}`}</small></span>
       <Download size={16} />
     </button>
   );
@@ -85,10 +85,10 @@ function PreviewOverlay({ attachment, onClose }) {
   const previewUrl = attachment.previewUrl || attachment.url;
   const downloadUrl = attachment.downloadUrl || attachment.url;
   return (
-    <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/90 p-3 backdrop-blur-md sm:p-8" role="dialog" aria-modal="true" aria-label="Attachment preview">
+    <div onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }} className="fixed inset-0 z-[180] flex items-center justify-center bg-black/90 p-3 backdrop-blur-md sm:p-8" role="dialog" aria-modal="true" aria-label="Attachment preview">
       <div className="flex h-full max-h-[900px] w-full max-w-5xl flex-col border border-brass/25 bg-obsidian shadow-2xl">
         <header className="flex items-center justify-between gap-3 border-b border-brass/15 p-3 sm:p-4">
-          <div className="min-w-0"><p className="truncate text-sm text-ivory">{attachment.name || 'Attachment preview'}</p><p className="text-xs text-ivory/35">{formatBytes(attachment.bytes)}</p></div>
+          <div className="min-w-0"><p title={attachment.name || 'Attachment preview'} className="break-all text-sm text-ivory">{attachment.name || 'Attachment preview'}</p><p className="text-xs text-ivory/35">{formatBytes(attachment.bytes)}</p></div>
           <div className="flex gap-2"><a href={downloadUrl} target="_blank" rel="noreferrer" download className="flex h-10 items-center gap-2 border border-brass/20 px-3 text-xs text-brass"><Download size={15} /><span className="hidden sm:inline">Download file</span></a><button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center border border-brass/20 text-ivory"><X size={18} /></button></div>
         </header>
         <div className="min-h-0 flex-1 bg-black/40 p-2 sm:p-4">
@@ -127,6 +127,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [showAnnouncement, setShowAnnouncement] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [shopPickerOpen, setShopPickerOpen] = useState(false);
+  const [resourceKind, setResourceKind] = useState('shop');
   const [shopProducts, setShopProducts] = useState([]);
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [shopLoading, setShopLoading] = useState(false);
@@ -152,8 +153,38 @@ export default function ChatWorkspace({ adminMode = false }) {
   const typingLastSentRef = useRef({ value: false, at: 0 });
   const activeIdRef = useRef('');
   const text = drafts[activeId] || '';
+  const resourceCopy = {
+    shop: { eyebrow: 'Share for negotiation', title: 'Choose Art Shop items', description: 'Select one or several products to send in this conversation.' },
+    gallery: { eyebrow: 'Share studio work', title: 'Choose gallery artworks', description: 'Select one or several artworks to share in this conversation.' },
+    films: { eyebrow: 'Share a process film', title: 'Choose Art Films', description: 'Select one or several studio films to share in this conversation.' },
+  }[resourceKind];
   const setText = value => setDrafts(current => ({ ...current, [activeId]: typeof value === 'function' ? value(current[activeId] || '') : value }));
   useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
+  useEffect(() => {
+    const closePopovers = event => {
+      if (event.target.closest('[data-chat-popover]')) return;
+      setShowAttachmentMenu(false);
+      setShowConversationMenu(false);
+      setMessageMenuId('');
+      setReactionPickerId('');
+    };
+    const closeWithEscape = event => {
+      if (event.key !== 'Escape') return;
+      setShowAttachmentMenu(false);
+      setShowConversationMenu(false);
+      setMessageMenuId('');
+      setReactionPickerId('');
+      setPreview(null);
+      setForwardingMessage(null);
+      setShopPickerOpen(false);
+    };
+    document.addEventListener('pointerdown', closePopovers);
+    document.addEventListener('keydown', closeWithEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closePopovers);
+      document.removeEventListener('keydown', closeWithEscape);
+    };
+  }, []);
 
   const load = async () => {
     const [conversationRows, people] = await Promise.all([studioClient.chat.conversations(), studioClient.chat.directory()]);
@@ -289,12 +320,23 @@ export default function ChatWorkspace({ adminMode = false }) {
     if (removed) URL.revokeObjectURL(removed.previewUrl);
     return current.filter(item => item.id !== id);
   });
-  const openShopPicker = async () => {
+  const openResourcePicker = async kind => {
     setShowAttachmentMenu(false); setShopPickerOpen(true); setShopLoading(true); setError('');
-    try { setShopProducts(await studioClient.entities.ShopProduct.list('-created_date', 100)); }
+    setResourceKind(kind);
+    try {
+      const entity = kind === 'gallery' ? studioClient.entities.Artwork : kind === 'films' ? studioClient.entities.Video : studioClient.entities.ShopProduct;
+      const rows = await entity.list('-created_date', 100);
+      setShopProducts(rows.map(item => ({
+        ...item,
+        imageUrl: kind === 'films' ? item.thumbnailUrl : item.imageUrl,
+        shareUrl: `${window.location.origin}${kind === 'gallery' ? '/gallery' : kind === 'films' ? '/videos' : '/shop'}`,
+        shareLabel: kind === 'gallery' ? 'Gallery artwork' : kind === 'films' ? 'Art Film' : 'Art Shop item',
+      })));
+    }
     catch (loadError) { setError(loadError.message); setShopPickerOpen(false); }
     finally { setShopLoading(false); }
   };
+  const openShopPicker = () => openResourcePicker('shop');
   const sendShopSelection = async () => {
     const chosen = shopProducts.filter(product => selectedProducts.includes(product.id));
     if (!chosen.length || !activeId) return;
@@ -302,6 +344,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     try {
       await studioClient.chat.sendBatch(activeId, chosen.map((product, index) => ({
         body: `${index === 0 ? 'I would like to discuss or negotiate these Art Shop items:\n\n' : ''}${product.title}${product.price != null ? ` — GHS ${Number(product.price).toLocaleString('en-GH', { minimumFractionDigits: 2 })}` : ''}\nView in the Art Shop: ${window.location.origin}/shop`,
+        ...{ body: `${index === 0 ? `I would like to share these ${resourceKind === 'gallery' ? 'gallery artworks' : resourceKind === 'films' ? 'Art Films' : 'Art Shop items'}:\n\n` : ''}${product.title}${resourceKind === 'shop' && product.price != null ? ` — GHS ${Number(product.price).toLocaleString('en-GH', { minimumFractionDigits: 2 })}` : ''}\n${product.shareLabel}: ${product.shareUrl}${resourceKind === 'films' && product.videoUrl ? `\nWatch source: ${product.videoUrl}` : ''}` },
         attachmentUrl: product.imageUrl || '',
         attachmentName: product.title,
         attachmentType: product.imageUrl ? 'image/jpeg' : '',
@@ -524,8 +567,8 @@ export default function ChatWorkspace({ adminMode = false }) {
               <div className="min-w-0 flex-1"><p className="truncate font-display text-xl text-ivory">{conversationName(active, user.id)}</p><p className={`truncate text-xs ${active.typingUsers?.length || other?.online ? 'text-green-400' : 'text-ivory/35'}`}>{active.typingUsers?.length ? `${active.typingUsers[0].name} is typing…` : active.type === 'announcement' ? 'Studio updates for every member' : lastSeen(other)}</p></div>
               {connectionState !== 'connected' && <span className="hidden items-center gap-1 text-[10px] uppercase tracking-wider text-amber-300 sm:flex"><WifiOff size={13} />{connectionState === 'offline' ? 'Offline' : 'Reconnecting'}</span>}
               <button type="button" onClick={() => setSearchingMessages(value => !value)} className="flex h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass" aria-label="Search this conversation"><Search size={17} /></button>
-              <div className="relative"><button type="button" onClick={() => setShowConversationMenu(value => !value)} className="flex h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass" aria-label="Conversation options"><MoreVertical size={18} /></button>
-                {showConversationMenu && <div className="absolute right-0 top-11 z-30 w-52 border border-brass/20 bg-carbon p-1 shadow-2xl">
+              <div data-chat-popover className="relative"><button type="button" onClick={() => setShowConversationMenu(value => !value)} className="flex h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass" aria-label="Conversation options"><MoreVertical size={18} /></button>
+                {showConversationMenu && <div data-chat-popover className="absolute right-0 top-11 z-30 w-52 border border-brass/20 bg-carbon p-1 shadow-2xl">
                   <button type="button" onClick={() => updateConversation({ muted: !active.muted })} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">{active.muted ? <Bell size={15} /> : <BellOff size={15} />}{active.muted ? 'Unmute alerts' : 'Mute alerts'}</button>
                   <button type="button" onClick={() => updateConversation({ archived: !active.archived })} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10"><Archive size={15} />{active.archived ? 'Restore chat' : 'Archive chat'}</button>
                   {active.type !== 'announcement' && <button type="button" onClick={() => updateConversation({ blocked: !active.blockedByMe })} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-red-300 hover:bg-red-400/10"><Ban size={15} />{active.blockedByMe ? 'Unblock person' : 'Block person'}</button>}
@@ -548,7 +591,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                   {message.deletedForEveryone ? <div className="flex items-center gap-3"><p className="flex items-center gap-2 text-sm italic text-ivory/35"><Ban size={14} />This message was deleted.</p><button type="button" onClick={() => removeMessage(message, 'me')} className="text-[10px] uppercase tracking-wider text-ivory/30 hover:text-brass">Remove</button></div> : editing?.id === message.id ? <div className="space-y-2"><textarea autoFocus value={editing.body} onChange={event => setEditing({ ...editing, body: event.target.value })} className="min-h-20 w-full resize-none border border-brass/20 bg-obsidian p-2 text-sm text-ivory outline-none" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="h-8 px-3 text-xs text-ivory/50">Cancel</button><button type="button" onClick={saveEdit} className="h-8 bg-brass px-3 text-xs text-obsidian">Save</button></div></div> : message.body && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm leading-6 text-ivory/75">{message.body}</p>}
                   <AttachmentPreview attachment={attachment} onOpen={setPreview} />
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                    {!message.deletedForEveryone && <div className="relative flex items-center gap-1"><button type="button" onClick={() => setReplyingTo(message)} title="Reply" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Reply size={13} /></button><button type="button" onClick={() => setReactionPickerId(value => value === message.id ? '' : message.id)} title="React" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Smile size={13} /></button><button type="button" onClick={() => setMessageMenuId(value => value === message.id ? '' : message.id)} title="Message options" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><MoreVertical size={13} /></button>
+                    {!message.deletedForEveryone && <div data-chat-popover className="relative flex items-center gap-1"><button type="button" onClick={() => setReplyingTo(message)} title="Reply" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Reply size={13} /></button><button type="button" onClick={() => setReactionPickerId(value => value === message.id ? '' : message.id)} title="React" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Smile size={13} /></button><button type="button" onClick={() => setMessageMenuId(value => value === message.id ? '' : message.id)} title="Message options" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><MoreVertical size={13} /></button>
                       {reactionPickerId === message.id && <div className={`absolute bottom-8 z-20 flex max-w-[calc(100vw-2rem)] gap-1 border border-brass/15 bg-carbon p-2 shadow-xl ${mine ? 'right-0' : 'left-0'}`}>{REACTIONS.map(emoji => <button type="button" key={emoji} onClick={() => { react(message, emoji); setReactionPickerId(''); }} className={`px-1 text-lg ${message.reactions?.[user.id] === emoji ? 'bg-brass/15' : ''}`}>{emoji}</button>)}</div>}
                       {messageMenuId === message.id && <div className={`absolute bottom-8 z-20 w-44 max-w-[calc(100vw-2rem)] border border-brass/15 bg-carbon p-1 shadow-xl ${mine ? 'right-0' : 'left-0'}`}>{mine && message.body && <button type="button" onClick={() => { setEditing({ id: message.id, body: message.body }); setMessageMenuId(''); }} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs text-ivory/65 hover:bg-brass/10"><Pencil size={12} />Edit message</button>}{(message.allowForward || ['admin', 'editor', 'support'].includes(user.role)) && <button type="button" onClick={() => { setForwardingMessage(message); setMessageMenuId(''); }} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs text-ivory/65 hover:bg-brass/10"><Forward size={12} />Forward</button>}<button type="button" onClick={() => { removeMessage(message, 'me'); setMessageMenuId(''); }} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs text-ivory/65 hover:bg-brass/10"><Trash2 size={12} />Delete for me</button>{mine && <button type="button" onClick={() => { removeMessage(message, 'everyone'); setMessageMenuId(''); }} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs text-red-300 hover:bg-red-400/10"><Trash2 size={12} />Delete for everyone</button>}</div>}
                     </div>}
@@ -566,13 +609,15 @@ export default function ChatWorkspace({ adminMode = false }) {
               {attachments.length > 0 && <div className="mb-2 min-w-0 max-w-full overflow-hidden border border-brass/15 bg-obsidian p-2"><div className="flex max-h-52 max-w-full gap-2 overflow-x-auto overscroll-contain pb-1 [scrollbar-gutter:stable]">{attachments.map(item => <div key={item.id} className="relative w-40 shrink-0 border border-brass/10 bg-carbon p-2"><AttachmentPreview compact attachment={{ url: item.previewUrl, name: item.file.name, type: item.mime, bytes: item.file.size }} onOpen={setPreview} /><button type="button" disabled={busy} onClick={() => removeAttachment(item.id)} aria-label={`Remove ${item.file.name}`} className="absolute right-1 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/80 text-white disabled:opacity-40"><X size={14} /></button>{busy && <div className="mt-2"><div className="flex justify-between text-[10px] text-ivory/45"><span>Uploading</span><span>{uploadProgress[item.id] || 0}%</span></div><div className="mt-1 h-1 overflow-hidden bg-ivory/10"><div className="h-full bg-brass transition-all" style={{ width: `${uploadProgress[item.id] || 0}%` }} /></div></div>}</div>)}</div><div className="mt-2 flex flex-wrap items-center justify-between gap-3"><span className="text-[10px] uppercase tracking-wider text-ivory/35">{attachments.length} of 10 files selected</span><div className="flex items-center gap-3">{attachments.length < 10 && !busy && <label className="flex min-h-9 cursor-pointer items-center gap-1.5 border border-brass/20 px-3 text-[10px] uppercase tracking-wider text-brass"><Plus size={13} />Add more<input type="file" multiple className="hidden" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} /></label>}{busy && <button type="button" onClick={() => uploadAbortRef.current?.abort()} className="text-[10px] uppercase tracking-wider text-red-300">Cancel upload</button>}</div></div></div>}
               {uploadFailed && attachments.length > 0 && !busy && <button type="button" onClick={send} className="mb-2 flex h-10 w-full items-center justify-center gap-2 border border-red-400/25 text-xs text-red-300"><RotateCcw size={14} />Retry failed upload</button>}
               <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-2">
-                <div className="relative">
+                <div data-chat-popover className="relative">
                   <button type="button" disabled={active.blocked || (active.type === 'announcement' && !adminMode)} onClick={() => setShowAttachmentMenu(value => !value)} className="flex h-11 w-11 shrink-0 items-center justify-center border border-brass/20 text-brass disabled:cursor-not-allowed disabled:opacity-40" title="Add an attachment" aria-label="Open attachment menu"><Paperclip size={17} /></button>
                   {showAttachmentMenu && <div className="absolute bottom-12 left-0 z-50 w-[min(15rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-hidden border border-brass/20 bg-carbon p-1 shadow-2xl">
                     <button type="button" onClick={() => { setShowAttachmentMenu(false); photosInputRef.current?.click(); }} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Image size={17} className="text-sky-400" /><span><b className="block font-medium">Photos & videos</b><small className="text-ivory/35">Choose one or several</small></span></button>
                     <button type="button" onClick={() => { setShowAttachmentMenu(false); documentsInputRef.current?.click(); }} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><FileText size={17} className="text-purple-400" /><span><b className="block font-medium">Documents</b><small className="text-ivory/35">PDF, Word, Excel, slides or ZIP</small></span></button>
                     <button type="button" onClick={() => { setShowAttachmentMenu(false); audioInputRef.current?.click(); }} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Mic size={17} className="text-orange-400" /><span><b className="block font-medium">Audio</b><small className="text-ivory/35">Choose an audio recording</small></span></button>
                     <button type="button" onClick={openShopPicker} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><ShoppingBag size={17} className="text-brass" /><span><b className="block font-medium">Art Shop items</b><small className="text-ivory/35">Share items for discussion</small></span></button>
+                    <button type="button" onClick={() => openResourcePicker('gallery')} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Images size={17} className="text-emerald-400" /><span><b className="block font-medium">Gallery artworks</b><small className="text-ivory/35">Share finished works</small></span></button>
+                    <button type="button" onClick={() => openResourcePicker('films')} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Clapperboard size={17} className="text-violet-400" /><span><b className="block font-medium">Art Films</b><small className="text-ivory/35">Share a studio film</small></span></button>
                   </div>}
                   <input ref={photosInputRef} type="file" multiple className="hidden" accept="image/*,video/*" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} />
                   <input ref={documentsInputRef} type="file" multiple className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} />
@@ -587,7 +632,7 @@ export default function ChatWorkspace({ adminMode = false }) {
         </section>
       </div>
       <PreviewOverlay attachment={preview} onClose={() => setPreview(null)} />
-      {shopPickerOpen && <div className="fixed inset-0 z-[176] flex items-center justify-center bg-black/85 p-3 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="shop-picker-title"><section className="flex max-h-[88dvh] w-full max-w-4xl flex-col border border-brass/25 bg-carbon shadow-2xl"><header className="flex items-center justify-between gap-3 border-b border-brass/15 p-4 sm:p-5"><div><p className="text-[10px] uppercase tracking-[.25em] text-brass">Share for negotiation</p><h3 id="shop-picker-title" className="font-display text-2xl text-ivory sm:text-3xl">Choose Art Shop items</h3><p className="mt-1 text-xs text-ivory/40">Select one or several items to send in this conversation.</p></div><button type="button" onClick={() => { setShopPickerOpen(false); setSelectedProducts([]); }} className="flex h-10 w-10 items-center justify-center border border-brass/15"><X size={17} /></button></header><div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">{shopLoading ? <div className="flex min-h-60 items-center justify-center"><Loader2 className="animate-spin text-brass" /></div> : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{shopProducts.map(product => { const selected = selectedProducts.includes(product.id); return <button type="button" key={product.id} onClick={() => setSelectedProducts(current => selected ? current.filter(id => id !== product.id) : [...current, product.id])} className={`overflow-hidden border text-left ${selected ? 'border-brass bg-brass/10' : 'border-brass/10 bg-obsidian'}`}><div className="relative aspect-[4/3] bg-black/30">{product.imageUrl ? <img src={product.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center"><Image className="text-ivory/20" /></div>}{selected && <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-brass text-obsidian"><CheckCheck size={15} /></span>}</div><div className="p-3"><b className="block truncate text-sm text-ivory">{product.title}</b><span className="mt-1 block text-sm text-brass">GHS {Number(product.price || 0).toLocaleString('en-GH', { minimumFractionDigits: 2 })}</span></div></button>; })}</div>}</div><footer className="flex items-center justify-between gap-3 border-t border-brass/15 p-4"><span className="text-xs text-ivory/40">{selectedProducts.length} selected</span><button type="button" disabled={!selectedProducts.length || busy} onClick={sendShopSelection} className="min-h-11 bg-brass px-5 text-xs uppercase tracking-wider text-obsidian disabled:opacity-40">{busy ? 'Sending…' : 'Send selected items'}</button></footer></section></div>}
+      {shopPickerOpen && <div onMouseDown={event => { if (event.target === event.currentTarget) { setShopPickerOpen(false); setSelectedProducts([]); } }} className="fixed inset-0 z-[176] flex items-center justify-center bg-black/85 p-3 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="shop-picker-title"><section className="flex max-h-[88dvh] w-full max-w-4xl flex-col border border-brass/25 bg-carbon shadow-2xl"><header className="flex items-center justify-between gap-3 border-b border-brass/15 p-4 sm:p-5"><div><p className="text-[10px] uppercase tracking-[.25em] text-brass">{resourceCopy.eyebrow}</p><h3 id="shop-picker-title" className="font-display text-2xl text-ivory sm:text-3xl">{resourceCopy.title}</h3><p className="mt-1 text-xs text-ivory/40">{resourceCopy.description}</p></div><button type="button" onClick={() => { setShopPickerOpen(false); setSelectedProducts([]); }} className="flex h-10 w-10 items-center justify-center border border-brass/15"><X size={17} /></button></header><div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">{shopLoading ? <div className="flex min-h-60 items-center justify-center"><Loader2 className="animate-spin text-brass" /></div> : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{shopProducts.map(product => { const selected = selectedProducts.includes(product.id); return <button type="button" key={product.id} onClick={() => setSelectedProducts(current => selected ? current.filter(id => id !== product.id) : [...current, product.id])} className={`overflow-hidden border text-left ${selected ? 'border-brass bg-brass/10' : 'border-brass/10 bg-obsidian'}`}><div className="relative aspect-[4/3] bg-black/30">{product.imageUrl ? <img src={product.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center"><Image className="text-ivory/20" /></div>}{selected && <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-brass text-obsidian"><CheckCheck size={15} /></span>}</div><div className="p-3"><b title={product.title} className="block truncate text-sm text-ivory">{product.title}</b>{resourceKind === 'shop' && <span className="mt-1 block text-sm text-brass">GHS {Number(product.price || 0).toLocaleString('en-GH', { minimumFractionDigits: 2 })}</span>}</div></button>; })}</div>}</div><footer className="flex items-center justify-between gap-3 border-t border-brass/15 p-4"><span className="text-xs text-ivory/40">{selectedProducts.length} selected</span><button type="button" disabled={!selectedProducts.length || busy} onClick={sendShopSelection} className="min-h-11 bg-brass px-5 text-xs uppercase tracking-wider text-obsidian disabled:opacity-40">{busy ? 'Sending…' : 'Send selected items'}</button></footer></section></div>}
       {forwardingMessage && <div className="fixed inset-0 z-[175] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="forward-message-title"><div className="max-h-[80dvh] w-full max-w-md overflow-hidden border border-brass/25 bg-carbon shadow-2xl"><header className="flex items-center justify-between border-b border-brass/15 p-4"><div><h3 id="forward-message-title" className="font-display text-2xl text-ivory">Forward message</h3><p className="text-xs text-ivory/40">Choose one of your conversations</p></div><button type="button" onClick={() => setForwardingMessage(null)} aria-label="Close forward message" className="flex h-10 w-10 items-center justify-center border border-brass/15"><X size={17} /></button></header><div className="max-h-[60dvh] overflow-y-auto p-2">{conversations.filter(item => item.id !== activeId && !item.archived).map(item => <button type="button" disabled={busy} key={item.id} onClick={() => forwardMessage(item.id)} className="flex min-h-14 w-full items-center gap-3 border-b border-brass/10 px-3 text-left hover:bg-brass/10 disabled:opacity-40"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-brass/10 text-xs text-brass">{initials(conversationName(item, user.id))}</span><span className="truncate text-sm text-ivory/70">{conversationName(item, user.id)}</span></button>)}</div></div></div>}
     </>
   );

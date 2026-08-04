@@ -42,6 +42,7 @@ export default function Navbar() {
   const [chatUnread, setChatUnread] = useState(0);
   const location = useLocation();
   const menuButtonRef = useRef(null);
+  const exploreRef = useRef(null);
   const logoPressTimer = useRef(null);
   const logoLongPressTriggered = useRef(false);
 
@@ -77,6 +78,14 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => () => clearLogoPress(), []);
+  useEffect(() => {
+    const closeExplore = event => {
+      const details = exploreRef.current;
+      if (details?.open && !details.contains(event.target)) details.removeAttribute('open');
+    };
+    document.addEventListener('pointerdown', closeExplore);
+    return () => document.removeEventListener('pointerdown', closeExplore);
+  }, []);
 
   useEffect(() => setMenuOpen(false), [location]);
   useEffect(() => {
@@ -158,7 +167,7 @@ export default function Navbar() {
               </Link>
             ))}
             {visibleSecondaryLinks.length > 0 && (
-              <details className="group relative">
+              <details ref={exploreRef} className="group relative">
                 <summary className="cursor-pointer list-none whitespace-nowrap font-tight text-[13px] font-medium tracking-[0.025em] text-ivory/60 hover:text-ivory">Explore</summary>
                 <div className="absolute left-1/2 top-8 min-w-40 -translate-x-1/2 border border-brass/15 bg-carbon/95 p-2 shadow-2xl backdrop-blur-xl">
                   {visibleSecondaryLinks.map(link => <Link key={link.path} to={link.path} className="block px-3 py-2 text-sm text-ivory/55 hover:bg-brass/10 hover:text-brass">{link.label}</Link>)}

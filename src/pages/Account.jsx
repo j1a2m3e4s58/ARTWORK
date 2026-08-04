@@ -3,6 +3,7 @@ import { Bell, CreditCard, Download, ImagePlus, Lock, MessageSquare, Package, Pa
 import PageTransition from '@/components/PageTransition';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
+import { openPaystackPopup } from '@/lib/paystackPopup';
 
 const statusClass = status => ({
   pending: 'text-yellow-300 bg-yellow-300/10',
@@ -151,8 +152,15 @@ export default function Account() {
     setError('');
     try {
       const initialized = await studioClient.payments.initialize(order.id);
-      if (!initialized.authorizationUrl) throw new Error('The secure payment page could not be opened.');
-      window.location.assign(initialized.authorizationUrl);
+      if (!initialized.accessCode) {
+        if (initialized.authorizationUrl) window.location.assign(initialized.authorizationUrl);
+        throw new Error('The secure payment panel could not be opened.');
+      }
+      const result = await openPaystackPopup(initialized.accessCode);
+      if (result.status === 'cancelled') return setNotice('Payment was cancelled. Your order remains saved.');
+      const verified = await studioClient.payments.verify(initialized.reference);
+      setData(current => ({ ...current, orders: current.orders.map(item => item.id === order.id ? verified.order : item) }));
+      setNotice(verified.paid ? 'Payment confirmed. Your order is now being prepared.' : 'Payment is still being confirmed.');
     } catch (paymentError) {
       setError(paymentError.message);
     }

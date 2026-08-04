@@ -11,14 +11,14 @@ export default function Layout() {
   const isMessageWorkspace = location.pathname === '/messages';
 
   return (
-    <div className="min-h-screen bg-obsidian pb-20 text-ivory md:pb-0">
+    <div className={`min-h-screen bg-obsidian text-ivory ${isMessageWorkspace ? 'pb-0' : 'pb-20 md:pb-0'}`}>
       <Navbar />
       <ServiceNotice />
       {!isMessageWorkspace && <FloatingSocial />}
       <main>
         <Outlet />
       </main>
-      <Footer />
+      {!isMessageWorkspace && <Footer />}
       {!isMessageWorkspace && <FloatingActions />}
       <MobileBottomNav />
     </div>

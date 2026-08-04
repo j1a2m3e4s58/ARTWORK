@@ -1949,6 +1949,12 @@ app.get('/api/chat/messages/:id/attachment', requireVerifiedUser, async (req, re
   const disposition = req.query.download === '1' ? 'attachment' : 'inline';
   res.setHeader('Content-Disposition', `${disposition}; filename="${filename}"`);
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'private, max-age=300');
+  const media = db.data.Media.find(item => item.url === message.attachmentUrl && item.preservedData);
+  if (media?.preservedData) {
+    const body = Buffer.from(media.preservedData, 'base64');
+    return res.type(message.attachmentType || media.mime || 'application/octet-stream').send(body);
+  }
   if (message.attachmentUrl.startsWith('/uploads/')) {
     const localName = path.basename(message.attachmentUrl);
     return res.type(message.attachmentType || 'application/octet-stream').sendFile(path.join(uploadDir, localName));
@@ -1964,7 +1970,10 @@ app.get('/api/chat/messages/:id/attachment', requireVerifiedUser, async (req, re
   }
   try {
     const upstream = await fetch(remote, { signal: AbortSignal.timeout(60_000) });
-    if (!upstream.ok) return res.status(502).json({ error: 'The stored attachment could not be opened.' });
+    if (!upstream.ok) {
+      reportOperationalError('chat_attachment_upstream_rejected', new Error(`Cloud storage returned ${upstream.status}`), { messageId: message.id });
+      return res.status(502).type('text/plain').send('This older attachment is unavailable from cloud storage. Ask the sender to attach it again.');
+    }
     const length = Number(upstream.headers.get('content-length') || 0);
     if (length > 80 * 1024 * 1024) return res.status(413).json({ error: 'Attachment is too large to preview.' });
     const body = Buffer.from(await upstream.arrayBuffer());
@@ -1972,7 +1981,7 @@ app.get('/api/chat/messages/:id/attachment', requireVerifiedUser, async (req, re
     res.type(message.attachmentType || upstream.headers.get('content-type') || 'application/octet-stream').send(body);
   } catch (error) {
     reportOperationalError('chat_attachment_proxy_failed', error, { messageId: message.id });
-    res.status(502).json({ error: 'The stored attachment could not be opened.' });
+    res.status(502).type('text/plain').send('This attachment is temporarily unavailable. Please try again.');
   }
 });
 
@@ -2320,7 +2329,7 @@ app.post('/api/payments/initialize', requireVerifiedUser, mutationLimiter, async
   if (order.status === 'cancelled') return res.status(409).json({ error: 'This order has been cancelled.' });
   if (order.paymentStatus === 'paid') return res.status(409).json({ error: 'This order is already paid.' });
   if (order.paymentReference && order.paymentAuthorizationUrl) {
-    return res.json({ authorizationUrl: order.paymentAuthorizationUrl, reference: order.paymentReference, resumed: true });
+    return res.json({ authorizationUrl: order.paymentAuthorizationUrl, accessCode: order.paymentAccessCode || '', reference: order.paymentReference, resumed: true });
   }
   if (!paymentStatus.configured) return res.status(503).json({ error: 'Online payment is not configured. Choose WhatsApp ordering instead.' });
   try {
@@ -2337,9 +2346,10 @@ app.post('/api/payments/initialize', requireVerifiedUser, mutationLimiter, async
     order.paymentReference = reference;
     order.paymentStatus = 'initialized';
     order.paymentAuthorizationUrl = initialized.authorization_url;
+    order.paymentAccessCode = initialized.access_code;
     await audit(req.user, 'order.payment_initialized', 'Order', order.id, { provider: paymentStatus.provider });
     await save();
-    res.json({ authorizationUrl: initialized.authorization_url, reference });
+    res.json({ authorizationUrl: initialized.authorization_url, accessCode: initialized.access_code, reference });
   } catch (error) {
     res.status(502).json({ error: error.message });
   }
@@ -2700,6 +2710,12 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     altText: '',
     sourceName: isPublicApplicationUpload ? 'Internship applicant upload' : isChatAttachment ? 'Private chat attachment' : isProfileAvatar ? 'Profile photo' : staffRoles.has(req.user.role) ? 'Studio upload' : 'Customer upload',
     contentStatus: staffRoles.has(req.user.role) && !isPublicApplicationUpload && !isChatAttachment && !isProfileAvatar ? 'original' : 'customer-reference',
+    // Keep a private database copy of modest-sized chat documents. Some cloud
+    // accounts restrict PDF/raw delivery even after accepting the upload; the
+    // authenticated attachment endpoint can still serve the exact bytes.
+    preservedData: isChatAttachment && !detected.mime.startsWith('image/') && !detected.mime.startsWith('video/') && !detected.mime.startsWith('audio/') && req.file.size <= 12 * 1024 * 1024
+      ? req.file.buffer.toString('base64')
+      : undefined,
     created_date: now(),
   };
   db.data.Media.push(media);

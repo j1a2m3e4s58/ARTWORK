@@ -24,7 +24,7 @@ export async function storeFile({ buffer, mime, extension, uploadDir, id }) {
     if (!cloudName || (!signedCloudinary && !unsignedCloudinary)) throw new Error('Cloud storage is selected but not fully configured.');
     const resourceType = mime.startsWith('video/') || mime.startsWith('audio/')
       ? 'video'
-      : mime.startsWith('image/')
+      : mime.startsWith('image/') || mime === 'application/pdf'
         ? 'image'
         : 'raw';
     const form = new FormData();
@@ -55,7 +55,7 @@ export async function storeFile({ buffer, mime, extension, uploadDir, id }) {
   return {
     url: `/uploads/${filename}`,
     publicId: filename,
-    resourceType: mime.startsWith('video/') || mime.startsWith('audio/') ? 'video' : mime.startsWith('image/') ? 'image' : 'raw',
+    resourceType: mime.startsWith('video/') || mime.startsWith('audio/') ? 'video' : mime.startsWith('image/') || mime === 'application/pdf' ? 'image' : 'raw',
   };
 }
 
