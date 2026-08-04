@@ -6,7 +6,6 @@ import {
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { paymentMethodLabel, renderWhatsAppOrderMessage } from '@/lib/commerceOptions';
-import { openPaystackPopup } from '@/lib/paystackPopup';
 
 const fieldClass = 'min-h-12 w-full border border-brass/15 bg-obsidian px-4 text-sm text-ivory placeholder:text-ivory/25 focus:border-brass/45 focus:outline-none';
 
@@ -122,16 +121,11 @@ export default function CommerceCheckout({
 
   const launchSecurePayment = async createdOrder => {
     const initialized = await studioClient.payments.initialize(createdOrder.id);
-    if (!initialized.accessCode) {
-      if (initialized.authorizationUrl) window.location.assign(initialized.authorizationUrl);
-      throw new Error('The secure payment panel could not be opened. Please try again.');
+    if (!initialized.authorizationUrl) {
+      throw new Error('Paystack did not return a secure checkout link. Please try again.');
     }
-    const result = await openPaystackPopup(initialized.accessCode);
-    if (result.status === 'cancelled') return { cancelled: true };
-    const verified = await studioClient.payments.verify(initialized.reference);
-    if (!verified.paid) throw new Error('Payment is still being confirmed. You can safely retry from your account.');
-    setOrder(verified.order);
-    return { paid: true, order: verified.order };
+    window.location.assign(initialized.authorizationUrl);
+    return { redirected: true };
   };
 
   const placeOrder = async ({ continueToWhatsApp = false } = {}) => {
@@ -169,8 +163,7 @@ export default function CommerceCheckout({
       if (!customLocation && paymentMethod === 'paystack') {
         try {
           const paymentResult = await launchSecurePayment(created);
-          setView('confirmed');
-          if (paymentResult?.cancelled) setError('Payment was not completed. Your order is saved and you can continue payment below.');
+          if (!paymentResult?.redirected) setView('confirmed');
           return;
         } catch (paymentError) {
           setView('confirmed');
