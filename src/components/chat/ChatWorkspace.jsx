@@ -228,12 +228,20 @@ export default function ChatWorkspace({ adminMode = false }) {
 
   const load = async () => {
     const [conversationRows, people] = await Promise.all([studioClient.chat.conversations(), studioClient.chat.directory()]);
-    setConversations(conversationRows);
+    const currentProfiles = new Map(people.map(person => [person.id, person]));
+    const hydratedConversations = conversationRows.map(conversation => ({
+      ...conversation,
+      participants: (conversation.participants || []).map(person => ({
+        ...person,
+        ...(currentProfiles.get(person.id) || {}),
+      })),
+    }));
+    setConversations(hydratedConversations);
     setDirectory(people);
-    if (!initializedSelectionRef.current && conversationRows[0]) {
+    if (!initializedSelectionRef.current && hydratedConversations[0]) {
       initializedSelectionRef.current = true;
       const requestedId = new URLSearchParams(window.location.search).get('conversation');
-      setActiveId(conversationRows.some(row => row.id === requestedId) ? requestedId : conversationRows[0].id);
+      setActiveId(hydratedConversations.some(row => row.id === requestedId) ? requestedId : hydratedConversations[0].id);
     }
   };
   const loadMessages = async (id, search = messageQuery, options = {}) => {

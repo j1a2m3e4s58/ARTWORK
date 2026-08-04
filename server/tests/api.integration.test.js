@@ -138,6 +138,14 @@ test('API keeps public reads open while blocking unverified customer mutations',
     const collectorDirectoryEntry = chatDirectory.find(item => item.name === 'Test Collector');
     assert.ok(collectorDirectoryEntry, 'All active signed-in customers should appear in the private chat directory.');
     assert.equal('email' in collectorDirectoryEntry, false, 'The chat directory must not reveal private email addresses.');
+    const avatarResponse = await fetch(`${baseUrl}/api/account/profile`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ full_name: 'Test Collector', chatDiscoverable: true, avatarUrl: '/uploads/collector-avatar.jpg' }),
+    });
+    assert.equal(avatarResponse.status, 200);
+    const refreshedDirectory = await fetch(`${baseUrl}/api/chat/directory`, { headers: { Cookie: adminCookieHeader } }).then(response => response.json());
+    assert.equal(refreshedDirectory.find(item => item.id === collectorDirectoryEntry.id)?.avatarUrl, '/uploads/collector-avatar.jpg');
 
     const conversationResponse = await fetch(`${baseUrl}/api/chat/conversations`, {
       method: 'POST', headers: securedHeaders, body: JSON.stringify({ userId: collectorDirectoryEntry.id }),
@@ -314,6 +322,10 @@ test('API keeps public reads open while blocking unverified customer mutations',
 
     const cancelResponse = await fetch(`${baseUrl}/api/orders/${firstOrder.id}/cancel`, { method: 'POST', headers: securedHeaders });
     assert.equal(cancelResponse.status, 200);
+    const dismissResponse = await fetch(`${baseUrl}/api/account/orders/${firstOrder.id}`, { method: 'DELETE', headers: securedHeaders });
+    assert.equal(dismissResponse.status, 200);
+    const accountOrders = await fetch(`${baseUrl}/api/account/orders`, { headers: { Cookie: adminCookieHeader } }).then(response => response.json());
+    assert.equal(accountOrders.some(item => item.id === firstOrder.id), false, 'A dismissed unfinished order should leave the account view.');
     const productsAfter = await fetch(`${baseUrl}/api/entities/ShopProduct?limit=10`, { headers: { Cookie: adminCookieHeader } }).then(response => response.json());
     assert.equal(productsAfter.find(item => item.id === product.id).inventory, 2);
   } finally {

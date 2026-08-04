@@ -527,6 +527,11 @@ async function runMaintenance() {
       releaseOrderInventory(order);
       changed = true;
     }
+    if (isCustomerRemovableOrder(order)
+      && !order.customerRemovedAt
+      && Date.now() - new Date(order.created_date || 0).getTime() >= CUSTOMER_ORDER_RETENTION_MS) {
+      changed ||= hideOrderFromCustomer(order, 'unfinished_checkout_expired', order.userId);
+    }
   }
   for (const collection of ['passwordResetTokens', 'inviteTokens', 'emailVerificationTokens']) {
     const before = db.data[collection].length;
@@ -539,6 +544,27 @@ async function runMaintenance() {
   changed ||= outboxBefore !== db.data.Outbox.length;
   if (changed) await save();
 }
+
+const CUSTOMER_ORDER_RETENTION_MS = 24 * 60 * 60 * 1000;
+const isCustomerRemovableOrder = order => (
+  !order.deleted_at
+  && !['paid', 'refunded', 'pay_on_delivery', 'quote_required'].includes(String(order.paymentStatus || ''))
+  && !['confirmed', 'processing', 'fulfilled', 'shipped', 'delivered'].includes(String(order.status || ''))
+);
+const hideOrderFromCustomer = (order, reason, actorId) => {
+  if (!isCustomerRemovableOrder(order)) return false;
+  order.customerRemovedAt = now();
+  order.customerRemovalReason = reason;
+  order.updated_date = now();
+  if (!['cancelled', 'expired'].includes(order.status)) {
+    order.status = 'abandoned';
+    order.abandonedAt = now();
+    releaseOrderInventory(order);
+    order.statusHistory ||= [];
+    order.statusHistory.push({ status: 'abandoned', at: now(), actorId });
+  }
+  return true;
+};
 
 function sign(user) {
   return jwt.sign({ id: user.id, version: user.sessionVersion || 0 }, jwtSecret, { expiresIn: '7d' });
@@ -1589,6 +1615,7 @@ const chatUser = user => ({
   name: user.full_name || user.email.split('@')[0],
   role: user.role,
   avatarUrl: user.avatarUrl || '',
+  avatarUpdatedAt: user.updated_date || user.created_date || null,
   online: Date.now() - new Date(user.lastSeenAt || 0).getTime() < 90_000,
   lastSeenAt: user.lastSeenAt || null,
 });
@@ -2041,6 +2068,13 @@ app.get('/api/entities/:name', async (req, res) => {
   });
   let records = queried?.records || db.data[name].filter(record => includeDeleted || !record.deleted_at);
   if (user && ownData && !staffAccess) records = records.filter(record => record.userId === user.id);
+  if (name === 'Order' && user && !staffAccess) {
+    records = records.filter(record => (
+      !record.customerRemovedAt
+      && !(isCustomerRemovableOrder(record)
+        && Date.now() - new Date(record.created_date || 0).getTime() >= CUSTOMER_ORDER_RETENTION_MS)
+    ));
+  }
   if (!staffAccess) {
     const starterMediaAllowed = process.env.ALLOW_STARTER_MEDIA === 'true' || process.env.NODE_ENV !== 'production';
     if (!starterMediaAllowed && ['Artwork', 'HeroSlide', 'ShopProduct', 'Video'].includes(name)) {
@@ -2408,6 +2442,49 @@ app.post('/api/orders/:id/cancel', requireVerifiedUser, mutationLimiter, async (
   await audit(req.user, 'order.cancelled', 'Order', order.id);
   await save();
   res.json(order);
+});
+
+app.delete('/api/account/orders/unfinished', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const removable = db.data.Order.filter(item => (
+    item.userId === req.user.id && !item.customerRemovedAt && isCustomerRemovableOrder(item)
+  ));
+  removable.forEach(order => hideOrderFromCustomer(order, 'customer_removed_all_unfinished', req.user.id));
+  if (removable.length) {
+    await audit(req.user, 'orders.unfinished_removed_from_account', 'Order', null, { count: removable.length });
+    await save();
+  }
+  res.json({ success: true, removed: removable.length });
+});
+
+app.get('/api/account/orders', requireVerifiedUser, async (req, res) => {
+  let changed = false;
+  const orders = db.data.Order
+    .filter(item => item.userId === req.user.id && !item.deleted_at)
+    .filter(item => {
+      const expiredFromAccount = isCustomerRemovableOrder(item)
+        && Date.now() - new Date(item.created_date || 0).getTime() >= CUSTOMER_ORDER_RETENTION_MS;
+      if (expiredFromAccount && !item.customerRemovedAt) {
+        changed ||= hideOrderFromCustomer(item, 'unfinished_checkout_expired', item.userId);
+      }
+      return !item.customerRemovedAt;
+    })
+    .sort((a, b) => String(b.created_date || '').localeCompare(String(a.created_date || '')))
+    .slice(0, 100);
+  if (changed) await save();
+  res.json(orders);
+});
+
+app.delete('/api/account/orders/:id', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const order = db.data.Order.find(item => (
+    item.id === req.params.id && item.userId === req.user.id && !item.deleted_at && !item.customerRemovedAt
+  ));
+  if (!order) return res.status(404).json({ error: 'Order not found.' });
+  if (!hideOrderFromCustomer(order, 'customer_removed_unfinished', req.user.id)) {
+    return res.status(409).json({ error: 'Paid or active orders must remain in your account for tracking and support.' });
+  }
+  await audit(req.user, 'order.removed_from_account', 'Order', order.id);
+  await save();
+  res.json({ success: true, id: order.id });
 });
 
 app.post('/api/orders/:id/payment-proof', requireVerifiedUser, mutationLimiter, async (req, res) => {

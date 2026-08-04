@@ -246,6 +246,9 @@ export const studioClient = {
     redirectToLogin() { window.location.assign('/login'); },
   },
   account: {
+    orders() {
+      return request('/api/account/orders');
+    },
     updateProfile(data) {
       return request('/api/account/profile', { method: 'PATCH', body: JSON.stringify(data) });
     },
@@ -260,6 +263,12 @@ export const studioClient = {
     },
     export() {
       return request('/api/account/export');
+    },
+    removeUnfinishedOrder(id) {
+      return request(`/api/account/orders/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    },
+    removeAllUnfinishedOrders() {
+      return request('/api/account/orders/unfinished', { method: 'DELETE' });
     },
   },
   system: {

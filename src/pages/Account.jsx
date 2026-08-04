@@ -14,6 +14,10 @@ const formatMoney = (value, currency = 'GHS') => new Intl.NumberFormat('en-GH', 
   style: 'currency',
   currency,
 }).format(Number(value) || 0);
+const isUnfinishedOrder = order => (
+  !['paid', 'refunded', 'pay_on_delivery', 'quote_required'].includes(String(order.paymentStatus || ''))
+  && !['confirmed', 'processing', 'fulfilled', 'shipped', 'delivered'].includes(String(order.status || ''))
+);
 
 export default function Account() {
   const { user, checkUserAuth, logout } = useAuth();
@@ -27,6 +31,7 @@ export default function Account() {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [uploadingOrderId, setUploadingOrderId] = useState('');
+  const [removingOrderId, setRemovingOrderId] = useState('');
 
   useEffect(() => {
     Promise.all([
@@ -34,7 +39,7 @@ export default function Account() {
       studioClient.entities.CommissionRequest.list('-created_date', 50),
       studioClient.entities.ArtRequest.list('-created_date', 50),
       studioClient.entities.FilmRequest.list('-created_date', 50),
-      studioClient.entities.Order.list('-created_date', 50),
+      studioClient.account.orders(),
       studioClient.entities.Notification.list('-created_date', 50),
     ]).then(([messages, commissions, artRequests, filmRequests, orders, notifications]) => {
       setData({ messages, commissions, artRequests, filmRequests, orders, notifications });
@@ -71,13 +76,34 @@ export default function Account() {
     setUploadingAvatar(true); setError('');
     try {
       const uploaded = await studioClient.integrations.Core.UploadFile({ file, purpose: 'profile-avatar' });
-      setAvatarUrl(uploaded.file_url);
       const updated = await studioClient.account.updateProfile({ full_name: name, chatDiscoverable, avatarUrl: uploaded.file_url });
       await checkUserAuth();
       setAvatarUrl(updated.avatarUrl || uploaded.file_url);
+      window.localStorage.setItem('atelier-profile-updated', String(Date.now()));
       setNotice('Profile photo updated.');
     } catch (uploadError) { setError(uploadError.message); }
     finally { setUploadingAvatar(false); }
+  };
+  const removeUnfinishedOrder = async order => {
+    if (!window.confirm(`Remove unfinished order ${order.trackingCode || ''} from your account?`)) return;
+    setRemovingOrderId(order.id); setError('');
+    try {
+      await studioClient.account.removeUnfinishedOrder(order.id);
+      setData(current => ({ ...current, orders: current.orders.filter(item => item.id !== order.id) }));
+      setNotice('Unfinished order removed.');
+    } catch (removeError) { setError(removeError.message); }
+    finally { setRemovingOrderId(''); }
+  };
+  const removeAllUnfinishedOrders = async () => {
+    const count = data.orders.filter(isUnfinishedOrder).length;
+    if (!count || !window.confirm(`Remove all ${count} unfinished orders from your account?`)) return;
+    setRemovingOrderId('all'); setError('');
+    try {
+      await studioClient.account.removeAllUnfinishedOrders();
+      setData(current => ({ ...current, orders: current.orders.filter(item => !isUnfinishedOrder(item)) }));
+      setNotice('All unfinished orders were removed.');
+    } catch (removeError) { setError(removeError.message); }
+    finally { setRemovingOrderId(''); }
   };
 
   const changePassword = async event => {
@@ -234,8 +260,10 @@ export default function Account() {
               </div>
 
               <div className="border border-brass/10 bg-carbon p-5">
-                <h2 className="font-display text-2xl">Art Shop Orders</h2>
-                <p className="mt-1 text-xs text-ivory/35">Keep your tracking code for WhatsApp, payment, and delivery updates.</p>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div><h2 className="font-display text-2xl">Art Shop Orders</h2><p className="mt-1 text-xs text-ivory/35">Keep tracking details for paid and active orders. Unfinished checkout attempts disappear automatically after 24 hours.</p></div>
+                  {data.orders.some(isUnfinishedOrder) && <button type="button" disabled={Boolean(removingOrderId)} onClick={removeAllUnfinishedOrders} className="flex min-h-9 items-center gap-2 border border-red-300/20 px-3 text-[10px] uppercase tracking-wider text-red-200 disabled:opacity-40"><Trash2 size={13} /> Remove all unfinished</button>}
+                </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   {!data.orders.length && <p className="text-sm text-ivory/35">No shop orders yet.</p>}
                   {data.orders.map(order => (
@@ -245,7 +273,7 @@ export default function Account() {
                           <span className="text-[10px] uppercase tracking-wider text-ivory/30">Tracking code</span>
                           <strong className="block font-display text-xl tracking-wide text-brass">{order.trackingCode || order.id.slice(0, 8)}</strong>
                         </div>
-                        <span className={`px-2 py-1 text-[10px] uppercase ${statusClass(order.status)}`}>{String(order.status || 'pending').replaceAll('_', ' ')}</span>
+                        <div className="flex items-center gap-2"><span className={`px-2 py-1 text-[10px] uppercase ${statusClass(order.status)}`}>{String(order.status || 'pending').replaceAll('_', ' ')}</span>{isUnfinishedOrder(order) && <button type="button" disabled={Boolean(removingOrderId)} onClick={() => removeUnfinishedOrder(order)} title="Remove this unfinished order" aria-label={`Remove unfinished order ${order.trackingCode || ''}`} className="flex h-8 w-8 items-center justify-center border border-red-300/20 text-red-200 hover:bg-red-300/10 disabled:opacity-40">{removingOrderId === order.id ? <span className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" /> : <Trash2 size={13} />}</button>}</div>
                       </div>
                       <div className="mt-3 space-y-1 text-xs text-ivory/45">
                         <p>{(order.items || []).map(item => `${item.title} × ${item.qty}`).join(', ')}</p>
