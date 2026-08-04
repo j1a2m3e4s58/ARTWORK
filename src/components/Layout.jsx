@@ -12,7 +12,7 @@ export default function Layout() {
 
   return (
     <div className={`min-h-screen bg-obsidian text-ivory ${isMessageWorkspace ? 'pb-0' : 'pb-20 md:pb-0'}`}>
-      <Navbar />
+      {isMessageWorkspace ? <div className="hidden md:block"><Navbar /></div> : <Navbar />}
       <ServiceNotice />
       {!isMessageWorkspace && <FloatingSocial />}
       <main>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Archive, ArrowDown, ArrowLeft, Ban, Bell, BellOff, CheckCheck, Clapperboard, Download, File, FileArchive, FileSpreadsheet, FileText, Forward, Image, Images, Loader2,
   Megaphone, MessageCircle, Mic, MoreVertical, Paperclip, Pencil, Plus, Reply, RotateCcw,
@@ -106,6 +107,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [conversations, setConversations] = useState([]);
   const [directory, setDirectory] = useState([]);
   const [activeId, setActiveId] = useState('');
+  const [mobileConversationOpen, setMobileConversationOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [drafts, setDrafts] = useState({});
   const [attachments, setAttachments] = useState([]);
@@ -160,6 +162,11 @@ export default function ChatWorkspace({ adminMode = false }) {
   }[resourceKind];
   const setText = value => setDrafts(current => ({ ...current, [activeId]: typeof value === 'function' ? value(current[activeId] || '') : value }));
   useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
+  useEffect(() => {
+    if (adminMode) return undefined;
+    document.documentElement.classList.toggle('messages-conversation-open', mobileConversationOpen);
+    return () => document.documentElement.classList.remove('messages-conversation-open');
+  }, [adminMode, mobileConversationOpen]);
   useEffect(() => {
     const closePopovers = event => {
       if (event.target.closest('[data-chat-popover]')) return;
@@ -297,6 +304,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       const conversation = await studioClient.chat.start(person.id);
       await load();
       setActiveId(conversation.id);
+      setMobileConversationOpen(true);
     } catch (startError) { setError(startError.message); }
   };
   const chooseFiles = selectedFiles => {
@@ -529,10 +537,10 @@ export default function ChatWorkspace({ adminMode = false }) {
 
   return (
     <>
-      <div className={`grid min-h-0 max-w-full overflow-hidden border border-brass/15 bg-carbon lg:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] ${adminMode ? 'h-[clamp(360px,calc(100dvh-13rem),760px)]' : 'h-full'}`}>
-        <aside className={`${activeId ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col overflow-hidden border-r border-brass/15`}>
+      <div className={`grid min-h-0 max-w-full overflow-hidden bg-carbon md:border md:border-brass/15 lg:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] ${adminMode ? 'h-[clamp(360px,calc(100dvh-13rem),760px)]' : 'h-full'}`}>
+        <aside className={`${mobileConversationOpen ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col overflow-hidden border-r border-brass/15`}>
           <div className="shrink-0 border-b border-brass/15 p-4">
-            <div className="flex items-center justify-between gap-3"><h2 className="font-display text-2xl text-ivory">{adminMode ? 'Studio conversations' : 'Messages'}</h2><div className="flex items-center gap-1">
+            <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-2">{!adminMode && <Link to="/" aria-label="Return to the studio" className="flex h-9 w-9 shrink-0 items-center justify-center border border-brass/15 text-brass lg:hidden"><ArrowLeft size={17} /></Link>}<h2 className="truncate font-display text-2xl text-ivory">{adminMode ? 'Studio conversations' : 'Messages'}</h2></div><div className="flex items-center gap-1">
               <button type="button" onClick={enablePush} aria-label={pushState === 'enabled' ? 'Disable push alerts' : 'Enable push alerts'} title={pushState === 'enabled' ? 'Disable push alerts' : 'Enable push alerts'} className={`flex h-9 w-9 items-center justify-center border ${pushState === 'enabled' ? 'border-green-400/30 text-green-400' : 'border-brass/15 text-brass'}`}><Bell size={15} /></button>
               {adminMode && user?.role === 'admin' && <button type="button" onClick={() => setShowAnnouncement(value => !value)} aria-label="New announcement" title="New announcement" className="flex h-9 w-9 items-center justify-center border border-brass/15 text-brass"><Megaphone size={15} /></button>}
             </div></div>
@@ -542,28 +550,28 @@ export default function ChatWorkspace({ adminMode = false }) {
             {showAnnouncement && user?.role === 'admin' && <div className="mt-3 space-y-2 border border-brass/15 bg-obsidian p-3"><input value={announcement.title} onChange={event => setAnnouncement(value => ({ ...value, title: event.target.value }))} className="h-10 w-full border border-brass/15 bg-carbon px-3 text-sm text-ivory outline-none" placeholder="Announcement title" /><textarea value={announcement.body} onChange={event => setAnnouncement(value => ({ ...value, body: event.target.value }))} className="h-24 w-full resize-none border border-brass/15 bg-carbon p-3 text-sm text-ivory outline-none" placeholder="Message every signed-in member" /><button type="button" disabled={busy || !announcement.body.trim()} onClick={publishAnnouncement} className="h-10 w-full bg-brass text-xs uppercase tracking-wider text-obsidian disabled:opacity-40">Publish announcement</button></div>}
           </div>
           {error && !activeId && <p role="alert" className="border-b border-red-400/20 bg-red-400/5 p-3 text-xs text-red-300">{error}</p>}
-          <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto [scrollbar-gutter:stable]">
+          <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto pb-20 [scrollbar-gutter:stable] md:pb-5">
             {matchingConversations.map(conversation => {
               const person = conversation.participants?.find(entry => entry.id !== user.id);
-              return <button key={conversation.id} onClick={() => setActiveId(conversation.id)} className={`flex w-full items-center gap-3 border-b border-brass/10 p-4 text-left ${activeId === conversation.id ? 'bg-brass/10' : 'hover:bg-ivory/[0.03]'}`}>
-                <span className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brass/10 text-xs font-semibold text-brass">{conversation.type === 'announcement' ? <Megaphone size={17} /> : person?.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(person?.name)}{person?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
+              return <button key={conversation.id} onClick={() => { setActiveId(conversation.id); setMobileConversationOpen(true); }} className={`flex w-full items-center gap-3 border-b border-brass/10 p-4 text-left ${activeId === conversation.id ? 'bg-brass/10' : 'hover:bg-ivory/[0.03]'}`}>
+                <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass"><span className="flex h-full w-full overflow-hidden rounded-full">{conversation.type === 'announcement' ? <span className="m-auto"><Megaphone size={17} /></span> : person?.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : <span className="m-auto">{initials(person?.name)}</span>}</span>{person?.online && <i className="absolute -bottom-0.5 -right-1 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
                 <span className="min-w-0 flex-1"><b className="block truncate text-sm text-ivory">{conversationName(conversation, user.id)}</b><small className="block truncate text-ivory/35">{conversation.typingUsers?.length ? `${conversation.typingUsers[0].name} is typing…` : conversation.lastMessage || 'Conversation started'}</small></span>
                 {conversation.unread > 0 && <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-green-500 px-1 text-xs text-white">{conversation.unread}</span>}
               </button>;
             })}
             <div className="border-t border-brass/15 p-4">
               <p className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-widest text-brass"><Users size={13} />Signed-in people</p>
-              {matchingPeople.map(person => <button key={person.id} onClick={() => start(person)} className="flex min-h-12 w-full items-center gap-3 border-b border-brass/10 text-left text-sm text-ivory/60 hover:text-ivory"><span className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-ivory/5 text-[10px] text-brass">{person.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(person.name)}{person.online && <i className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-carbon bg-green-400" />}</span><span className="min-w-0 flex-1 truncate">{person.name}</span><small className="text-brass/60">{person.role === 'customer' ? 'member' : person.role}</small></button>)}
+              {matchingPeople.map(person => <button key={person.id} onClick={() => start(person)} className="flex min-h-12 w-full items-center gap-3 border-b border-brass/10 text-left text-sm text-ivory/60 hover:text-ivory"><span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ivory/5 text-[10px] text-brass"><span className="flex h-full w-full overflow-hidden rounded-full">{person.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : <span className="m-auto">{initials(person.name)}</span>}</span>{person.online && <i className="absolute -bottom-0.5 -right-1 h-2.5 w-2.5 rounded-full border-2 border-carbon bg-green-400" />}</span><span className="min-w-0 flex-1 truncate">{person.name}</span><small className="text-brass/60">{person.role === 'customer' ? 'member' : person.role}</small></button>)}
               {!matchingPeople.length && !matchingConversations.length && <p className="py-6 text-center text-xs text-ivory/35">No people match your search.</p>}
             </div>
           </div>
         </aside>
 
-        <section className={`${!activeId ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col overflow-hidden`}>
+        <section className={`${!mobileConversationOpen ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col overflow-hidden`}>
           {active ? <>
             <header className="shrink-0 flex items-center gap-2 border-b border-brass/15 p-3 sm:gap-3 sm:p-4">
-              <button onClick={() => setActiveId('')} className="flex h-10 w-10 items-center justify-center text-brass lg:hidden" aria-label="Back to conversations"><ArrowLeft size={19} /></button>
-              <span className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brass/10 text-xs font-semibold text-brass">{active.type === 'announcement' ? <Megaphone size={17} /> : other?.avatarUrl ? <img src={other.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(other?.name)}{other?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
+              <button onClick={() => setMobileConversationOpen(false)} className="flex h-10 w-10 items-center justify-center text-brass lg:hidden" aria-label="Back to conversations"><ArrowLeft size={19} /></button>
+              <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass"><span className="flex h-full w-full overflow-hidden rounded-full">{active.type === 'announcement' ? <span className="m-auto"><Megaphone size={17} /></span> : other?.avatarUrl ? <img src={other.avatarUrl} alt="" className="h-full w-full object-cover" /> : <span className="m-auto">{initials(other?.name)}</span>}</span>{other?.online && <i className="absolute -bottom-0.5 -right-1 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
               <div className="min-w-0 flex-1"><p className="truncate font-display text-xl text-ivory">{conversationName(active, user.id)}</p><p className={`truncate text-xs ${active.typingUsers?.length || other?.online ? 'text-green-400' : 'text-ivory/35'}`}>{active.typingUsers?.length ? `${active.typingUsers[0].name} is typing…` : active.type === 'announcement' ? 'Studio updates for every member' : lastSeen(other)}</p></div>
               {connectionState !== 'connected' && <span className="hidden items-center gap-1 text-[10px] uppercase tracking-wider text-amber-300 sm:flex"><WifiOff size={13} />{connectionState === 'offline' ? 'Offline' : 'Reconnecting'}</span>}
               <button type="button" onClick={() => setSearchingMessages(value => !value)} className="flex h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass" aria-label="Search this conversation"><Search size={17} /></button>

@@ -21,7 +21,7 @@ export default function MobileBottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 box-border w-full max-w-full isolate overflow-hidden overscroll-none border-t border-brass/15 bg-obsidian/95 px-2 pb-[max(0.45rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-12px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl [transform:translateZ(0)] md:hidden"
+      className="mobile-bottom-nav fixed bottom-0 left-0 right-0 z-40 box-border w-full max-w-full isolate overflow-hidden overscroll-none border-t border-brass/15 bg-obsidian/95 px-2 pb-[max(0.45rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-12px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl [transform:translateZ(0)] md:hidden"
       aria-label="Mobile navigation"
     >
       <div className="mx-auto flex w-full max-w-md justify-around">
