@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
   Archive, ArrowDown, ArrowLeft, Ban, Bell, BellOff, CheckCheck, Clapperboard, Download, File, FileArchive, FileSpreadsheet, FileText, Forward, Image, Images, Loader2,
@@ -94,7 +95,18 @@ function PreviewOverlay({ attachment, onClose }) {
         </header>
         <div className="min-h-0 flex-1 bg-black/40 p-2 sm:p-4">
           {attachment.type?.startsWith('image/') && <img src={previewUrl} alt={attachment.name || 'Shared image'} className="h-full w-full object-contain" />}
-          {isPdf && <iframe src={previewUrl} title={attachment.name || 'PDF preview'} className="h-full w-full bg-white" />}
+          {isPdf && <>
+            <iframe src={previewUrl} title={attachment.name || 'PDF preview'} className="hidden h-full w-full bg-white md:block" />
+            <div className="flex h-full flex-col items-center justify-center px-5 text-center md:hidden">
+              <span className="flex h-20 w-20 items-center justify-center bg-red-600 text-white"><FileText size={38} /></span>
+              <h3 className="mt-5 max-w-full break-words font-display text-2xl text-ivory">{attachment.name || 'PDF document'}</h3>
+              <p className="mt-2 max-w-sm text-sm leading-6 text-ivory/55">Mobile browsers do not reliably display PDF files inside a page. Open it in your phone's PDF viewer or download a copy.</p>
+              <div className="mt-6 grid w-full max-w-sm gap-3">
+                <a href={previewUrl} target="_blank" rel="noreferrer" className="flex min-h-12 items-center justify-center gap-2 bg-brass px-4 text-xs uppercase tracking-wider text-obsidian"><FileText size={16} />Open PDF</a>
+                <a href={downloadUrl} target="_blank" rel="noreferrer" download className="flex min-h-12 items-center justify-center gap-2 border border-brass/25 px-4 text-xs uppercase tracking-wider text-brass"><Download size={16} />Download PDF</a>
+              </div>
+            </div>
+          </>}
           {!attachment.type?.startsWith('image/') && !isPdf && <div className="flex h-full items-center justify-center"><AttachmentPreview attachment={attachment} /></div>}
         </div>
       </div>
@@ -123,6 +135,8 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [editing, setEditing] = useState(null);
   const [messageMenuId, setMessageMenuId] = useState('');
   const [reactionPickerId, setReactionPickerId] = useState('');
+  const [messageMenuPosition, setMessageMenuPosition] = useState(null);
+  const [reactionPickerPosition, setReactionPickerPosition] = useState(null);
   const [uploadProgress, setUploadProgress] = useState({});
   const [uploadFailed, setUploadFailed] = useState(false);
   const [pushState, setPushState] = useState('unknown');
@@ -161,6 +175,17 @@ export default function ChatWorkspace({ adminMode = false }) {
     films: { eyebrow: 'Share a process film', title: 'Choose Art Films', description: 'Select one or several studio films to share in this conversation.' },
   }[resourceKind];
   const setText = value => setDrafts(current => ({ ...current, [activeId]: typeof value === 'function' ? value(current[activeId] || '') : value }));
+  const floatingPosition = (element, preferredWidth, preferredHeight) => {
+    const rect = element.getBoundingClientRect();
+    const gutter = 12;
+    const width = Math.min(preferredWidth, window.innerWidth - (gutter * 2));
+    const left = Math.min(window.innerWidth - width - gutter, Math.max(gutter, rect.right - width));
+    const below = window.innerHeight - rect.bottom;
+    const top = below >= preferredHeight + 8
+      ? rect.bottom + 8
+      : Math.max(gutter, rect.top - preferredHeight - 8);
+    return { left, top, width, maxHeight: Math.max(120, window.innerHeight - top - gutter) };
+  };
   useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
   useEffect(() => {
     if (adminMode) return undefined;
@@ -169,11 +194,13 @@ export default function ChatWorkspace({ adminMode = false }) {
   }, [adminMode, mobileConversationOpen]);
   useEffect(() => {
     const closePopovers = event => {
-      if (event.target.closest('[data-chat-popover]')) return;
+      if (event.target?.closest?.('[data-chat-popover]')) return;
       setShowAttachmentMenu(false);
       setShowConversationMenu(false);
       setMessageMenuId('');
       setReactionPickerId('');
+      setMessageMenuPosition(null);
+      setReactionPickerPosition(null);
     };
     const closeWithEscape = event => {
       if (event.key !== 'Escape') return;
@@ -181,15 +208,21 @@ export default function ChatWorkspace({ adminMode = false }) {
       setShowConversationMenu(false);
       setMessageMenuId('');
       setReactionPickerId('');
+      setMessageMenuPosition(null);
+      setReactionPickerPosition(null);
       setPreview(null);
       setForwardingMessage(null);
       setShopPickerOpen(false);
     };
     document.addEventListener('pointerdown', closePopovers);
     document.addEventListener('keydown', closeWithEscape);
+    window.addEventListener('resize', closePopovers);
+    document.addEventListener('scroll', closePopovers, true);
     return () => {
       document.removeEventListener('pointerdown', closePopovers);
       document.removeEventListener('keydown', closeWithEscape);
+      window.removeEventListener('resize', closePopovers);
+      document.removeEventListener('scroll', closePopovers, true);
     };
   }, []);
 
@@ -554,14 +587,14 @@ export default function ChatWorkspace({ adminMode = false }) {
             {matchingConversations.map(conversation => {
               const person = conversation.participants?.find(entry => entry.id !== user.id);
               return <button key={conversation.id} onClick={() => { setActiveId(conversation.id); setMobileConversationOpen(true); }} className={`flex w-full items-center gap-3 border-b border-brass/10 p-4 text-left ${activeId === conversation.id ? 'bg-brass/10' : 'hover:bg-ivory/[0.03]'}`}>
-                <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass"><span className="flex h-full w-full overflow-hidden rounded-full">{conversation.type === 'announcement' ? <span className="m-auto"><Megaphone size={17} /></span> : person?.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : <span className="m-auto">{initials(person?.name)}</span>}</span>{person?.online && <i className="absolute -bottom-0.5 -right-1 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
+                <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass"><span className="flex h-full w-full overflow-hidden rounded-full">{conversation.type === 'announcement' ? <span className="m-auto"><Megaphone size={17} /></span> : person?.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : <span className="m-auto">{initials(person?.name)}</span>}</span>{person?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
                 <span className="min-w-0 flex-1"><b className="block truncate text-sm text-ivory">{conversationName(conversation, user.id)}</b><small className="block truncate text-ivory/35">{conversation.typingUsers?.length ? `${conversation.typingUsers[0].name} is typing…` : conversation.lastMessage || 'Conversation started'}</small></span>
                 {conversation.unread > 0 && <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-green-500 px-1 text-xs text-white">{conversation.unread}</span>}
               </button>;
             })}
             <div className="border-t border-brass/15 p-4">
               <p className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-widest text-brass"><Users size={13} />Signed-in people</p>
-              {matchingPeople.map(person => <button key={person.id} onClick={() => start(person)} className="flex min-h-12 w-full items-center gap-3 border-b border-brass/10 text-left text-sm text-ivory/60 hover:text-ivory"><span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ivory/5 text-[10px] text-brass"><span className="flex h-full w-full overflow-hidden rounded-full">{person.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : <span className="m-auto">{initials(person.name)}</span>}</span>{person.online && <i className="absolute -bottom-0.5 -right-1 h-2.5 w-2.5 rounded-full border-2 border-carbon bg-green-400" />}</span><span className="min-w-0 flex-1 truncate">{person.name}</span><small className="text-brass/60">{person.role === 'customer' ? 'member' : person.role}</small></button>)}
+              {matchingPeople.map(person => <button key={person.id} onClick={() => start(person)} className="flex min-h-12 w-full items-center gap-3 border-b border-brass/10 text-left text-sm text-ivory/60 hover:text-ivory"><span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ivory/5 text-[10px] text-brass"><span className="flex h-full w-full overflow-hidden rounded-full">{person.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : <span className="m-auto">{initials(person.name)}</span>}</span>{person.online && <i className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-carbon bg-green-400" />}</span><span className="min-w-0 flex-1 truncate">{person.name}</span><small className="text-brass/60">{person.role === 'customer' ? 'member' : person.role}</small></button>)}
               {!matchingPeople.length && !matchingConversations.length && <p className="py-6 text-center text-xs text-ivory/35">No people match your search.</p>}
             </div>
           </div>
@@ -571,7 +604,7 @@ export default function ChatWorkspace({ adminMode = false }) {
           {active ? <>
             <header className="shrink-0 flex items-center gap-2 border-b border-brass/15 p-3 sm:gap-3 sm:p-4">
               <button onClick={() => setMobileConversationOpen(false)} className="flex h-10 w-10 items-center justify-center text-brass lg:hidden" aria-label="Back to conversations"><ArrowLeft size={19} /></button>
-              <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass"><span className="flex h-full w-full overflow-hidden rounded-full">{active.type === 'announcement' ? <span className="m-auto"><Megaphone size={17} /></span> : other?.avatarUrl ? <img src={other.avatarUrl} alt="" className="h-full w-full object-cover" /> : <span className="m-auto">{initials(other?.name)}</span>}</span>{other?.online && <i className="absolute -bottom-0.5 -right-1 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
+              <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass"><span className="flex h-full w-full overflow-hidden rounded-full">{active.type === 'announcement' ? <span className="m-auto"><Megaphone size={17} /></span> : other?.avatarUrl ? <img src={other.avatarUrl} alt="" className="h-full w-full object-cover" /> : <span className="m-auto">{initials(other?.name)}</span>}</span>{other?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
               <div className="min-w-0 flex-1"><p className="truncate font-display text-xl text-ivory">{conversationName(active, user.id)}</p><p className={`truncate text-xs ${active.typingUsers?.length || other?.online ? 'text-green-400' : 'text-ivory/35'}`}>{active.typingUsers?.length ? `${active.typingUsers[0].name} is typing…` : active.type === 'announcement' ? 'Studio updates for every member' : lastSeen(other)}</p></div>
               {connectionState !== 'connected' && <span className="hidden items-center gap-1 text-[10px] uppercase tracking-wider text-amber-300 sm:flex"><WifiOff size={13} />{connectionState === 'offline' ? 'Offline' : 'Reconnecting'}</span>}
               <button type="button" onClick={() => setSearchingMessages(value => !value)} className="flex h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass" aria-label="Search this conversation"><Search size={17} /></button>
@@ -599,10 +632,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                   {message.deletedForEveryone ? <div className="flex items-center gap-3"><p className="flex items-center gap-2 text-sm italic text-ivory/35"><Ban size={14} />This message was deleted.</p><button type="button" onClick={() => removeMessage(message, 'me')} className="text-[10px] uppercase tracking-wider text-ivory/30 hover:text-brass">Remove</button></div> : editing?.id === message.id ? <div className="space-y-2"><textarea autoFocus value={editing.body} onChange={event => setEditing({ ...editing, body: event.target.value })} className="min-h-20 w-full resize-none border border-brass/20 bg-obsidian p-2 text-sm text-ivory outline-none" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="h-8 px-3 text-xs text-ivory/50">Cancel</button><button type="button" onClick={saveEdit} className="h-8 bg-brass px-3 text-xs text-obsidian">Save</button></div></div> : message.body && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm leading-6 text-ivory/75">{message.body}</p>}
                   <AttachmentPreview attachment={attachment} onOpen={setPreview} />
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                    {!message.deletedForEveryone && <div data-chat-popover className="relative flex items-center gap-1"><button type="button" onClick={() => setReplyingTo(message)} title="Reply" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Reply size={13} /></button><button type="button" onClick={() => setReactionPickerId(value => value === message.id ? '' : message.id)} title="React" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Smile size={13} /></button><button type="button" onClick={() => setMessageMenuId(value => value === message.id ? '' : message.id)} title="Message options" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><MoreVertical size={13} /></button>
-                      {reactionPickerId === message.id && <div className={`absolute bottom-8 z-20 flex max-w-[calc(100vw-2rem)] gap-1 border border-brass/15 bg-carbon p-2 shadow-xl ${mine ? 'right-0' : 'left-0'}`}>{REACTIONS.map(emoji => <button type="button" key={emoji} onClick={() => { react(message, emoji); setReactionPickerId(''); }} className={`px-1 text-lg ${message.reactions?.[user.id] === emoji ? 'bg-brass/15' : ''}`}>{emoji}</button>)}</div>}
-                      {messageMenuId === message.id && <div className={`absolute bottom-8 z-20 w-44 max-w-[calc(100vw-2rem)] border border-brass/15 bg-carbon p-1 shadow-xl ${mine ? 'right-0' : 'left-0'}`}>{mine && message.body && <button type="button" onClick={() => { setEditing({ id: message.id, body: message.body }); setMessageMenuId(''); }} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs text-ivory/65 hover:bg-brass/10"><Pencil size={12} />Edit message</button>}{(message.allowForward || ['admin', 'editor', 'support'].includes(user.role)) && <button type="button" onClick={() => { setForwardingMessage(message); setMessageMenuId(''); }} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs text-ivory/65 hover:bg-brass/10"><Forward size={12} />Forward</button>}<button type="button" onClick={() => { removeMessage(message, 'me'); setMessageMenuId(''); }} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs text-ivory/65 hover:bg-brass/10"><Trash2 size={12} />Delete for me</button>{mine && <button type="button" onClick={() => { removeMessage(message, 'everyone'); setMessageMenuId(''); }} className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-xs text-red-300 hover:bg-red-400/10"><Trash2 size={12} />Delete for everyone</button>}</div>}
-                    </div>}
+                    {!message.deletedForEveryone && <div data-chat-popover className="relative flex items-center gap-1"><button type="button" onClick={() => setReplyingTo(message)} title="Reply" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Reply size={13} /></button><button type="button" onClick={event => { const opening = reactionPickerId !== message.id; setReactionPickerId(opening ? message.id : ''); setReactionPickerPosition(opening ? floatingPosition(event.currentTarget, 238, 60) : null); setMessageMenuId(''); }} title="React" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Smile size={13} /></button><button type="button" onClick={event => { const opening = messageMenuId !== message.id; setMessageMenuId(opening ? message.id : ''); setMessageMenuPosition(opening ? floatingPosition(event.currentTarget, 220, 190) : null); setReactionPickerId(''); }} title="Message options" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><MoreVertical size={13} /></button></div>}
                     <div className="flex items-center gap-1 text-[10px] text-ivory/30">{message.editedAt && <span>edited · </span>}{new Date(message.created_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{mine && <CheckCheck size={13} aria-label={message.readAt ? 'Read' : 'Delivered'} className={message.readAt ? 'text-sky-400' : 'text-ivory/35'} />}</div>
                   </div>
                   {Object.keys(groupedReactions).length > 0 && <div className="absolute -bottom-3 right-2 rounded-full border border-brass/15 bg-carbon px-2 py-0.5 text-xs shadow-lg">{Object.entries(groupedReactions).map(([emoji, count]) => <span key={emoji} className="mr-1">{emoji}{count > 1 ? count : ''}</span>)}</div>}
@@ -639,6 +669,19 @@ export default function ChatWorkspace({ adminMode = false }) {
           </> : <div className="m-auto p-8 text-center"><MessageCircle className="mx-auto text-brass" size={34} /><p className="mt-4 font-display text-2xl text-ivory">Choose a conversation</p><p className="mt-2 text-sm text-ivory/40">Search signed-in people or continue an existing chat.</p></div>}
         </section>
       </div>
+      {reactionPickerId && reactionPickerPosition && createPortal(<div data-chat-popover style={reactionPickerPosition} className="fixed z-[220] flex gap-1 overflow-x-auto border border-brass/20 bg-carbon p-2 shadow-2xl">{REACTIONS.map(emoji => <button type="button" key={emoji} onClick={() => { const message = messages.find(item => item.id === reactionPickerId); if (message) react(message, emoji); setReactionPickerId(''); setReactionPickerPosition(null); }} className={`flex h-9 w-9 shrink-0 items-center justify-center text-lg ${messages.find(item => item.id === reactionPickerId)?.reactions?.[user.id] === emoji ? 'bg-brass/15' : 'hover:bg-brass/10'}`}>{emoji}</button>)}</div>, document.body)}
+      {messageMenuId && messageMenuPosition && (() => {
+        const message = messages.find(item => item.id === messageMenuId);
+        if (!message) return null;
+        const mine = message.senderId === user.id;
+        const closeMenu = () => { setMessageMenuId(''); setMessageMenuPosition(null); };
+        return createPortal(<div data-chat-popover style={messageMenuPosition} className="fixed z-[220] overflow-y-auto border border-brass/20 bg-carbon p-1 shadow-2xl">
+          {mine && message.body && <button type="button" onClick={() => { setEditing({ id: message.id, body: message.body }); closeMenu(); }} className="flex min-h-11 w-full items-center gap-2 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Pencil size={14} />Edit message</button>}
+          {(message.allowForward || ['admin', 'editor', 'support'].includes(user.role)) && <button type="button" onClick={() => { setForwardingMessage(message); closeMenu(); }} className="flex min-h-11 w-full items-center gap-2 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Forward size={14} />Forward</button>}
+          <button type="button" onClick={() => { removeMessage(message, 'me'); closeMenu(); }} className="flex min-h-11 w-full items-center gap-2 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Trash2 size={14} />Delete for me</button>
+          {mine && <button type="button" onClick={() => { removeMessage(message, 'everyone'); closeMenu(); }} className="flex min-h-11 w-full items-center gap-2 px-3 text-left text-sm text-red-300 hover:bg-red-400/10"><Trash2 size={14} />Delete for everyone</button>}
+        </div>, document.body);
+      })()}
       <PreviewOverlay attachment={preview} onClose={() => setPreview(null)} />
       {shopPickerOpen && <div onMouseDown={event => { if (event.target === event.currentTarget) { setShopPickerOpen(false); setSelectedProducts([]); } }} className="fixed inset-0 z-[176] flex items-center justify-center bg-black/85 p-3 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="shop-picker-title"><section className="flex max-h-[88dvh] w-full max-w-4xl flex-col border border-brass/25 bg-carbon shadow-2xl"><header className="flex items-center justify-between gap-3 border-b border-brass/15 p-4 sm:p-5"><div><p className="text-[10px] uppercase tracking-[.25em] text-brass">{resourceCopy.eyebrow}</p><h3 id="shop-picker-title" className="font-display text-2xl text-ivory sm:text-3xl">{resourceCopy.title}</h3><p className="mt-1 text-xs text-ivory/40">{resourceCopy.description}</p></div><button type="button" onClick={() => { setShopPickerOpen(false); setSelectedProducts([]); }} className="flex h-10 w-10 items-center justify-center border border-brass/15"><X size={17} /></button></header><div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">{shopLoading ? <div className="flex min-h-60 items-center justify-center"><Loader2 className="animate-spin text-brass" /></div> : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{shopProducts.map(product => { const selected = selectedProducts.includes(product.id); return <button type="button" key={product.id} onClick={() => setSelectedProducts(current => selected ? current.filter(id => id !== product.id) : [...current, product.id])} className={`overflow-hidden border text-left ${selected ? 'border-brass bg-brass/10' : 'border-brass/10 bg-obsidian'}`}><div className="relative aspect-[4/3] bg-black/30">{product.imageUrl ? <img src={product.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center"><Image className="text-ivory/20" /></div>}{selected && <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-brass text-obsidian"><CheckCheck size={15} /></span>}</div><div className="p-3"><b title={product.title} className="block truncate text-sm text-ivory">{product.title}</b>{resourceKind === 'shop' && <span className="mt-1 block text-sm text-brass">GHS {Number(product.price || 0).toLocaleString('en-GH', { minimumFractionDigits: 2 })}</span>}</div></button>; })}</div>}</div><footer className="flex items-center justify-between gap-3 border-t border-brass/15 p-4"><span className="text-xs text-ivory/40">{selectedProducts.length} selected</span><button type="button" disabled={!selectedProducts.length || busy} onClick={sendShopSelection} className="min-h-11 bg-brass px-5 text-xs uppercase tracking-wider text-obsidian disabled:opacity-40">{busy ? 'Sending…' : 'Send selected items'}</button></footer></section></div>}
       {forwardingMessage && <div className="fixed inset-0 z-[175] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="forward-message-title"><div className="max-h-[80dvh] w-full max-w-md overflow-hidden border border-brass/25 bg-carbon shadow-2xl"><header className="flex items-center justify-between border-b border-brass/15 p-4"><div><h3 id="forward-message-title" className="font-display text-2xl text-ivory">Forward message</h3><p className="text-xs text-ivory/40">Choose one of your conversations</p></div><button type="button" onClick={() => setForwardingMessage(null)} aria-label="Close forward message" className="flex h-10 w-10 items-center justify-center border border-brass/15"><X size={17} /></button></header><div className="max-h-[60dvh] overflow-y-auto p-2">{conversations.filter(item => item.id !== activeId && !item.archived).map(item => <button type="button" disabled={busy} key={item.id} onClick={() => forwardMessage(item.id)} className="flex min-h-14 w-full items-center gap-3 border-b border-brass/10 px-3 text-left hover:bg-brass/10 disabled:opacity-40"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-brass/10 text-xs text-brass">{initials(conversationName(item, user.id))}</span><span className="truncate text-sm text-ivory/70">{conversationName(item, user.id)}</span></button>)}</div></div></div>}
