@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, CreditCard, Download, ImagePlus, Lock, MessageSquare, Package, Palette, Save, Trash2, Upload } from 'lucide-react';
+import { Bell, CheckCheck, CreditCard, Download, ImagePlus, Lock, MessageSquare, Package, Palette, Save, Trash2, Upload } from 'lucide-react';
 import PageTransition from '@/components/PageTransition';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
@@ -32,6 +32,9 @@ export default function Account() {
   const [error, setError] = useState('');
   const [uploadingOrderId, setUploadingOrderId] = useState('');
   const [removingOrderId, setRemovingOrderId] = useState('');
+  const [notificationFilter, setNotificationFilter] = useState('all');
+  const [notificationCategory, setNotificationCategory] = useState('all');
+  const [preferences, setPreferences] = useState({ pushEnabled: true, messages: true, community: true, orders: true, studio: true, quietHours: { enabled: false, start: '22:00', end: '07:00', timezone: 'Africa/Accra' } });
 
   useEffect(() => {
     Promise.all([
@@ -45,6 +48,20 @@ export default function Account() {
       setData({ messages, commissions, artRequests, filmRequests, orders, notifications });
     }).catch(loadError => setError(loadError.message));
   }, []);
+  useEffect(() => {
+    studioClient.notifications.preferences().then(setPreferences).catch(() => {});
+  }, []);
+  useEffect(() => {
+    studioClient.notifications.list({ filter: notificationFilter, category: notificationCategory }).then(notifications => setData(current => ({ ...current, notifications }))).catch(() => {});
+  }, [notificationFilter, notificationCategory]);
+  const saveNotificationPreferences = async () => {
+    try { setPreferences(await studioClient.notifications.updatePreferences(preferences)); setNotice('Notification preferences saved.'); }
+    catch (preferenceError) { setError(preferenceError.message); }
+  };
+  const markAllNotificationsRead = async () => {
+    await studioClient.notifications.readAll();
+    setData(current => ({ ...current, notifications: current.notifications.map(item => ({ ...item, read: true })) }));
+  };
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('verify') === 'required') {
       setNotice('Verify your email address before using protected studio features.');
@@ -238,6 +255,14 @@ export default function Account() {
                     </article>
                   ))}
                 </div>
+              </div>
+
+              <div className="border border-brass/10 bg-carbon p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-display text-2xl">Notification centre</h2><p className="mt-1 text-xs text-ivory/35">Review account activity and control when this device alerts you.</p></div><button type="button" onClick={markAllNotificationsRead} className="flex min-h-9 items-center gap-2 border border-brass/20 px-3 text-[10px] uppercase tracking-wider text-brass"><CheckCheck size={14} />Mark all as read</button></div>
+                <div className="mt-4 flex flex-wrap gap-2">{[['all','All'],['unread','Unread']].map(([value,label]) => <button type="button" key={value} onClick={() => setNotificationFilter(value)} className={`min-h-9 border px-3 text-xs ${notificationFilter === value ? 'border-brass bg-brass/10 text-brass' : 'border-brass/10 text-ivory/45'}`}>{label}</button>)}</div>
+                <div className="mt-2 flex flex-wrap gap-2">{[['all','Every type'],['messages','Messages'],['community','Community'],['orders','Orders'],['studio','Studio']].map(([value,label]) => <button type="button" key={value} onClick={() => setNotificationCategory(value)} className={`min-h-8 border px-3 text-[10px] uppercase tracking-wider ${notificationCategory === value ? 'border-brass bg-brass/10 text-brass' : 'border-brass/10 text-ivory/40'}`}>{label}</button>)}</div>
+                <div className="mt-4 max-h-72 space-y-2 overflow-y-auto">{data.notifications.map(item => <article key={item.id} className={`border p-3 ${item.read ? 'border-ivory/5 bg-obsidian' : 'border-brass/25 bg-brass/5'}`}><div className="flex justify-between gap-3"><strong className="text-sm">{item.title}</strong><time className="shrink-0 text-[10px] text-ivory/30">{new Date(item.created_date).toLocaleDateString()}</time></div><p className="mt-1 text-xs text-ivory/50">{item.message}</p></article>)}{!data.notifications.length && <p className="py-5 text-center text-sm text-ivory/35">No notifications in this view.</p>}</div>
+                <div className="mt-5 border-t border-brass/10 pt-4"><p className="text-xs uppercase tracking-wider text-brass">Alert preferences</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{[['pushEnabled','Push notifications'],['messages','Private messages'],['community','Community updates'],['orders','Order updates'],['studio','Studio activity']].map(([key,label]) => <label key={key} className="flex min-h-11 items-center justify-between border border-brass/10 px-3 text-sm text-ivory/65"><span>{label}</span><input type="checkbox" checked={Boolean(preferences[key])} onChange={event => setPreferences(value => ({ ...value, [key]: event.target.checked }))} /></label>)}</div><label className="mt-3 flex min-h-11 items-center justify-between border border-brass/10 px-3 text-sm text-ivory/65"><span>Quiet hours</span><input type="checkbox" checked={Boolean(preferences.quietHours?.enabled)} onChange={event => setPreferences(value => ({ ...value, quietHours: { ...value.quietHours, enabled: event.target.checked } }))} /></label>{preferences.quietHours?.enabled && <div className="mt-2 grid grid-cols-2 gap-2"><input type="time" value={preferences.quietHours.start} onChange={event => setPreferences(value => ({ ...value, quietHours: { ...value.quietHours, start: event.target.value } }))} className="h-11 border border-brass/10 bg-obsidian px-3 text-ivory" aria-label="Quiet hours start" /><input type="time" value={preferences.quietHours.end} onChange={event => setPreferences(value => ({ ...value, quietHours: { ...value.quietHours, end: event.target.value } }))} className="h-11 border border-brass/10 bg-obsidian px-3 text-ivory" aria-label="Quiet hours end" /></div>}<button type="button" onClick={saveNotificationPreferences} className="mt-3 min-h-10 bg-brass px-4 text-xs uppercase tracking-wider text-obsidian">Save alert preferences</button></div>
               </div>
 
               <div className="border border-brass/10 bg-carbon p-5">

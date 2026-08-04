@@ -146,6 +146,9 @@ export const studioClient = {
     },
   },
   notifications: {
+    list({ filter = 'all', category = 'all', limit = 50 } = {}) {
+      return request(`/api/notifications?filter=${encodeURIComponent(filter)}&category=${encodeURIComponent(category)}&limit=${encodeURIComponent(limit)}`);
+    },
     unreadCount() {
       return request('/api/notifications/unread-count');
     },
@@ -155,6 +158,8 @@ export const studioClient = {
     markRead(id) {
       return request(`/api/notifications/${id}/read`, { method: 'POST' });
     },
+    preferences: () => request('/api/account/notification-preferences'),
+    updatePreferences: data => request('/api/account/notification-preferences', { method: 'PATCH', body: JSON.stringify(data) }),
   },
   artworks: {
     myLikes() {
@@ -199,6 +204,11 @@ export const studioClient = {
     typing: (id, typing) => request(`/api/chat/conversations/${encodeURIComponent(id)}/typing`, { method: 'POST', body: JSON.stringify({ typing }) }),
     settings: (id, data) => request(`/api/chat/conversations/${encodeURIComponent(id)}/settings`, { method: 'PATCH', body: JSON.stringify(data) }),
     announce: data => request('/api/chat/announcements', { method: 'POST', body: JSON.stringify(data) }),
+    announcements: () => request('/api/chat/announcements/manage'),
+    cancelAnnouncement: id => request(`/api/chat/announcements/${encodeURIComponent(id)}/cancel`, { method: 'PATCH' }),
+    report: (id, data) => request(`/api/chat/conversations/${encodeURIComponent(id)}/report`, { method: 'POST', body: JSON.stringify(data) }),
+    reports: () => request('/api/chat/reports'),
+    reviewReport: (id, data) => request(`/api/chat/reports/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
     heartbeat: () => request('/api/chat/presence', { method: 'POST' }),
     capabilities: () => request('/api/chat/capabilities'),
   },

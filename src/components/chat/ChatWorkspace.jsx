@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import {
   Archive, ArrowDown, ArrowLeft, Ban, Bell, BellOff, CheckCheck, Clapperboard, Download, File, FileArchive, FileSpreadsheet, FileText, Forward, Image, Images, Loader2,
   Megaphone, MessageCircle, Mic, MoreVertical, Paperclip, Pencil, Plus, Reply, RotateCcw,
-  Mail, Pin, Search, Send, ShoppingBag, Smile, Square, Star, Trash2, Users, WifiOff, X,
+  Flag, Mail, Pin, Search, Send, ShoppingBag, Smile, Square, Star, Trash2, Users, WifiOff, X,
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
@@ -149,7 +149,12 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [shopProducts, setShopProducts] = useState([]);
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [shopLoading, setShopLoading] = useState(false);
-  const [announcement, setAnnouncement] = useState({ title: 'Community Updates', body: '' });
+  const emptyAnnouncement = { title: 'Community Updates', body: '', audience: 'all', scheduledAt: '', richMedia: { type: '', title: '', imageUrl: '', url: '' }, action: { label: '', url: '' } };
+  const [announcement, setAnnouncement] = useState(emptyAnnouncement);
+  const [reporting, setReporting] = useState(false);
+  const [report, setReport] = useState({ reason: '', details: '' });
+  const [managedUpdates, setManagedUpdates] = useState([]);
+  const [moderationReports, setModerationReports] = useState([]);
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [error, setError] = useState('');
@@ -594,11 +599,34 @@ export default function ChatWorkspace({ adminMode = false }) {
     if (!announcement.body.trim()) return;
     setBusy(true);
     try {
-      const conversation = await studioClient.chat.announce(announcement);
-      setAnnouncement({ title: 'Community Updates', body: '' }); setShowAnnouncement(false);
-      await load(); setActiveId(conversation.id);
+      const update = await studioClient.chat.announce(announcement);
+      setAnnouncement(emptyAnnouncement); setShowAnnouncement(false);
+      await load();
+      if (adminMode) setManagedUpdates(await studioClient.chat.announcements());
+      if (update.conversationId) setActiveId(update.conversationId);
     } catch (announcementError) { setError(announcementError.message); }
     finally { setBusy(false); }
+  };
+  useEffect(() => {
+    if (!adminMode || user?.role !== 'admin') return;
+    Promise.all([studioClient.chat.announcements(), studioClient.chat.reports()])
+      .then(([updates, reports]) => { setManagedUpdates(updates); setModerationReports(reports); })
+      .catch(loadError => setError(loadError.message));
+  }, [adminMode, user?.role]);
+  const submitReport = async event => {
+    event.preventDefault();
+    if (!activeId || !report.reason.trim()) return;
+    setBusy(true);
+    try {
+      await studioClient.chat.report(activeId, report);
+      setReport({ reason: '', details: '' }); setReporting(false);
+      setError('Your report was sent privately to Studio Control.');
+    } catch (reportError) { setError(reportError.message); }
+    finally { setBusy(false); }
+  };
+  const reviewReport = async (id, status) => {
+    const updated = await studioClient.chat.reviewReport(id, { status });
+    setModerationReports(rows => rows.map(item => item.id === id ? updated : item));
   };
   const toggleRecording = async () => {
     setError('');
@@ -637,7 +665,19 @@ export default function ChatWorkspace({ adminMode = false }) {
             <button type="button" onClick={() => setShowArchived(value => !value)} className="mt-2 flex items-center gap-2 text-[10px] uppercase tracking-widest text-ivory/40 hover:text-brass"><Archive size={13} />{showArchived ? 'Show active chats' : 'Archived chats'}</button>
             <div className="mt-3 flex max-w-full gap-1 overflow-x-auto pb-1">{[['all', 'All'], ['unread', 'Unread'], ['favourites', 'Favourites'], ['groups', 'Groups']].map(([value, label]) => <button type="button" key={value} onClick={() => setConversationFilter(value)} className={`min-h-8 shrink-0 rounded-full border px-3 text-[10px] uppercase tracking-wider ${conversationFilter === value ? 'border-brass bg-brass/15 text-brass' : 'border-brass/10 text-ivory/40'}`}>{label}</button>)}</div>
             {queuedCount > 0 && <p className="mt-2 flex items-center gap-2 text-[10px] uppercase tracking-wider text-amber-300"><WifiOff size={12} />{queuedCount} queued message{queuedCount === 1 ? '' : 's'} will retry automatically</p>}
-            {showAnnouncement && user?.role === 'admin' && <div className="mt-3 space-y-2 border border-brass/15 bg-obsidian p-3"><p className="text-xs uppercase tracking-[0.2em] text-brass">Community Updates</p><p className="text-xs leading-5 text-ivory/45">Only administrators can publish. Every active member receives this update and an unread notification.</p><input value={announcement.title} onChange={event => setAnnouncement(value => ({ ...value, title: event.target.value }))} className="h-10 w-full border border-brass/15 bg-carbon px-3 text-sm text-ivory outline-none" placeholder="Update title" /><textarea value={announcement.body} onChange={event => setAnnouncement(value => ({ ...value, body: event.target.value }))} className="h-24 w-full resize-none border border-brass/15 bg-carbon p-3 text-sm text-ivory outline-none" placeholder="Write an update for every signed-in member" /><button type="button" disabled={busy || !announcement.body.trim()} onClick={publishAnnouncement} className="h-10 w-full bg-brass text-xs uppercase tracking-wider text-obsidian disabled:opacity-40">Post community update</button></div>}
+            {showAnnouncement && user?.role === 'admin' && <div className="mt-3 max-h-[55dvh] space-y-2 overflow-y-auto border border-brass/15 bg-obsidian p-3">
+              <p className="text-xs uppercase tracking-[0.2em] text-brass">Community Updates</p><p className="text-xs leading-5 text-ivory/45">Publish now or schedule an update for a selected audience.</p>
+              <input value={announcement.title} onChange={event => setAnnouncement(value => ({ ...value, title: event.target.value }))} className="h-10 w-full border border-brass/15 bg-carbon px-3 text-sm text-ivory" placeholder="Update title" />
+              <textarea value={announcement.body} onChange={event => setAnnouncement(value => ({ ...value, body: event.target.value }))} className="h-24 w-full resize-none border border-brass/15 bg-carbon p-3 text-sm text-ivory" placeholder="Write the update" />
+              <select value={announcement.audience} onChange={event => setAnnouncement(value => ({ ...value, audience: event.target.value }))} className="h-10 w-full border border-brass/15 bg-carbon px-3 text-sm text-ivory"><option value="all">Everyone</option><option value="customers">Customers</option><option value="partners">Partners</option><option value="interns">Interns</option><option value="staff">Staff</option></select>
+              <input type="datetime-local" value={announcement.scheduledAt} onChange={event => setAnnouncement(value => ({ ...value, scheduledAt: event.target.value }))} className="h-10 w-full border border-brass/15 bg-carbon px-3 text-sm text-ivory" aria-label="Schedule date and time" />
+              <select value={announcement.richMedia.type} onChange={event => setAnnouncement(value => ({ ...value, richMedia: { ...value.richMedia, type: event.target.value } }))} className="h-10 w-full border border-brass/15 bg-carbon px-3 text-sm text-ivory"><option value="">No rich media</option><option value="image">Image</option><option value="product">Art Shop product</option><option value="film">Art Film</option></select>
+              {announcement.richMedia.type && <><input value={announcement.richMedia.title} onChange={event => setAnnouncement(value => ({ ...value, richMedia: { ...value.richMedia, title: event.target.value } }))} className="h-10 w-full border border-brass/15 bg-carbon px-3 text-sm text-ivory" placeholder="Media title" /><input value={announcement.richMedia.imageUrl} onChange={event => setAnnouncement(value => ({ ...value, richMedia: { ...value.richMedia, imageUrl: event.target.value } }))} className="h-10 w-full border border-brass/15 bg-carbon px-3 text-sm text-ivory" placeholder="Image URL" /><input value={announcement.richMedia.url} onChange={event => setAnnouncement(value => ({ ...value, richMedia: { ...value.richMedia, url: event.target.value } }))} className="h-10 w-full border border-brass/15 bg-carbon px-3 text-sm text-ivory" placeholder="Destination URL" /></>}
+              <div className="grid grid-cols-2 gap-2"><input value={announcement.action.label} onChange={event => setAnnouncement(value => ({ ...value, action: { ...value.action, label: event.target.value } }))} className="h-10 min-w-0 border border-brass/15 bg-carbon px-3 text-sm text-ivory" placeholder="Button label" /><input value={announcement.action.url} onChange={event => setAnnouncement(value => ({ ...value, action: { ...value.action, url: event.target.value } }))} className="h-10 min-w-0 border border-brass/15 bg-carbon px-3 text-sm text-ivory" placeholder="Button URL" /></div>
+              <button type="button" disabled={busy || !announcement.body.trim()} onClick={publishAnnouncement} className="h-10 w-full bg-brass text-xs uppercase tracking-wider text-obsidian disabled:opacity-40">{announcement.scheduledAt ? 'Schedule update' : 'Post update now'}</button>
+              {managedUpdates.length > 0 && <div className="space-y-2 border-t border-brass/10 pt-3"><p className="text-[10px] uppercase tracking-widest text-ivory/40">Recent & scheduled</p>{managedUpdates.slice(0, 6).map(update => <article key={update.id} className="border border-brass/10 bg-carbon p-2"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><b className="block truncate text-xs text-ivory">{update.title}</b><span className="text-[10px] uppercase text-brass">{update.status} · {update.audience}</span></div>{update.status === 'scheduled' && <button type="button" onClick={async () => { await studioClient.chat.cancelAnnouncement(update.id); setManagedUpdates(await studioClient.chat.announcements()); }} className="text-[10px] text-red-300">Cancel</button>}</div>{update.status === 'published' && <p className="mt-1 text-[10px] text-ivory/40">Delivered {update.deliveredCount || 0} · Read {update.readCount || 0}</p>}</article>)}</div>}
+              {moderationReports.some(item => item.status === 'open' || item.status === 'reviewing') && <div className="space-y-2 border-t border-red-400/15 pt-3"><p className="text-[10px] uppercase tracking-widest text-red-300">Moderation reports</p>{moderationReports.filter(item => item.status === 'open' || item.status === 'reviewing').slice(0, 5).map(item => <article key={item.id} className="border border-red-400/15 p-2"><b className="block text-xs text-ivory">{item.reason}</b><p className="mt-1 text-[10px] text-ivory/40">Reported by {item.reporter?.name || 'member'}</p><div className="mt-2 flex gap-2"><button type="button" onClick={() => reviewReport(item.id, 'reviewing')} className="text-[10px] text-brass">Reviewing</button><button type="button" onClick={() => reviewReport(item.id, 'resolved')} className="text-[10px] text-green-300">Resolve</button><button type="button" onClick={() => reviewReport(item.id, 'dismissed')} className="text-[10px] text-ivory/40">Dismiss</button></div></article>)}</div>}
+            </div>}
           </div>
           {error && !activeId && <p role="alert" className="border-b border-red-400/20 bg-red-400/5 p-3 text-xs text-red-300">{error}</p>}
           <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto pb-20 [scrollbar-gutter:stable] md:pb-5">
@@ -673,12 +713,14 @@ export default function ChatWorkspace({ adminMode = false }) {
                   <button type="button" onClick={() => updateConversation({ markUnread: true })} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10"><Mail size={15} />Mark as unread</button>
                   <button type="button" onClick={() => updateConversation({ archived: !active.archived })} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10"><Archive size={15} />{active.archived ? 'Restore chat' : 'Archive chat'}</button>
                   {active.type !== 'announcement' && <button type="button" onClick={() => updateConversation({ blocked: !active.blockedByMe })} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-red-300 hover:bg-red-400/10"><Ban size={15} />{active.blockedByMe ? 'Unblock person' : 'Block person'}</button>}
+                  {active.type !== 'announcement' && !adminMode && <button type="button" onClick={() => { setReporting(true); setShowConversationMenu(false); }} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-red-300 hover:bg-red-400/10"><Flag size={15} />Report conversation</button>}
                 </div>}
               </div>
             </header>
             {searchingMessages && <form onSubmit={runMessageSearch} className="flex gap-2 border-b border-brass/15 bg-carbon p-3"><label className="flex min-w-0 flex-1 items-center gap-2 border border-brass/15 bg-obsidian px-3"><Search size={14} className="text-brass" /><input autoFocus value={messageQuery} onChange={event => setMessageQuery(event.target.value)} placeholder="Search messages and files" className="h-10 min-w-0 flex-1 bg-transparent text-sm text-ivory outline-none" /></label><button disabled={searchBusy} className="h-10 border border-brass/20 px-3 text-xs text-brass disabled:opacity-40">{searchBusy ? 'Searching…' : 'Search'}</button><button type="button" onClick={() => { setMessageQuery(''); setSearchingMessages(false); loadMessages(activeId, '', { scrollToBottom: true }); }} className="h-10 w-10 border border-brass/20 text-ivory/50"><X size={15} className="mx-auto" /></button></form>}
             {error && <p role="alert" className="border-b border-red-400/20 bg-red-400/5 p-3 text-xs text-red-300">{error}</p>}
             {active.blocked && <p className="border-b border-amber-400/20 bg-amber-400/5 p-3 text-center text-xs text-amber-200">{active.blockedByMe ? 'You blocked this conversation. Use the menu to unblock it.' : 'This person is not accepting messages from this conversation.'}</p>}
+            {reporting && <form onSubmit={submitReport} className="grid gap-2 border-b border-red-400/20 bg-red-400/5 p-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_auto]"><select required value={report.reason} onChange={event => setReport(value => ({ ...value, reason: event.target.value }))} className="h-10 border border-red-300/20 bg-obsidian px-3 text-sm text-ivory"><option value="">Choose a reason</option><option>Spam or scam</option><option>Harassment</option><option>Unsafe content</option><option>Impersonation</option><option>Other concern</option></select><input value={report.details} onChange={event => setReport(value => ({ ...value, details: event.target.value }))} placeholder="Optional details for the moderator" className="h-10 min-w-0 border border-red-300/20 bg-obsidian px-3 text-sm text-ivory" /><div className="flex gap-2"><button disabled={busy} className="h-10 bg-red-300 px-3 text-xs text-obsidian">Send report</button><button type="button" onClick={() => setReporting(false)} className="h-10 border border-red-300/20 px-3 text-xs text-red-200">Cancel</button></div></form>}
             <div ref={messagesPaneRef} onScroll={handleMessageScroll} tabIndex={0} role="log" aria-label={`Messages with ${conversationName(active, user.id)}`} aria-live="polite" className="relative min-h-0 min-w-0 flex-1 space-y-3 overscroll-contain overflow-x-hidden overflow-y-auto bg-obsidian/35 p-3 [scrollbar-gutter:stable] sm:p-6">
               {nextCursor && !messageQuery && <button type="button" disabled={loadingOlder} onClick={loadOlderMessages} className="mx-auto flex h-9 items-center gap-2 border border-brass/15 px-4 text-xs text-brass disabled:opacity-40">{loadingOlder && <Loader2 size={13} className="animate-spin" />}Load older messages</button>}
               {messages.map((message, index) => {
@@ -690,6 +732,8 @@ export default function ChatWorkspace({ adminMode = false }) {
                 return <div key={message.id} className="min-w-0 max-w-full">{showDate && <div className="my-4 flex items-center gap-3" aria-label={`Messages from ${new Date(message.created_date).toLocaleDateString()}`}><span className="h-px flex-1 bg-brass/10" /><span className="text-[10px] uppercase tracking-widest text-ivory/35">{new Date(message.created_date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</span><span className="h-px flex-1 bg-brass/10" /></div>}<div className={`group flex min-w-0 max-w-full ${mine ? 'justify-end' : 'justify-start'}`}><article className={`relative min-w-0 max-w-[90%] border p-3 sm:max-w-[72%] ${mine ? 'border-brass/20 bg-brass/10' : 'border-ivory/10 bg-carbon'}`}>
                   {message.replyPreview && <div className="mb-2 border-l-2 border-brass/50 bg-black/20 px-3 py-2 text-xs text-ivory/45"><Reply size={12} className="mb-1 inline text-brass" /> {message.replyPreview}</div>}
                   {message.deletedForEveryone ? <div className="flex items-center gap-3"><p className="flex items-center gap-2 text-sm italic text-ivory/35"><Ban size={14} />This message was deleted.</p><button type="button" onClick={() => removeMessage(message, 'me')} className="text-[10px] uppercase tracking-wider text-ivory/30 hover:text-brass">Remove</button></div> : editing?.id === message.id ? <div className="space-y-2"><textarea autoFocus value={editing.body} onChange={event => setEditing({ ...editing, body: event.target.value })} className="min-h-20 w-full resize-none border border-brass/20 bg-obsidian p-2 text-sm text-ivory outline-none" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="h-8 px-3 text-xs text-ivory/50">Cancel</button><button type="button" onClick={saveEdit} className="h-8 bg-brass px-3 text-xs text-obsidian">Save</button></div></div> : message.body && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm leading-6 text-ivory/75">{message.body}</p>}
+                  {message.richMedia && <a href={message.richMedia.url || '#'} target={message.richMedia.url ? '_blank' : undefined} rel="noreferrer" className="mt-3 block overflow-hidden border border-brass/15 bg-obsidian">{message.richMedia.imageUrl && <img src={message.richMedia.imageUrl} alt="" className="max-h-56 w-full object-cover" />}<span className="block p-3"><b className="text-sm text-ivory">{message.richMedia.title || (message.richMedia.type === 'film' ? 'Art Film' : 'Featured studio item')}</b><small className="mt-1 block uppercase tracking-wider text-brass">View {message.richMedia.type}</small></span></a>}
+                  {message.action?.url && <a href={message.action.url} target="_blank" rel="noreferrer" className="mt-3 flex min-h-10 items-center justify-center bg-brass px-4 text-xs uppercase tracking-wider text-obsidian">{message.action.label || 'Learn more'}</a>}
                   <AttachmentPreview attachment={attachment} onOpen={setPreview} />
                   {message.starredBy?.includes(user.id) && <Star size={12} className="absolute right-2 top-2 fill-brass text-brass" aria-label="Starred message" />}
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">

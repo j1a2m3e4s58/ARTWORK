@@ -23,6 +23,7 @@ import { storageProvider, storeFile, deleteStoredFile, checkStorage } from './st
 import { authenticator } from 'otplib';
 import QRCode from 'qrcode';
 import webpush from 'web-push';
+import { createClient } from 'redis';
 import { initializePayment, paymentStatus, verifyPayment, verifyPaymentWebhook } from './payments.js';
 import { blocksEntityReadForPendingMfa, canUseProtectedFeature, passwordProblem, requiresProductionMfa } from './security.js';
 import { reportOperationalError } from './operations.js';
@@ -1166,7 +1167,14 @@ app.get('/api/admin/system-status', requireAdmin, async (_req, res) => {
   };
   res.json({
     ok: database.ok && (process.env.NODE_ENV !== 'production' || (email.ok && storage.ok)),
-    services: { database, email, storage, monitoring, backup, payment: paymentStatus },
+    services: {
+      database, email, storage, monitoring, backup, payment: paymentStatus,
+      realtime: {
+        ok: redisReady,
+        provider: process.env.REDIS_URL ? 'redis' : 'single-server memory',
+        configured: Boolean(process.env.REDIS_URL),
+      },
+    },
     counts: {
       pendingMessages: db.data.Message.filter(item => !['replied', 'archived', 'spam'].includes(item.status) && !item.deleted_at).length,
       pendingCommissions: db.data.CommissionRequest.filter(item => item.status === 'pending' && !item.deleted_at).length,
@@ -1610,16 +1618,44 @@ app.post('/api/admin/mfa/recovery-codes', requireAdmin, authLimiter, async (req,
 
 const chatTyping = new Map();
 const chatStreams = new Map();
+let redisPublisher = null;
+let redisSubscriber = null;
+let redisReady = false;
+const redisInstanceId = randomBytes(8).toString('hex');
 const chatMember = (conversation, user) => Boolean(user && (
   conversation.type === 'announcement' || conversation.participantIds?.includes(user.id)
 ));
-const emitChatEvent = (userIds, event, data = {}) => {
+const emitLocalChatEvent = (userIds, event, data = {}) => {
   [...new Set(userIds || [])].forEach(userId => {
     (chatStreams.get(userId) || new Set()).forEach(response => {
       try { response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch { /* stale stream cleanup happens on close */ }
     });
   });
 };
+const emitChatEvent = (userIds, event, data = {}) => {
+  const uniqueUserIds = [...new Set(userIds || [])];
+  emitLocalChatEvent(uniqueUserIds, event, data);
+  if (redisReady) redisPublisher.publish('reigns:chat-events', JSON.stringify({ origin: redisInstanceId, userIds: uniqueUserIds, event, data })).catch(error => reportOperationalError('redis_publish_failed', error));
+};
+if (process.env.REDIS_URL) {
+  try {
+    redisPublisher = createClient({ url: process.env.REDIS_URL });
+    redisSubscriber = redisPublisher.duplicate();
+    redisPublisher.on('error', error => reportOperationalError('redis_error', error));
+    redisSubscriber.on('error', error => reportOperationalError('redis_subscriber_error', error));
+    await Promise.all([redisPublisher.connect(), redisSubscriber.connect()]);
+    await redisSubscriber.subscribe('reigns:chat-events', raw => {
+      try {
+        const payload = JSON.parse(raw);
+        if (payload.origin !== redisInstanceId) emitLocalChatEvent(payload.userIds, payload.event, payload.data);
+      } catch (error) { reportOperationalError('redis_event_invalid', error); }
+    });
+    redisReady = true;
+  } catch (error) {
+    redisReady = false;
+    reportOperationalError('redis_startup_failed', error);
+  }
+}
 const chatUser = user => ({
   id: user.id,
   name: user.full_name || user.email.split('@')[0],
@@ -1630,8 +1666,11 @@ const chatUser = user => ({
   lastSeenAt: user.lastSeenAt || null,
 });
 const isConversationBlocked = conversation => Boolean(conversation.blockedBy?.length);
-const latestVisibleChatMessage = conversationId => db.data.ChatMessage
-  .filter(item => item.conversationId === conversationId && !item.deleted_at)
+const chatMessageVisibleTo = (item, viewer) => !item.deleted_at
+  && !(item.hiddenFor || []).includes(viewer.id)
+  && (!item.recipientIds?.length || item.senderId === viewer.id || staffRoles.has(viewer.role) || item.recipientIds.includes(viewer.id));
+const latestVisibleChatMessage = (conversationId, viewer = null) => db.data.ChatMessage
+  .filter(item => item.conversationId === conversationId && !item.deleted_at && (!viewer || chatMessageVisibleTo(item, viewer)))
   .sort((a, b) => String(b.created_date).localeCompare(String(a.created_date)))[0];
 const refreshConversationSummary = conversation => {
   const latest = latestVisibleChatMessage(conversation.id);
@@ -1641,9 +1680,41 @@ const refreshConversationSummary = conversation => {
 const unreadNotificationCount = userId => db.data.Notification.filter(item => (
   item.userId === userId && !item.read && !item.deleted_at
 )).length;
+const defaultNotificationPreferences = () => ({
+  pushEnabled: true,
+  messages: true,
+  community: true,
+  orders: true,
+  studio: true,
+  quietHours: { enabled: false, start: '22:00', end: '07:00', timezone: 'Africa/Accra' },
+});
+const notificationCategory = type => type?.startsWith('chat.announcement') ? 'community'
+  : type?.startsWith('chat.') ? 'messages'
+    : type?.startsWith('order.') || type?.startsWith('payment.') ? 'orders' : 'studio';
+const minutesAtTimezone = timezone => {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date());
+    return Number(parts.find(part => part.type === 'hour')?.value) * 60 + Number(parts.find(part => part.type === 'minute')?.value);
+  } catch { return new Date().getHours() * 60 + new Date().getMinutes(); }
+};
+const inQuietHours = preferences => {
+  const quiet = preferences.quietHours || {};
+  if (!quiet.enabled) return false;
+  const toMinutes = value => { const [hour, minute] = String(value || '').split(':').map(Number); return hour * 60 + minute; };
+  const current = minutesAtTimezone(quiet.timezone || 'Africa/Accra');
+  const start = toMinutes(quiet.start || '22:00');
+  const end = toMinutes(quiet.end || '07:00');
+  return start <= end ? current >= start && current < end : current >= start || current < end;
+};
 const pushToUsers = async (userIds, payload, mutedBy = []) => {
   if (!pushConfigured) return;
-  const recipients = db.data.PushSubscription.filter(item => userIds.includes(item.userId) && !mutedBy.includes(item.userId) && !item.deleted_at);
+  const category = payload.category || notificationCategory(payload.type);
+  const recipients = db.data.PushSubscription.filter(item => {
+    const user = db.data.User.find(entry => entry.id === item.userId);
+    const preferences = { ...defaultNotificationPreferences(), ...(user?.notificationPreferences || {}) };
+    return userIds.includes(item.userId) && !mutedBy.includes(item.userId) && !item.deleted_at
+      && preferences.pushEnabled !== false && preferences[category] !== false && !inQuietHours(preferences);
+  });
   await Promise.all(recipients.map(async item => {
     try {
       await webpush.sendNotification(item.subscription, JSON.stringify({
@@ -1657,6 +1728,71 @@ const pushToUsers = async (userIds, payload, mutedBy = []) => {
     }
   }));
 };
+
+const audienceRecipients = audience => {
+  const users = db.data.User.filter(item => !item.deleted_at && item.status === 'active');
+  if (audience === 'staff') return users.filter(item => staffRoles.has(item.role));
+  if (audience === 'partners') {
+    const ids = new Set(db.data.PartnerApplication.filter(item => item.status === 'approved' && !item.deleted_at).map(item => item.userId));
+    return users.filter(item => item.role === 'partner' || ids.has(item.id));
+  }
+  if (audience === 'interns') {
+    const emails = new Set(db.data.InternshipApplication.filter(item => !item.deleted_at).map(item => String(item.email || '').toLowerCase()));
+    return users.filter(item => item.role === 'intern' || emails.has(String(item.email).toLowerCase()));
+  }
+  if (audience === 'customers') return users.filter(item => item.role === 'customer');
+  return users;
+};
+const publishCommunityUpdate = async update => {
+  if (update.status === 'published' || update.status === 'cancelled') return false;
+  const recipients = audienceRecipients(update.audience || 'all');
+  const participantIds = recipients.map(item => item.id);
+  let conversation = db.data.ChatConversation.find(item => item.type === 'announcement' && !item.deleted_at);
+  if (!conversation) {
+    conversation = { id: newId(), type: 'announcement', title: 'Community Updates', participantIds: [], pinnedBy: [], createdBy: update.createdBy, created_date: now() };
+    db.data.ChatConversation.push(conversation);
+  }
+  conversation.participantIds = [...new Set([...(conversation.participantIds || []), ...participantIds])];
+  conversation.pinnedBy = [...new Set([...(conversation.pinnedBy || []), ...participantIds])];
+  const message = {
+    id: newId(), conversationId: conversation.id, senderId: update.createdBy, body: update.body,
+    announcement: true, announcementId: update.id, recipientIds: participantIds,
+    announcementTitle: update.title, richMedia: update.richMedia || null, action: update.action || null,
+    deliveredAt: now(), readBy: [update.createdBy], reactions: {}, created_date: now(),
+  };
+  db.data.ChatMessage.push(message);
+  refreshConversationSummary(conversation);
+  const recipientIds = participantIds.filter(id => id !== update.createdBy);
+  recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.announcement', title: update.title, message: update.body.slice(0, 180), section: 'messages', entity: 'CommunityUpdate', entityId: update.id, priority: 'normal', read: false, created_date: now() }));
+  update.status = 'published'; update.publishedAt = now(); update.recipientIds = recipientIds; update.messageId = message.id; update.conversationId = conversation.id; update.updated_date = now();
+  await pushToUsers(recipientIds, { title: update.title, body: update.body.slice(0, 180), url: `/messages?conversation=${conversation.id}`, tag: `community-${update.id}`, category: 'community' }, conversation.mutedBy || []);
+  emitChatEvent(participantIds, 'message', { conversationId: conversation.id, messageId: message.id });
+  return true;
+};
+const processScheduledCommunityUpdates = async () => {
+  let lockToken = null;
+  if (redisReady) {
+    lockToken = `${redisInstanceId}:${Date.now()}`;
+    const acquired = await redisPublisher.set('reigns:jobs:community-updates', lockToken, { NX: true, PX: 55_000 });
+    if (!acquired) return;
+  }
+  try {
+    let changed = false;
+    for (const update of db.data.CommunityUpdate.filter(item => item.status === 'scheduled' && new Date(item.scheduledAt || 0).getTime() <= Date.now())) {
+      changed = (await publishCommunityUpdate(update)) || changed;
+    }
+    if (changed) await save();
+  } finally {
+    if (redisReady && lockToken) {
+      await redisPublisher.eval("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end", { keys: ['reigns:jobs:community-updates'], arguments: [lockToken] }).catch(() => {});
+    }
+  }
+};
+const communityUpdateTimer = backgroundJobsEnabled
+  ? setInterval(() => processScheduledCommunityUpdates().catch(error => reportOperationalError('community_update_job_failed', error)), 30_000)
+  : null;
+communityUpdateTimer?.unref();
+if (backgroundJobsEnabled) processScheduledCommunityUpdates().catch(error => reportOperationalError('community_update_startup_failed', error));
 const conversationView = (item, viewer) => {
   const typing = chatTyping.get(item.id) || {};
   const typingUsers = Object.entries(typing)
@@ -1664,10 +1800,13 @@ const conversationView = (item, viewer) => {
     .map(([id]) => db.data.User.find(user => user.id === id))
     .filter(Boolean)
     .map(chatUser);
+  const latest = latestVisibleChatMessage(item.id, viewer);
   return {
     ...item,
+    lastMessageAt: latest?.created_date || item.created_date,
+    lastMessage: latest ? (latest.body || latest.attachmentName || 'Attachment') : 'Conversation started',
     participants: (item.participantIds || []).map(id => db.data.User.find(user => user.id === id)).filter(Boolean).map(chatUser),
-    unread: db.data.ChatMessage.filter(message => message.conversationId === item.id && message.senderId !== viewer.id && !(message.readBy || []).includes(viewer.id) && !(message.hiddenFor || []).includes(viewer.id) && !message.deleted_at).length,
+    unread: db.data.ChatMessage.filter(message => message.conversationId === item.id && message.senderId !== viewer.id && !(message.readBy || []).includes(viewer.id) && chatMessageVisibleTo(message, viewer)).length,
     muted: Boolean(item.mutedBy?.includes(viewer.id)),
     archived: Boolean(item.archivedBy?.includes(viewer.id)),
     favourite: Boolean(item.favouritedBy?.includes(viewer.id)),
@@ -1788,24 +1927,52 @@ app.post('/api/chat/announcements', requireAdmin, mutationLimiter, async (req, r
   const title = String(req.body.title || 'Community Updates').trim().slice(0, 100);
   const body = String(req.body.body || '').trim().slice(0, 10_000);
   if (!body) return res.status(400).json({ error: 'Write an announcement.' });
-  const participantIds = db.data.User.filter(item => !item.deleted_at && item.status === 'active').map(item => item.id);
-  let conversation = db.data.ChatConversation.find(item => item.type === 'announcement' && !item.deleted_at);
-  if (!conversation) {
-    conversation = { id: newId(), type: 'announcement', title, participantIds, pinnedBy: participantIds, createdBy: req.user.id, created_date: now() };
-    db.data.ChatConversation.push(conversation);
-  } else {
-    conversation.title = title;
-    conversation.participantIds = [...new Set([...conversation.participantIds, ...participantIds])];
-    conversation.pinnedBy = [...new Set([...(conversation.pinnedBy || []), ...participantIds])];
-  }
-  const message = { id: newId(), conversationId: conversation.id, senderId: req.user.id, body, announcement: true, deliveredAt: now(), readBy: [req.user.id], reactions: {}, created_date: now() };
-  db.data.ChatMessage.push(message);
-  refreshConversationSummary(conversation);
-  const recipients = participantIds.filter(id => id !== req.user.id);
-  recipients.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.announcement', title, message: body.slice(0, 180), section: 'messages', entity: 'ChatConversation', entityId: conversation.id, priority: 'normal', read: false, created_date: now() }));
-  await pushToUsers(recipients, { title, body: body.slice(0, 180), url: `/messages?conversation=${conversation.id}`, tag: `chat-${conversation.id}` }, conversation.mutedBy || []);
+  const audience = ['all', 'customers', 'partners', 'interns', 'staff'].includes(req.body.audience) ? req.body.audience : 'all';
+  const scheduledAt = req.body.scheduledAt ? new Date(req.body.scheduledAt) : null;
+  if (scheduledAt && Number.isNaN(scheduledAt.getTime())) return res.status(400).json({ error: 'Choose a valid schedule date and time.' });
+  const safeAnnouncementUrl = value => {
+    const candidate = String(value || '').trim().slice(0, 2048);
+    if (!candidate) return '';
+    if (candidate.startsWith('/') && !candidate.startsWith('//')) return candidate;
+    try {
+      const parsed = new URL(candidate);
+      return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : '';
+    } catch {
+      return '';
+    }
+  };
+  const richType = ['image', 'product', 'film'].includes(req.body.richMedia?.type) ? req.body.richMedia.type : '';
+  const richUrl = safeAnnouncementUrl(req.body.richMedia?.url);
+  const richImageUrl = safeAnnouncementUrl(req.body.richMedia?.imageUrl);
+  const actionUrl = safeAnnouncementUrl(req.body.action?.url);
+  const update = {
+    id: newId(), title, body, audience,
+    status: scheduledAt && scheduledAt.getTime() > Date.now() + 30_000 ? 'scheduled' : 'draft',
+    scheduledAt: scheduledAt?.toISOString() || null,
+    richMedia: richType ? { type: richType, title: String(req.body.richMedia?.title || '').slice(0, 160), imageUrl: richImageUrl, url: richUrl } : null,
+    action: req.body.action?.label && actionUrl ? { label: String(req.body.action.label).slice(0, 60), url: actionUrl } : null,
+    createdBy: req.user.id, created_date: now(),
+  };
+  db.data.CommunityUpdate.push(update);
+  if (update.status !== 'scheduled') await publishCommunityUpdate(update);
   await save();
-  res.status(201).json(conversationView(conversation, req.user));
+  res.status(201).json({ ...update, type: 'announcement' });
+});
+
+app.get('/api/chat/announcements/manage', requireAdmin, (_req, res) => {
+  res.json(db.data.CommunityUpdate.filter(item => !item.deleted_at).sort((a, b) => String(b.created_date).localeCompare(String(a.created_date))).map(item => {
+    const message = db.data.ChatMessage.find(entry => entry.id === item.messageId);
+    const recipients = item.recipientIds || [];
+    return { ...item, deliveredCount: recipients.length, readCount: (message?.readBy || []).filter(id => recipients.includes(id)).length };
+  }));
+});
+
+app.patch('/api/chat/announcements/:id/cancel', requireAdmin, mutationLimiter, async (req, res) => {
+  const update = db.data.CommunityUpdate.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!update) return res.status(404).json({ error: 'Community update not found.' });
+  if (update.status !== 'scheduled') return res.status(400).json({ error: 'Only scheduled updates can be cancelled.' });
+  update.status = 'cancelled'; update.cancelledAt = now(); update.updated_date = now();
+  await save(); res.json(update);
 });
 
 app.post('/api/chat/conversations/:id/typing', requireVerifiedUser, (req, res) => {
@@ -1842,12 +2009,46 @@ app.patch('/api/chat/conversations/:id/settings', requireVerifiedUser, mutationL
   res.json(conversationView(conversation, req.user));
 });
 
+app.post('/api/chat/conversations/:id/report', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!conversation || !chatMember(conversation, req.user) || conversation.type === 'announcement') return res.status(404).json({ error: 'Conversation not found.' });
+  const reason = String(req.body.reason || '').trim().slice(0, 120);
+  const details = String(req.body.details || '').trim().slice(0, 2000);
+  if (!reason) return res.status(400).json({ error: 'Choose or enter a reason for the report.' });
+  const existing = db.data.ChatReport.find(item => item.conversationId === conversation.id && item.reporterId === req.user.id && item.status === 'open' && !item.deleted_at);
+  if (existing) return res.status(409).json({ error: 'This conversation already has an open report from you.' });
+  const report = { id: newId(), conversationId: conversation.id, reporterId: req.user.id, reportedUserIds: (conversation.participantIds || []).filter(id => id !== req.user.id), messageId: String(req.body.messageId || '') || null, reason, details, status: 'open', created_date: now() };
+  db.data.ChatReport.push(report);
+  notifyStudioStaff({ title: 'Private conversation reported', message: `${req.user.full_name || 'A member'} reported a conversation: ${reason}`, section: 'chat-reports', entity: 'ChatReport', entityId: report.id, priority: 'high' });
+  await save();
+  res.status(201).json(report);
+});
+
+app.get('/api/chat/reports', requireAdmin, (_req, res) => {
+  res.json(db.data.ChatReport.filter(item => !item.deleted_at).sort((a, b) => String(b.created_date).localeCompare(String(a.created_date))).map(item => ({
+    ...item,
+    reporter: chatUser(db.data.User.find(user => user.id === item.reporterId) || { id: '', email: 'removed@account', role: 'customer' }),
+    reportedUsers: (item.reportedUserIds || []).map(id => db.data.User.find(user => user.id === id)).filter(Boolean).map(chatUser),
+  })));
+});
+
+app.patch('/api/chat/reports/:id', requireAdmin, mutationLimiter, async (req, res) => {
+  const report = db.data.ChatReport.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!report) return res.status(404).json({ error: 'Report not found.' });
+  if (['open', 'reviewing', 'resolved', 'dismissed'].includes(req.body.status)) report.status = req.body.status;
+  report.moderatorNotes = String(req.body.moderatorNotes || report.moderatorNotes || '').slice(0, 2000);
+  report.reviewedBy = req.user.id; report.updated_date = now();
+  await audit(req.user, 'chat.report_reviewed', 'ChatReport', report.id, { status: report.status });
+  await save(); res.json(report);
+});
+
 app.get('/api/chat/conversations/:id/messages', requireVerifiedUser, (req, res) => {
   const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
   if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
   const query = String(req.query.q || '').trim().toLowerCase();
   const allRows = db.data.ChatMessage
-    .filter(item => item.conversationId === conversation.id && !item.deleted_at && !(item.hiddenFor || []).includes(req.user.id) && (!query || `${item.body || ''} ${item.attachmentName || ''}`.toLowerCase().includes(query)))
+    .filter(item => item.conversationId === conversation.id && chatMessageVisibleTo(item, req.user)
+      && (!query || `${item.body || ''} ${item.attachmentName || ''}`.toLowerCase().includes(query)))
     .sort((a, b) => String(`${a.created_date}|${a.id}`).localeCompare(String(`${b.created_date}|${b.id}`)));
   const requestedLimit = Math.min(100, Math.max(1, Number(req.query.limit || 0)));
   if (!req.query.limit || query) return res.json(allRows);
@@ -2926,6 +3127,34 @@ app.get('/api/notifications/unread-count', requireVerifiedUser, (req, res) => {
   res.json({ count: unreadNotificationCount(req.user.id) });
 });
 
+app.get('/api/notifications', requireVerifiedUser, (req, res) => {
+  const filter = String(req.query.filter || 'all');
+  const category = String(req.query.category || 'all');
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
+  const items = db.data.Notification.filter(item => item.userId === req.user.id && !item.deleted_at)
+    .filter(item => filter !== 'unread' || !item.read)
+    .filter(item => category === 'all' || notificationCategory(item.type) === category)
+    .sort((a, b) => String(b.created_date).localeCompare(String(a.created_date)))
+    .slice(0, limit);
+  res.json(items);
+});
+
+app.get('/api/account/notification-preferences', requireVerifiedUser, (req, res) => {
+  res.json({ ...defaultNotificationPreferences(), ...(req.user.notificationPreferences || {}) });
+});
+
+app.patch('/api/account/notification-preferences', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const current = { ...defaultNotificationPreferences(), ...(req.user.notificationPreferences || {}) };
+  for (const key of ['pushEnabled', 'messages', 'community', 'orders', 'studio']) if (typeof req.body[key] === 'boolean') current[key] = req.body[key];
+  if (req.body.quietHours && typeof req.body.quietHours === 'object') {
+    const start = /^\d{2}:\d{2}$/.test(req.body.quietHours.start) ? req.body.quietHours.start : current.quietHours.start;
+    const end = /^\d{2}:\d{2}$/.test(req.body.quietHours.end) ? req.body.quietHours.end : current.quietHours.end;
+    current.quietHours = { enabled: Boolean(req.body.quietHours.enabled), start, end, timezone: String(req.body.quietHours.timezone || current.quietHours.timezone).slice(0, 80) };
+  }
+  req.user.notificationPreferences = current; req.user.updated_date = now();
+  await save(); res.json(current);
+});
+
 app.post('/api/notifications/read-all', requireVerifiedUser, mutationLimiter, async (req, res) => {
   const readAt = now();
   db.data.Notification
@@ -3092,8 +3321,11 @@ const shutdown = signal => {
   console.log(JSON.stringify({ level: 'info', event: 'shutdown', signal }));
   if (outboxTimer) clearInterval(outboxTimer);
   if (maintenanceTimer) clearInterval(maintenanceTimer);
+  if (communityUpdateTimer) clearInterval(communityUpdateTimer);
   server.close(async () => {
     await save();
+    if (redisSubscriber?.isOpen) await redisSubscriber.quit().catch(() => {});
+    if (redisPublisher?.isOpen) await redisPublisher.quit().catch(() => {});
     await closeDatabase();
     process.exit(0);
   });
