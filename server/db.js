@@ -12,7 +12,7 @@ await mkdir(backupDir, { recursive: true });
 const databasePath = path.join(dataDir, 'db.json');
 
 const entityNames = [
-  'Artwork', 'ArtworkLike', 'ArtRequest', 'Award', 'AuditLog', 'BlogPost', 'ChatConversation', 'ChatMessage', 'ChatReport', 'CommunityUpdate', 'CommissionRequest', 'FilmRequest', 'InternshipApplication', 'HeroSlide', 'Message', 'NewsletterSubscriber',
+  'Artwork', 'ArtworkLike', 'ArtRequest', 'Award', 'AuditLog', 'BlogPost', 'ChatCall', 'ChatConversation', 'ChatDevice', 'ChatJobFailure', 'ChatKeyBundle', 'ChatMessage', 'ChatModerationEvent', 'ChatReport', 'ChatSavedCollection', 'ChatStory', 'CommunityUpdate', 'CommissionRequest', 'FilmRequest', 'InternshipApplication', 'HeroSlide', 'Message', 'NewsletterSubscriber',
   'Media', 'Notification', 'Order', 'Outbox', 'PaymentEvent', 'PartnerApplication', 'PartnerPayout', 'PriceGuide', 'PushSubscription', 'Quote', 'ShopProduct', 'SiteContent',
   'Testimonial', 'User', 'Video',
 ];
@@ -25,9 +25,16 @@ const tableNames = {
   Award: 'awards',
   AuditLog: 'audit_logs',
   BlogPost: 'blog_posts',
+  ChatCall: 'chat_calls',
   ChatConversation: 'chat_conversations',
+  ChatDevice: 'chat_devices',
+  ChatJobFailure: 'chat_job_failures',
+  ChatKeyBundle: 'chat_key_bundles',
   ChatMessage: 'chat_messages',
+  ChatModerationEvent: 'chat_moderation_events',
   ChatReport: 'chat_reports',
+  ChatSavedCollection: 'chat_saved_collections',
+  ChatStory: 'chat_stories',
   CommunityUpdate: 'community_updates',
   CommissionRequest: 'commission_requests',
   FilmRequest: 'film_requests',

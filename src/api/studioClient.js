@@ -209,8 +209,27 @@ export const studioClient = {
     report: (id, data) => request(`/api/chat/conversations/${encodeURIComponent(id)}/report`, { method: 'POST', body: JSON.stringify(data) }),
     reports: () => request('/api/chat/reports'),
     reviewReport: (id, data) => request(`/api/chat/reports/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    createGroup: data => request('/api/chat/groups', { method: 'POST', body: JSON.stringify(data) }),
+    updateGroup: (id, data) => request(`/api/chat/groups/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    stories: () => request('/api/chat/stories'),
+    createStory: data => request('/api/chat/stories', { method: 'POST', body: JSON.stringify(data) }),
+    viewStory: id => request(`/api/chat/stories/${encodeURIComponent(id)}/view`, { method: 'POST' }),
+    removeStory: id => request(`/api/chat/stories/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    consume: id => request(`/api/chat/messages/${encodeURIComponent(id)}/consume`, { method: 'POST' }),
+    transcribe: (id, language = 'en') => request(`/api/chat/messages/${encodeURIComponent(id)}/transcribe`, { method: 'POST', body: JSON.stringify({ language }) }),
+    linkPreview: url => request('/api/chat/link-preview', { method: 'POST', body: JSON.stringify({ url }) }),
+    savedCollections: () => request('/api/chat/saved-collections'),
+    createSavedCollection: data => request('/api/chat/saved-collections', { method: 'POST', body: JSON.stringify(data) }),
+    updateSavedCollection: (id, data) => request(`/api/chat/saved-collections/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    publishKeys: data => request('/api/chat/keys', { method: 'PUT', body: JSON.stringify(data) }),
+    keysFor: userId => request(`/api/chat/keys/${encodeURIComponent(userId)}`),
+    startCall: data => request('/api/chat/calls', { method: 'POST', body: JSON.stringify(data) }),
+    updateCall: (id, data) => request(`/api/chat/calls/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    signalCall: (id, data) => request(`/api/chat/calls/${encodeURIComponent(id)}/signal`, { method: 'POST', body: JSON.stringify(data) }),
     heartbeat: () => request('/api/chat/presence', { method: 'POST' }),
     capabilities: () => request('/api/chat/capabilities'),
+    sync: since => request(`/api/chat/sync?since=${encodeURIComponent(since || '')}`),
+    gifs: query => request(`/api/chat/gifs?q=${encodeURIComponent(query || '')}`),
   },
   push: {
     config: () => request('/api/push/config'),
@@ -281,6 +300,12 @@ export const studioClient = {
     },
     export() {
       return request('/api/account/export');
+    },
+    sessions() {
+      return request('/api/account/sessions');
+    },
+    revokeSession(id) {
+      return request(`/api/account/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
     },
     removeUnfinishedOrder(id) {
       return request(`/api/account/orders/${encodeURIComponent(id)}`, { method: 'DELETE' });

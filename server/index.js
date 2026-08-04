@@ -2,6 +2,8 @@ import 'dotenv/config';
 import path from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
@@ -29,6 +31,7 @@ import { blocksEntityReadForPendingMfa, canUseProtectedFeature, passwordProblem,
 import { reportOperationalError } from './operations.js';
 import { assertRuntimeConfiguration } from './runtime-config.js';
 import { DEFAULT_COMMISSION_PRICES } from '../src/lib/commissionPricing.js';
+import { closeJobQueue, enqueueJob, initializeJobQueue, jobQueueHealth } from './jobQueue.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -277,7 +280,7 @@ async function finishOAuthSignIn(req, res, provider, profile, returnTo) {
   if (profile.emailVerified) user.emailVerified = true;
   await audit(user, 'account.oauth_signed_in', 'User', user.id, { provider });
   await save();
-  setSession(res, user);
+  setSession(res, user, req);
   res.redirect(safeLocalPath(returnTo));
 }
 
@@ -575,13 +578,20 @@ const hideOrderFromCustomer = (order, reason, actorId) => {
   return true;
 };
 
-function sign(user) {
-  return jwt.sign({ id: user.id, version: user.sessionVersion || 0 }, jwtSecret, { expiresIn: '7d' });
+function sign(user, sessionId = '') {
+  return jwt.sign({ id: user.id, version: user.sessionVersion || 0, sessionId }, jwtSecret, { expiresIn: '7d' });
 }
 
-function setSession(res, user) {
+function setSession(res, user, req = null) {
+  const sessionId = newId();
+  db.data.ChatDevice.push({
+    id: sessionId, userId: user.id,
+    label: String(req?.get?.('user-agent') || 'Browser session').slice(0, 240),
+    ipHash: req?.ip ? createHash('sha256').update(`${req.ip}:${jwtSecret}`).digest('hex').slice(0, 24) : '',
+    lastSeenAt: now(), created_date: now(),
+  });
   res.clearCookie('atelier_admin_access');
-  res.cookie('atelier_session', sign(user), {
+  res.cookie('atelier_session', sign(user, sessionId), {
     httpOnly: true,
     sameSite: 'lax',
     secure: secureCookie,
@@ -591,6 +601,7 @@ function setSession(res, user) {
     httpOnly: false, sameSite: 'lax', secure: secureCookie,
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
+  void save().catch(error => reportOperationalError('session_record_failed', error, { userId: user.id }));
 }
 
 function readUser(req) {
@@ -600,6 +611,11 @@ function readUser(req) {
     const payload = jwt.verify(token, jwtSecret);
     const user = db.data.User.find(item => item.id === payload.id) || null;
     if (!user || user.status === 'suspended' || (user.sessionVersion || 0) !== (payload.version || 0)) return null;
+    if (payload.sessionId) {
+      const device = db.data.ChatDevice.find(item => item.id === payload.sessionId && item.userId === user.id && !item.revokedAt && !item.deleted_at);
+      if (!device) return null;
+      Object.defineProperty(user, '_sessionId', { value: payload.sessionId, configurable: true, enumerable: false });
+    }
     return user;
   } catch {
     return null;
@@ -1253,7 +1269,7 @@ app.post('/api/auth/register', authLimiter, verifyHuman, async (req, res) => {
   await save();
   const verificationUrl = `${publicOrigin}/verify-email?token=${encodeURIComponent(verificationToken)}`;
   await deliverEmail({ to: user.email, subject: 'Verify your Reigns Atelier email', text: `Verify your email address: ${verificationUrl}` });
-  setSession(res, user);
+  setSession(res, user, req);
   res.status(201).json(hiddenUserFields(user));
 });
 
@@ -1268,7 +1284,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     const challenge = jwt.sign({ id: user.id, purpose: 'mfa' }, jwtSecret, { expiresIn: '5m' });
     return res.json({ mfaRequired: true, challenge });
   }
-  setSession(res, user);
+  setSession(res, user, req);
   res.json(hiddenUserFields(user));
 });
 
@@ -1297,7 +1313,7 @@ app.post('/api/auth/mfa/verify-login', authLimiter, async (req, res) => {
         text: 'A one-time recovery code was used to sign in. If this was not you, reset your password immediately.',
       });
     }
-    setSession(res, user);
+    setSession(res, user, req);
     res.json(hiddenUserFields(user));
   } catch {
     res.status(401).json({ error: 'The authentication challenge expired. Sign in again.' });
@@ -1520,7 +1536,7 @@ app.post('/api/auth/accept-invite', authLimiter, async (req, res) => {
   db.data.inviteTokens = db.data.inviteTokens.filter(item => item.id !== invite.id);
   await audit(user, 'user.invitation_accepted', 'User', user.id);
   await save();
-  setSession(res, user);
+  setSession(res, user, req);
   res.json(hiddenUserFields(user));
 });
 
@@ -1667,6 +1683,7 @@ const chatUser = user => ({
 });
 const isConversationBlocked = conversation => Boolean(conversation.blockedBy?.length);
 const chatMessageVisibleTo = (item, viewer) => !item.deleted_at
+  && (!item.expiresAt || new Date(item.expiresAt).getTime() > Date.now())
   && !(item.hiddenFor || []).includes(viewer.id)
   && (!item.recipientIds?.length || item.senderId === viewer.id || staffRoles.has(viewer.role) || item.recipientIds.includes(viewer.id));
 const latestVisibleChatMessage = (conversationId, viewer = null) => db.data.ChatMessage
@@ -1788,11 +1805,42 @@ const processScheduledCommunityUpdates = async () => {
     }
   }
 };
+const backgroundQueue = await initializeJobQueue({
+  handlers: {
+    'community.publish-due': async () => { await processScheduledCommunityUpdates(); return { completedAt: now() }; },
+    'voice.transcribe': async data => {
+      if (!process.env.SPEECH_API_URL) throw new Error('SPEECH_API_URL is not configured.');
+      const message = db.data.ChatMessage.find(item => item.id === data.messageId && !item.deleted_at);
+      if (!message?.attachmentUrl || !String(message.attachmentType || '').startsWith('audio/')) throw new Error('Audio message not found.');
+      const response = await fetch(process.env.SPEECH_API_URL, {
+        method: 'POST', signal: AbortSignal.timeout(60_000),
+        headers: { 'content-type': 'application/json', ...(process.env.SPEECH_API_TOKEN ? { authorization: `Bearer ${process.env.SPEECH_API_TOKEN}` } : {}) },
+        body: JSON.stringify({ mediaUrl: message.attachmentUrl, language: data.language || 'auto', translateTo: data.translateTo || '' }),
+      });
+      if (!response.ok) throw new Error(`Speech service returned ${response.status}.`);
+      const result = await response.json();
+      message.transcription = String(result.transcription || '').slice(0, 20_000);
+      message.translation = String(result.translation || '').slice(0, 20_000);
+      message.transcribedAt = now(); await save();
+      const conversation = db.data.ChatConversation.find(item => item.id === message.conversationId);
+      emitChatEvent(conversation?.participantIds, 'message', { conversationId: message.conversationId, messageId: message.id });
+      return { messageId: message.id };
+    },
+  },
+  onDeadLetter: async (job, error) => {
+    db.data.ChatJobFailure.push({ id: newId(), jobId: String(job.id), name: job.name, payload: job.data, attempts: job.attemptsMade, error: String(error?.message || error).slice(0, 2000), status: 'dead-letter', created_date: now() });
+    await save();
+    reportOperationalError('background_job_dead_lettered', error, { jobId: job.id, name: job.name });
+  },
+}).catch(error => {
+  reportOperationalError('job_queue_startup_failed', error);
+  return { configured: false, mode: 'direct' };
+});
 const communityUpdateTimer = backgroundJobsEnabled
-  ? setInterval(() => processScheduledCommunityUpdates().catch(error => reportOperationalError('community_update_job_failed', error)), 30_000)
+  ? setInterval(() => enqueueJob('community.publish-due', {}, { jobId: `community-${Math.floor(Date.now() / 30000)}` }).catch(error => reportOperationalError('community_update_job_failed', error)), 30_000)
   : null;
 communityUpdateTimer?.unref();
-if (backgroundJobsEnabled) processScheduledCommunityUpdates().catch(error => reportOperationalError('community_update_startup_failed', error));
+if (backgroundJobsEnabled) enqueueJob('community.publish-due', {}, { jobId: `community-startup-${Date.now()}` }).catch(error => reportOperationalError('community_update_startup_failed', error));
 const conversationView = (item, viewer) => {
   const typing = chatTyping.get(item.id) || {};
   const typingUsers = Object.entries(typing)
@@ -1923,6 +1971,68 @@ app.post('/api/chat/conversations', requireVerifiedUser, mutationLimiter, async 
   res.status(201).json(conversation);
 });
 
+app.post('/api/chat/groups', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const title = String(req.body.title || '').trim().slice(0, 100);
+  const requested = Array.isArray(req.body.participantIds) ? req.body.participantIds.slice(0, 255).map(String) : [];
+  const participantIds = [...new Set([req.user.id, ...requested])].filter(id => db.data.User.some(user => user.id === id && user.status === 'active' && !user.deleted_at));
+  if (!title) return res.status(400).json({ error: 'Name the group.' });
+  if (participantIds.length < 2) return res.status(400).json({ error: 'Choose at least one other member.' });
+  const conversation = {
+    id: newId(), type: 'group', title, participantIds, createdBy: req.user.id,
+    roles: Object.fromEntries(participantIds.map(id => [id, id === req.user.id ? 'owner' : 'member'])),
+    lastMessageAt: now(), created_date: now(),
+  };
+  db.data.ChatConversation.push(conversation);
+  await audit(req.user, 'chat.group_created', 'ChatConversation', conversation.id, { participantCount: participantIds.length });
+  await save(); emitChatEvent(participantIds, 'conversation', { conversationId: conversation.id });
+  res.status(201).json(conversationView(conversation, req.user));
+});
+
+app.patch('/api/chat/groups/:id', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && item.type === 'group' && !item.deleted_at);
+  if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Group not found.' });
+  const myRole = conversation.roles?.[req.user.id];
+  if (!['owner', 'admin'].includes(myRole) && !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'Only group administrators can make this change.' });
+  if (typeof req.body.title === 'string') conversation.title = String(req.body.title).trim().slice(0, 100) || conversation.title;
+  if (Array.isArray(req.body.participantIds)) {
+    const ids = [...new Set([conversation.createdBy, ...req.body.participantIds.map(String)])].filter(id => db.data.User.some(user => user.id === id && user.status === 'active' && !user.deleted_at));
+    conversation.participantIds = ids;
+    conversation.roles = Object.fromEntries(ids.map(id => [id, conversation.roles?.[id] || (id === conversation.createdBy ? 'owner' : 'member')]));
+  }
+  if (req.body.userId && ['admin', 'member'].includes(req.body.role) && conversation.participantIds.includes(String(req.body.userId))) conversation.roles[String(req.body.userId)] = req.body.role;
+  conversation.updated_date = now(); await save();
+  emitChatEvent(conversation.participantIds, 'conversation', { conversationId: conversation.id });
+  res.json(conversationView(conversation, req.user));
+});
+
+app.get('/api/chat/stories', requireVerifiedUser, (_req, res) => {
+  const active = db.data.ChatStory.filter(item => !item.deleted_at && new Date(item.expiresAt).getTime() > Date.now());
+  res.json(active.map(item => ({ ...item, author: chatUser(db.data.User.find(user => user.id === item.userId) || { id: '', email: 'removed@account', role: 'customer' }) })));
+});
+
+app.post('/api/chat/stories', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const body = String(req.body.body || '').trim().slice(0, 1200);
+  const mediaUrl = String(req.body.mediaUrl || '').trim().slice(0, 2048);
+  if (!body && !mediaUrl) return res.status(400).json({ error: 'Add text, a photo, or a video.' });
+  if (mediaUrl && !/^https?:\/\//i.test(mediaUrl) && !mediaUrl.startsWith('/uploads/')) return res.status(400).json({ error: 'The story media address is invalid.' });
+  const story = { id: newId(), userId: req.user.id, body, mediaUrl, mediaType: String(req.body.mediaType || '').slice(0, 80), views: [], expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), created_date: now() };
+  db.data.ChatStory.push(story); await save(); emitChatEvent(db.data.User.filter(user => user.status === 'active').map(user => user.id), 'story', { storyId: story.id });
+  res.status(201).json(story);
+});
+
+app.post('/api/chat/stories/:id/view', requireVerifiedUser, async (req, res) => {
+  const story = db.data.ChatStory.find(item => item.id === req.params.id && !item.deleted_at && new Date(item.expiresAt).getTime() > Date.now());
+  if (!story) return res.status(404).json({ error: 'Story expired or was removed.' });
+  story.views ||= []; if (!story.views.some(view => view.userId === req.user.id)) story.views.push({ userId: req.user.id, viewedAt: now() });
+  await save(); res.json({ success: true });
+});
+
+app.delete('/api/chat/stories/:id', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const story = db.data.ChatStory.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!story || (story.userId !== req.user.id && !staffRoles.has(req.user.role))) return res.status(404).json({ error: 'Story not found.' });
+  story.deleted_at = now(); await save(); res.json({ success: true });
+});
+
 app.post('/api/chat/announcements', requireAdmin, mutationLimiter, async (req, res) => {
   const title = String(req.body.title || 'Community Updates').trim().slice(0, 100);
   const body = String(req.body.body || '').trim().slice(0, 10_000);
@@ -2042,6 +2152,42 @@ app.patch('/api/chat/reports/:id', requireAdmin, mutationLimiter, async (req, re
   await save(); res.json(report);
 });
 
+const boundedExpiry = value => {
+  const seconds = Number(value || 0);
+  return Number.isFinite(seconds) && seconds >= 60 && seconds <= 30 * 24 * 60 * 60
+    ? new Date(Date.now() + seconds * 1000).toISOString() : null;
+};
+const cleanSharedLocation = value => {
+  if (!value || typeof value !== 'object') return null;
+  const latitude = Number(value.latitude); const longitude = Number(value.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+  return { latitude, longitude, label: String(value.label || '').trim().slice(0, 160) };
+};
+const cleanSharedContact = value => {
+  if (!value || typeof value !== 'object') return null;
+  const name = String(value.name || '').trim().slice(0, 120);
+  const phone = String(value.phone || '').trim().replace(/[^+\d()\-\s]/g, '').slice(0, 40);
+  const email = String(value.email || '').trim().toLowerCase().slice(0, 180);
+  return name && (phone || email) ? { name, phone, email } : null;
+};
+const messageRisk = (userId, body) => {
+  const recent = db.data.ChatMessage.filter(item => item.senderId === userId && Date.now() - new Date(item.created_date).getTime() < 60_000);
+  const duplicateCount = recent.filter(item => item.body && item.body === body).length;
+  const urlCount = (body.match(/https?:\/\//gi) || []).length;
+  return Math.min(100, recent.length * 4 + duplicateCount * 22 + Math.max(0, urlCount - 2) * 15);
+};
+const messageExtensions = (entry, replyTo) => ({
+  replyToId: replyTo?.id || null,
+  replyPreview: replyTo ? String(replyTo.body || replyTo.attachmentName || 'Attachment').slice(0, 180) : '',
+  replyMediaPreview: replyTo?.attachmentUrl ? { type: String(replyTo.attachmentType || '').slice(0, 80), name: String(replyTo.attachmentName || '').slice(0, 180), url: replyTo.attachmentUrl } : null,
+  expiresAt: boundedExpiry(entry?.expiresInSeconds),
+  viewOnce: Boolean(entry?.viewOnce), viewedOnceBy: [],
+  sharedLocation: cleanSharedLocation(entry?.sharedLocation),
+  sharedContact: cleanSharedContact(entry?.sharedContact),
+  ciphertext: String(entry?.ciphertext || '').slice(0, 50_000),
+  encryption: entry?.ciphertext ? { algorithm: String(entry?.encryption?.algorithm || 'X25519-AES-GCM').slice(0, 40), keyId: String(entry?.encryption?.keyId || '').slice(0, 120), version: 1 } : null,
+});
+
 app.get('/api/chat/conversations/:id/messages', requireVerifiedUser, (req, res) => {
   const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
   if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
@@ -2070,7 +2216,10 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLi
   }
   const body = String(req.body.body || '').trim().slice(0, 10000);
   const attachmentUrl = String(req.body.attachmentUrl || '').trim().slice(0, 2048);
-  if (!body && !attachmentUrl) return res.status(400).json({ error: 'Write a message or attach a file.' });
+  const sharedLocation = cleanSharedLocation(req.body.sharedLocation);
+  const sharedContact = cleanSharedContact(req.body.sharedContact);
+  const ciphertext = String(req.body.ciphertext || '').trim();
+  if (!body && !attachmentUrl && !sharedLocation && !sharedContact && !ciphertext) return res.status(400).json({ error: 'Write a message or attach something.' });
   if (attachmentUrl && !/^https?:\/\//i.test(attachmentUrl) && !attachmentUrl.startsWith('/uploads/')) {
     return res.status(400).json({ error: 'The attachment address is not valid.' });
   }
@@ -2078,16 +2227,18 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLi
   const replyTo = replyToId
     ? db.data.ChatMessage.find(item => item.id === replyToId && item.conversationId === conversation.id && !item.deleted_at)
     : null;
+  const riskScore = messageRisk(req.user.id, body);
+  if (riskScore >= 80 && !staffRoles.has(req.user.role)) return res.status(429).json({ error: 'This message was paused by spam protection. Wait a moment and try again.' });
   const message = {
     id: newId(), clientId: clientId || null, conversationId: conversation.id, senderId: req.user.id, body,
     attachmentUrl, attachmentName: String(req.body.attachmentName || '').slice(0, 240),
     attachmentType: String(req.body.attachmentType || '').slice(0, 120),
     attachmentBytes: Math.max(0, Number(req.body.attachmentBytes || 0)),
-    replyToId: replyTo?.id || null,
-    replyPreview: replyTo ? String(replyTo.body || replyTo.attachmentName || 'Attachment').slice(0, 180) : '',
+    ...messageExtensions(req.body, replyTo), sharedLocation, sharedContact,
     allowForward: staffRoles.has(req.user.role) ? Boolean(req.body.allowForward) : false,
     deliveredAt: now(), readBy: [req.user.id], reactions: {}, created_date: now(),
   };
+  if (riskScore >= 45) db.data.ChatModerationEvent.push({ id: newId(), type: 'spam_score', status: 'review', score: riskScore, userId: req.user.id, messageId: message.id, conversationId: conversation.id, created_date: now() });
   db.data.ChatMessage.push(message);
   conversation.lastMessageAt = message.created_date;
   conversation.lastMessage = body || message.attachmentName || 'Attachment';
@@ -2117,7 +2268,8 @@ app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, muta
     if (existing) { created.push(existing); continue; }
     const body = String(entry?.body || '').trim().slice(0, 10000);
     const attachmentUrl = String(entry?.attachmentUrl || '').trim().slice(0, 2048);
-    if (!body && !attachmentUrl) return res.status(400).json({ error: `Message ${index + 1} is empty.` });
+    const extension = messageExtensions(entry, index === 0 ? replyTo : null);
+    if (!body && !attachmentUrl && !extension.sharedLocation && !extension.sharedContact && !extension.ciphertext) return res.status(400).json({ error: `Message ${index + 1} is empty.` });
     if (attachmentUrl && !/^https?:\/\//i.test(attachmentUrl) && !attachmentUrl.startsWith('/uploads/')) {
       return res.status(400).json({ error: `Attachment ${index + 1} has an invalid address.` });
     }
@@ -2126,8 +2278,7 @@ app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, muta
       attachmentUrl, attachmentName: String(entry?.attachmentName || '').slice(0, 240),
       attachmentType: String(entry?.attachmentType || '').slice(0, 120),
       attachmentBytes: Math.max(0, Number(entry?.attachmentBytes || 0)),
-      replyToId: index === 0 ? replyTo?.id || null : null,
-      replyPreview: index === 0 && replyTo ? String(replyTo.body || replyTo.attachmentName || 'Attachment').slice(0, 180) : '',
+      ...extension,
       allowForward: staffRoles.has(req.user.role) ? Boolean(entry?.allowForward) : false,
       deliveredAt: now(), readBy: [req.user.id], reactions: {}, created_date: now(),
     });
@@ -2223,16 +2374,206 @@ app.patch('/api/chat/messages/:id/star', requireVerifiedUser, mutationLimiter, a
   res.json(message);
 });
 
+app.post('/api/chat/messages/:id/consume', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const message = db.data.ChatMessage.find(item => item.id === req.params.id && item.viewOnce && !item.deleted_at && !item.deletedForEveryone);
+  const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+  if (!message || !conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'View-once message not found.' });
+  if (message.senderId === req.user.id) return res.json({ consumed: false, owner: true });
+  message.viewedOnceBy ||= [];
+  if (!message.viewedOnceBy.includes(req.user.id)) message.viewedOnceBy.push(req.user.id);
+  await save(); emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageId: message.id });
+  res.json({ consumed: true });
+});
+
+app.post('/api/chat/messages/:id/transcribe', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at);
+  const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+  if (!message || !conversation || !chatMember(conversation, req.user) || !String(message.attachmentType || '').startsWith('audio/')) return res.status(404).json({ error: 'Voice note not found.' });
+  if (!process.env.SPEECH_API_URL) return res.status(503).json({ error: 'Voice transcription is not configured yet.' });
+  const result = await enqueueJob('voice.transcribe', { messageId: message.id, language: String(req.body.language || 'auto').slice(0, 20), translateTo: String(req.body.translateTo || '').slice(0, 20) }, { jobId: `transcribe-${message.id}-${String(req.body.translateTo || 'original')}` });
+  res.status(202).json(result);
+});
+
+app.get('/api/chat/saved-collections', requireVerifiedUser, (req, res) => {
+  res.json(db.data.ChatSavedCollection.filter(item => item.userId === req.user.id && !item.deleted_at));
+});
+
+app.post('/api/chat/saved-collections', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const name = String(req.body.name || '').trim().slice(0, 80);
+  if (!name) return res.status(400).json({ error: 'Name the collection.' });
+  const collection = { id: newId(), userId: req.user.id, name, messageIds: [], created_date: now() };
+  db.data.ChatSavedCollection.push(collection); await save(); res.status(201).json(collection);
+});
+
+app.patch('/api/chat/saved-collections/:id', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const collection = db.data.ChatSavedCollection.find(item => item.id === req.params.id && item.userId === req.user.id && !item.deleted_at);
+  if (!collection) return res.status(404).json({ error: 'Saved collection not found.' });
+  if (typeof req.body.name === 'string') collection.name = String(req.body.name).trim().slice(0, 80) || collection.name;
+  if (req.body.messageId) {
+    const messageId = String(req.body.messageId);
+    const message = db.data.ChatMessage.find(item => item.id === messageId && !item.deleted_at);
+    const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && chatMember(item, req.user));
+    if (!conversation) return res.status(404).json({ error: 'Message not found.' });
+    collection.messageIds ||= [];
+    collection.messageIds = req.body.saved === false ? collection.messageIds.filter(id => id !== messageId) : [...new Set([...collection.messageIds, messageId])];
+  }
+  collection.updated_date = now(); await save(); res.json(collection);
+});
+
+app.put('/api/chat/keys', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const identityKey = String(req.body.identityKey || '').trim().slice(0, 4096);
+  const signedPreKey = String(req.body.signedPreKey || '').trim().slice(0, 4096);
+  const signature = String(req.body.signature || '').trim().slice(0, 4096);
+  if (!identityKey || !signedPreKey || !signature) return res.status(400).json({ error: 'Identity key, signed pre-key, and signature are required.' });
+  let bundle = db.data.ChatKeyBundle.find(item => item.userId === req.user.id && !item.deleted_at);
+  const oneTimePreKeys = Array.isArray(req.body.oneTimePreKeys) ? req.body.oneTimePreKeys.slice(0, 100).map(value => String(value).slice(0, 4096)) : [];
+  if (!bundle) { bundle = { id: newId(), userId: req.user.id, created_date: now() }; db.data.ChatKeyBundle.push(bundle); }
+  Object.assign(bundle, { identityKey, signedPreKey, signature, oneTimePreKeys, updated_date: now() });
+  await save(); res.json({ success: true, keyId: bundle.id, oneTimePreKeyCount: oneTimePreKeys.length });
+});
+
+app.get('/api/chat/keys/:userId', requireVerifiedUser, async (req, res) => {
+  const userId = String(req.params.userId);
+  const sharesConversation = db.data.ChatConversation.some(item => !item.deleted_at && item.participantIds?.includes(req.user.id) && item.participantIds?.includes(userId));
+  if (!sharesConversation) return res.status(403).json({ error: 'Start a conversation before requesting encryption keys.' });
+  const bundle = db.data.ChatKeyBundle.find(item => item.userId === userId && !item.deleted_at);
+  if (!bundle) return res.status(404).json({ error: 'This device has not enabled encrypted messaging.' });
+  const oneTimePreKey = bundle.oneTimePreKeys?.shift() || null;
+  if (oneTimePreKey) await save();
+  res.json({ keyId: bundle.id, identityKey: bundle.identityKey, signedPreKey: bundle.signedPreKey, signature: bundle.signature, oneTimePreKey });
+});
+
+app.post('/api/chat/calls', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const conversation = db.data.ChatConversation.find(item => item.id === String(req.body.conversationId || '') && !item.deleted_at);
+  if (!conversation || !chatMember(conversation, req.user) || conversation.type === 'announcement') return res.status(404).json({ error: 'Conversation not found.' });
+  const kind = req.body.kind === 'video' ? 'video' : 'voice';
+  const call = { id: newId(), conversationId: conversation.id, initiatorId: req.user.id, participantIds: conversation.participantIds, kind, status: 'ringing', created_date: now() };
+  db.data.ChatCall.push(call); await save();
+  emitChatEvent(conversation.participantIds.filter(id => id !== req.user.id), 'call', { callId: call.id, conversationId: conversation.id, action: 'ringing', kind, from: chatUser(req.user) });
+  res.status(201).json(call);
+});
+
+app.patch('/api/chat/calls/:id', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const call = db.data.ChatCall.find(item => item.id === req.params.id && !item.deleted_at && item.participantIds?.includes(req.user.id));
+  if (!call) return res.status(404).json({ error: 'Call not found.' });
+  const action = String(req.body.action || '');
+  if (!['accepted', 'rejected', 'ended', 'missed'].includes(action)) return res.status(400).json({ error: 'Invalid call action.' });
+  call.status = action; call.updated_date = now(); if (action === 'accepted') call.acceptedAt = now(); if (['rejected', 'ended', 'missed'].includes(action)) call.endedAt = now();
+  await save(); emitChatEvent(call.participantIds, 'call', { callId: call.id, conversationId: call.conversationId, action, userId: req.user.id }); res.json(call);
+});
+
+app.post('/api/chat/calls/:id/signal', requireVerifiedUser, mutationLimiter, (req, res) => {
+  const call = db.data.ChatCall.find(item => item.id === req.params.id && !item.deleted_at && item.participantIds?.includes(req.user.id));
+  if (!call || ['rejected', 'ended', 'missed'].includes(call.status)) return res.status(404).json({ error: 'Active call not found.' });
+  const signal = req.body.signal;
+  if (!signal || typeof signal !== 'object' || JSON.stringify(signal).length > 100_000) return res.status(400).json({ error: 'Invalid WebRTC signal.' });
+  emitChatEvent(call.participantIds.filter(id => id !== req.user.id), 'call-signal', { callId: call.id, fromUserId: req.user.id, signal });
+  res.json({ relayed: true });
+});
+
+const privateAddress = address => {
+  const value = String(address || '').toLowerCase();
+  if (!isIP(value)) return true;
+  if (value.includes(':')) return value === '::1' || value.startsWith('fc') || value.startsWith('fd') || value.startsWith('fe80:') || value.startsWith('::ffff:127.');
+  const [a, b] = value.split('.').map(Number);
+  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+};
+const safePreviewTarget = async raw => {
+  const parsed = new URL(String(raw || '').trim());
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('Only public HTTP or HTTPS links can be previewed.');
+  const addresses = await lookup(parsed.hostname, { all: true });
+  if (!addresses.length || addresses.some(item => privateAddress(item.address))) throw new Error('Private network links cannot be previewed.');
+  return parsed;
+};
+const htmlMeta = (html, names) => {
+  for (const name of names) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const patterns = [
+      new RegExp(`<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']*)["'][^>]*>`, 'i'),
+      new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${escaped}["'][^>]*>`, 'i'),
+    ];
+    for (const pattern of patterns) { const match = html.match(pattern); if (match?.[1]) return match[1].replace(/&amp;/g, '&').slice(0, 600); }
+  }
+  return '';
+};
+
+app.post('/api/chat/link-preview', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  try {
+    const target = await safePreviewTarget(req.body.url);
+    const response = await fetch(target, { redirect: 'error', signal: AbortSignal.timeout(6000), headers: { 'user-agent': 'ReignsAtelier-LinkPreview/1.0', accept: 'text/html' } });
+    if (!response.ok || !String(response.headers.get('content-type') || '').includes('text/html')) throw new Error('That page does not provide a safe HTML preview.');
+    const html = (await response.text()).slice(0, 500_000);
+    const title = htmlMeta(html, ['og:title', 'twitter:title']) || html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim().slice(0, 240) || target.hostname;
+    const image = htmlMeta(html, ['og:image', 'twitter:image']);
+    let imageUrl = '';
+    try { if (image) { const candidate = new URL(image, target); if (['http:', 'https:'].includes(candidate.protocol)) imageUrl = candidate.toString(); } } catch { /* omit unsafe images */ }
+    res.json({ url: target.toString(), hostname: target.hostname, title, description: htmlMeta(html, ['og:description', 'description', 'twitter:description']), imageUrl });
+  } catch (error) {
+    res.status(400).json({ error: error.message || 'This link could not be previewed safely.' });
+  }
+});
+
 app.get('/api/chat/capabilities', requireVerifiedUser, (_req, res) => {
   res.json({
     realtime: 'server-sent-events',
     push: pushConfigured,
     secureTransport: process.env.NODE_ENV !== 'production' || /^https:/i.test(String(process.env.SITE_URL || '')),
-    encryptedAtRest: false,
-    endToEndEncryption: false,
-    voiceCalls: false,
-    videoCalls: false,
-    note: 'Calls and end-to-end encryption require dedicated signaling and audited key-management infrastructure.',
+    encryptedAtRest: Boolean(process.env.CHAT_ENCRYPTION_KEY),
+    endToEndEncryptionFoundation: true,
+    independentlyAuditedE2EE: false,
+    voiceCalls: true,
+    videoCalls: true,
+    stories: true,
+    groups: true,
+    durableQueue: backgroundQueue.configured,
+    note: 'WebRTC signaling and opaque key bundles are available. A formal independent cryptographic audit is still required before advertising audited end-to-end encryption.',
+  });
+});
+
+app.get('/api/chat/sync', requireVerifiedUser, (req, res) => {
+  const since = new Date(String(req.query.since || 0));
+  const sinceMs = Number.isNaN(since.getTime()) ? 0 : since.getTime();
+  const conversations = db.data.ChatConversation.filter(item => chatMember(item, req.user)
+    && Math.max(new Date(item.updated_date || item.created_date || 0).getTime(), new Date(item.lastMessageAt || 0).getTime()) > sinceMs);
+  const conversationIds = new Set(db.data.ChatConversation.filter(item => chatMember(item, req.user)).map(item => item.id));
+  const messages = db.data.ChatMessage.filter(item => conversationIds.has(item.conversationId)
+    && new Date(item.updated_date || item.created_date || 0).getTime() > sinceMs
+    && chatMessageVisibleTo(item, req.user));
+  res.json({ cursor: now(), conversations, messages });
+});
+
+app.get('/api/chat/gifs', requireVerifiedUser, async (req, res) => {
+  const key = String(process.env.GIPHY_API_KEY || '').trim();
+  if (!key) return res.json({ configured: false, items: [] });
+  const query = String(req.query.q || '').trim().slice(0, 80);
+  if (!query) return res.json({ configured: true, items: [] });
+  try {
+    const target = new URL('https://api.giphy.com/v1/gifs/search');
+    target.searchParams.set('api_key', key); target.searchParams.set('q', query); target.searchParams.set('limit', '24'); target.searchParams.set('rating', 'g');
+    const response = await fetch(target, { signal: AbortSignal.timeout(6000) });
+    if (!response.ok) throw new Error('GIF provider unavailable.');
+    const payload = await response.json();
+    res.json({ configured: true, items: (payload.data || []).map(item => ({ id: item.id, title: item.title, url: item.images?.fixed_height?.url, previewUrl: item.images?.fixed_height_small?.url })).filter(item => item.url) });
+  } catch { res.status(503).json({ error: 'GIF search is temporarily unavailable.' }); }
+});
+
+app.get('/api/admin/chat/analytics', requireAdmin, async (_req, res) => {
+  const sent = db.data.ChatMessage.filter(item => !item.deleted_at);
+  const replies = [];
+  for (const conversation of db.data.ChatConversation.filter(item => !item.deleted_at)) {
+    const rows = sent.filter(item => item.conversationId === conversation.id).sort((a, b) => String(a.created_date).localeCompare(String(b.created_date)));
+    for (let index = 1; index < rows.length; index += 1) if (rows[index].senderId !== rows[index - 1].senderId) replies.push(new Date(rows[index].created_date).getTime() - new Date(rows[index - 1].created_date).getTime());
+  }
+  res.json({
+    messages: sent.length,
+    conversations: db.data.ChatConversation.filter(item => !item.deleted_at).length,
+    groups: db.data.ChatConversation.filter(item => item.type === 'group' && !item.deleted_at).length,
+    activeStories: db.data.ChatStory.filter(item => !item.deleted_at && new Date(item.expiresAt).getTime() > Date.now()).length,
+    calls: db.data.ChatCall.filter(item => !item.deleted_at).length,
+    averageResponseSeconds: replies.length ? Math.round(replies.reduce((sum, value) => sum + value, 0) / replies.length / 1000) : 0,
+    moderationReview: db.data.ChatModerationEvent.filter(item => item.status === 'review' && !item.deleted_at).length,
+    reportsOpen: db.data.ChatReport.filter(item => item.status === 'open' && !item.deleted_at).length,
+    queue: await jobQueueHealth().catch(error => ({ configured: false, error: error.message })),
   });
 });
 
@@ -2259,6 +2600,9 @@ app.get('/api/chat/messages/:id/attachment', requireVerifiedUser, async (req, re
   const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
   if (!message || !conversation || !chatMember(conversation, req.user) || !message.attachmentUrl) {
     return res.status(404).json({ error: 'Attachment not found.' });
+  }
+  if (message.viewOnce && message.senderId !== req.user.id && message.viewedOnceBy?.includes(req.user.id)) {
+    return res.status(410).json({ error: 'This view-once attachment has already been opened.' });
   }
   const filename = String(message.attachmentName || 'attachment').replace(/[\r\n"\\]/g, '_').slice(0, 180);
   const disposition = req.query.download === '1' ? 'attachment' : 'inline';
@@ -3059,6 +3403,26 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
   if (isProfileAvatar && !detected.mime.startsWith('image/')) {
     return res.status(400).json({ error: 'Profile photos must be JPG, PNG, WebP, AVIF or GIF images.' });
   }
+  let scanStatus = 'not-configured';
+  if (process.env.MALWARE_SCAN_URL) {
+    try {
+      const scanResponse = await fetch(process.env.MALWARE_SCAN_URL, {
+        method: 'POST', body: req.file.buffer, signal: AbortSignal.timeout(20_000),
+        headers: { 'content-type': detected.mime, 'x-file-name': encodeURIComponent(String(req.file.originalname || 'upload').slice(0, 180)), ...(process.env.MALWARE_SCAN_TOKEN ? { authorization: `Bearer ${process.env.MALWARE_SCAN_TOKEN}` } : {}) },
+      });
+      if (!scanResponse.ok) throw new Error(`Scanner returned ${scanResponse.status}.`);
+      const scan = await scanResponse.json();
+      if (scan.clean !== true) {
+        db.data.ChatModerationEvent.push({ id: newId(), type: 'attachment_malware', status: 'blocked', userId: req.user.id, filename: String(req.file.originalname || '').slice(0, 240), result: scan.result || 'unsafe', created_date: now() });
+        await save();
+        return res.status(400).json({ error: 'This attachment did not pass the safety scan and was not stored.' });
+      }
+      scanStatus = 'clean';
+    } catch (error) {
+      reportOperationalError('malware_scan_failed', error, { userId: req.user.id });
+      return res.status(503).json({ error: 'The attachment safety scanner is temporarily unavailable. Please retry.' });
+    }
+  }
   const fileId = newId();
   const stored = await storeFile({ buffer: req.file.buffer, mime: detected.mime, extension: detected.ext, uploadDir, id: fileId });
   const media = {
@@ -3070,6 +3434,7 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     provider: storageProvider,
     publicId: stored.publicId,
     resourceType: stored.resourceType,
+    scanStatus,
     userId: req.user.id,
     purpose: isPublicApplicationUpload ? 'internship-letter' : isChatAttachment ? 'chat-attachment' : isProfileAvatar ? 'profile-avatar' : staffRoles.has(req.user.role) ? 'content-library' : 'customer-reference',
     altText: '',
@@ -3206,17 +3571,35 @@ app.post('/api/account/change-password', requireUser, authLimiter, async (req, r
     subject: 'Your Reigns Atelier password was changed',
     text: 'Your account password was changed. If this was not you, use account recovery immediately.',
   });
-  setSession(res, req.user);
+  setSession(res, req.user, req);
   res.json({ success: true });
 });
 
 app.post('/api/account/logout-all', requireUser, authLimiter, async (req, res) => {
   req.user.sessionVersion = (req.user.sessionVersion || 0) + 1;
+  db.data.ChatDevice.filter(item => item.userId === req.user.id && !item.revokedAt).forEach(item => { item.revokedAt = now(); });
   await audit(req.user, 'account.sessions_revoked', 'User', req.user.id);
   await save();
   res.clearCookie('atelier_session');
   res.clearCookie('atelier_csrf');
   res.json({ success: true });
+});
+
+app.get('/api/account/sessions', requireUser, (req, res) => {
+  res.json(db.data.ChatDevice.filter(item => item.userId === req.user.id && !item.deleted_at).map(item => ({
+    id: item.id, label: item.label, userAgent: item.userAgent, createdAt: item.created_date, lastSeenAt: item.lastSeenAt,
+    revokedAt: item.revokedAt || null, current: item.id === req.user._sessionId,
+  })).sort((a, b) => String(b.lastSeenAt).localeCompare(String(a.lastSeenAt))));
+});
+
+app.delete('/api/account/sessions/:id', requireUser, mutationLimiter, async (req, res) => {
+  const device = db.data.ChatDevice.find(item => item.id === req.params.id && item.userId === req.user.id && !item.deleted_at);
+  if (!device) return res.status(404).json({ error: 'Device session not found.' });
+  device.revokedAt = now(); device.updated_date = now();
+  await audit(req.user, 'account.device_revoked', 'ChatDevice', device.id);
+  await save();
+  if (device.id === req.user._sessionId) { res.clearCookie('atelier_session'); res.clearCookie('atelier_csrf'); }
+  res.json({ success: true, current: device.id === req.user._sessionId });
 });
 
 app.delete('/api/account', requireUser, mutationLimiter, async (req, res) => {
@@ -3238,6 +3621,9 @@ app.get('/api/account/export', requireUser, (req, res) => {
     exportedAt: now(), profile: hiddenUserFields(req.user),
     messages: owned('Message'), commissions: owned('CommissionRequest'),
     orders: owned('Order'), notifications: owned('Notification'),
+    conversations: db.data.ChatConversation.filter(item => item.participantIds?.includes(req.user.id) && !item.deleted_at),
+    chatMessages: db.data.ChatMessage.filter(item => item.senderId === req.user.id && !item.deleted_at),
+    stories: owned('ChatStory'), devices: owned('ChatDevice').map(({ ipHash, ...item }) => item),
   });
 });
 
@@ -3326,6 +3712,7 @@ const shutdown = signal => {
     await save();
     if (redisSubscriber?.isOpen) await redisSubscriber.quit().catch(() => {});
     if (redisPublisher?.isOpen) await redisPublisher.quit().catch(() => {});
+    await closeJobQueue().catch(() => {});
     await closeDatabase();
     process.exit(0);
   });

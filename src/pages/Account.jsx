@@ -35,6 +35,7 @@ export default function Account() {
   const [notificationFilter, setNotificationFilter] = useState('all');
   const [notificationCategory, setNotificationCategory] = useState('all');
   const [preferences, setPreferences] = useState({ pushEnabled: true, messages: true, community: true, orders: true, studio: true, quietHours: { enabled: false, start: '22:00', end: '07:00', timezone: 'Africa/Accra' } });
+  const [sessions, setSessions] = useState([]);
 
   useEffect(() => {
     Promise.all([
@@ -50,7 +51,12 @@ export default function Account() {
   }, []);
   useEffect(() => {
     studioClient.notifications.preferences().then(setPreferences).catch(() => {});
+    studioClient.account.sessions().then(setSessions).catch(() => {});
   }, []);
+  const revokeSession = async id => {
+    try { await studioClient.account.revokeSession(id); setSessions(rows => rows.filter(item => item.id !== id)); setNotice('Device session signed out.'); }
+    catch (sessionError) { setError(sessionError.message); }
+  };
   useEffect(() => {
     studioClient.notifications.list({ filter: notificationFilter, category: notificationCategory }).then(notifications => setData(current => ({ ...current, notifications }))).catch(() => {});
   }, [notificationFilter, notificationCategory]);
@@ -355,6 +361,7 @@ export default function Account() {
                 <p className="mt-2 text-xs text-ivory/35">Include uppercase, lowercase, and a number.</p>
                 <button className="mt-4 flex items-center gap-2 border border-brass/25 px-4 py-2 text-sm text-brass"><Lock size={15} /> Change password</button>
                 <button type="button" onClick={logoutAll} className="mt-3 flex min-h-11 w-full items-center justify-center border border-ivory/10 px-4 py-2 text-sm text-ivory/60">Sign out on every device</button>
+                <div className="mt-4 border-t border-brass/10 pt-4"><p className="text-xs uppercase tracking-wider text-brass">Signed-in devices</p>{sessions.length ? <div className="mt-2 space-y-2">{sessions.map(session => <div key={session.id} className="flex items-center justify-between gap-3 border border-brass/10 bg-obsidian/40 p-3"><div className="min-w-0"><b className="block truncate text-xs text-ivory/70">{session.userAgent || 'Browser session'}</b><small className="text-ivory/35">{session.current ? 'This device' : `Last active ${new Date(session.lastSeenAt || session.created_date).toLocaleString()}`}</small></div>{!session.current && <button type="button" onClick={() => revokeSession(session.id)} className="shrink-0 text-xs text-red-300">Sign out</button>}</div>)}</div> : <p className="mt-2 text-xs text-ivory/35">Your current browser is protected by the account session.</p>}</div>
               </form>
 
               <div className="border border-brass/10 bg-carbon p-5">

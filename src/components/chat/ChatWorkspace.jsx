@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import {
   Archive, ArrowDown, ArrowLeft, Ban, Bell, BellOff, CheckCheck, Clapperboard, Download, File, FileArchive, FileSpreadsheet, FileText, Forward, Image, Images, Loader2,
   Megaphone, MessageCircle, Mic, MoreVertical, Paperclip, Pencil, Plus, Reply, RotateCcw,
-  Flag, Mail, Pin, Search, Send, ShoppingBag, Smile, Square, Star, Trash2, Users, WifiOff, X,
+  Contact, Eye, Flag, Mail, MapPin, Phone, Pin, Search, Send, ShoppingBag, Smile, Square, Star, Timer, Trash2, Users, Video, WifiOff, X,
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
@@ -157,6 +157,9 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [moderationReports, setModerationReports] = useState([]);
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [viewOnce, setViewOnce] = useState(false);
+  const [disappearAfter, setDisappearAfter] = useState(0);
+  const [transcribingId, setTranscribingId] = useState('');
   const [error, setError] = useState('');
   const [connectionState, setConnectionState] = useState('connecting');
   const [nextCursor, setNextCursor] = useState(null);
@@ -452,7 +455,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     setError('');
     try {
       if (!attachments.length) {
-        await studioClient.chat.send(activeId, { clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`, body: text.trim(), replyToId: replyingTo?.id || null, allowForward: false });
+        await studioClient.chat.send(activeId, { clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`, body: text.trim(), replyToId: replyingTo?.id || null, expiresInSeconds: disappearAfter, allowForward: false });
       } else {
         uploadAbortRef.current = new AbortController();
         const messages = [];
@@ -472,6 +475,8 @@ export default function ChatWorkspace({ adminMode = false }) {
             attachmentType: item.file.name.startsWith('voice-message-') ? 'audio/webm' : uploaded.media?.mime || item.mime,
             attachmentBytes: item.file.size,
             replyToId: index === 0 ? replyingTo?.id || null : null,
+            viewOnce,
+            expiresInSeconds: disappearAfter,
             allowForward: false,
           });
         }
@@ -479,7 +484,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       }
       setText('');
       attachments.forEach(item => URL.revokeObjectURL(item.previewUrl));
-      setAttachments([]); setReplyingTo(null);
+      setAttachments([]); setReplyingTo(null); setViewOnce(false);
       setUploadProgress({});
       await loadMessages(activeId, '', { scrollToBottom: true }); await load();
     } catch (sendError) {
@@ -497,6 +502,37 @@ export default function ChatWorkspace({ adminMode = false }) {
       setUploadFailed(Boolean(attachments.length) && sendError.name !== 'AbortError');
       setError(sendError.name === 'AbortError' ? 'Upload cancelled. Your files are still ready to retry.' : sendError.message);
     } finally { setBusy(false); uploadAbortRef.current = null; }
+  };
+  const shareLocation = () => {
+    setShowAttachmentMenu(false);
+    if (!navigator.geolocation) { setError('Location sharing is not supported by this browser.'); return; }
+    navigator.geolocation.getCurrentPosition(async position => {
+      try {
+        await studioClient.chat.send(activeId, { clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`, body: 'Shared location', sharedLocation: { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy }, expiresInSeconds: disappearAfter });
+        await loadMessages(activeId, '', { scrollToBottom: true }); await load();
+      } catch (shareError) { setError(shareError.message); }
+    }, () => setError('Location permission was not granted.'));
+  };
+  const shareContact = async () => {
+    setShowAttachmentMenu(false);
+    const name = window.prompt('Contact name');
+    if (!name) return;
+    const phone = window.prompt('Phone number (include country code)');
+    if (!phone) return;
+    try { await studioClient.chat.send(activeId, { clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`, sharedContact: { name, phone }, expiresInSeconds: disappearAfter }); await loadMessages(activeId, '', { scrollToBottom: true }); await load(); }
+    catch (shareError) { setError(shareError.message); }
+  };
+  const transcribeMessage = async message => {
+    setTranscribingId(message.id); setError('');
+    try { await studioClient.chat.transcribe(message.id, 'auto'); setError('Transcription requested. It will appear when the speech service finishes.'); }
+    catch (transcribeError) { setError(transcribeError.message); }
+    finally { setTranscribingId(''); }
+  };
+  const beginCall = async kind => {
+    try {
+      await studioClient.chat.startCall(activeId, kind);
+      setError(`${kind === 'video' ? 'Video' : 'Voice'} call invitation sent. Calls require camera/microphone permission and a configured TURN server for reliable connections.`);
+    } catch (callError) { setError(callError.message); }
   };
   const setForwarding = async message => { await studioClient.chat.setForwarding(message.id, !message.allowForward); await loadMessages(activeId); };
   const forwardMessage = async conversationId => {
@@ -704,6 +740,7 @@ export default function ChatWorkspace({ adminMode = false }) {
               <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass"><span className="flex h-full w-full overflow-hidden rounded-full">{active.type === 'announcement' ? <span className="m-auto"><Megaphone size={17} /></span> : other?.avatarUrl ? <img src={other.avatarUrl} alt="" className="h-full w-full object-cover" /> : <span className="m-auto">{initials(other?.name)}</span>}</span>{other?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
               <div className="min-w-0 flex-1"><p className="truncate font-display text-xl text-ivory">{conversationName(active, user.id)}</p><p className={`truncate text-xs ${active.typingUsers?.length || other?.online ? 'text-green-400' : 'text-ivory/35'}`}>{active.typingUsers?.length ? `${active.typingUsers[0].name} is typing…` : active.type === 'announcement' ? 'Official updates — only administrators can post' : lastSeen(other)}</p></div>
               {connectionState !== 'connected' && <span className="hidden items-center gap-1 text-[10px] uppercase tracking-wider text-amber-300 sm:flex"><WifiOff size={13} />{connectionState === 'offline' ? 'Offline' : 'Reconnecting'}</span>}
+              {active.type !== 'announcement' && <><button type="button" onClick={() => beginCall('voice')} className="hidden h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass sm:flex" aria-label="Start voice call"><Phone size={17} /></button><button type="button" onClick={() => beginCall('video')} className="hidden h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass sm:flex" aria-label="Start video call"><Video size={18} /></button></>}
               <button type="button" onClick={() => setSearchingMessages(value => !value)} className="flex h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass" aria-label="Search this conversation"><Search size={17} /></button>
               <div data-chat-popover className="relative"><button type="button" onClick={() => setShowConversationMenu(value => !value)} className="flex h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass" aria-label="Conversation options"><MoreVertical size={18} /></button>
                 {showConversationMenu && <div data-chat-popover className="absolute right-0 top-11 z-30 w-52 border border-brass/20 bg-carbon p-1 shadow-2xl">
@@ -734,7 +771,12 @@ export default function ChatWorkspace({ adminMode = false }) {
                   {message.deletedForEveryone ? <div className="flex items-center gap-3"><p className="flex items-center gap-2 text-sm italic text-ivory/35"><Ban size={14} />This message was deleted.</p><button type="button" onClick={() => removeMessage(message, 'me')} className="text-[10px] uppercase tracking-wider text-ivory/30 hover:text-brass">Remove</button></div> : editing?.id === message.id ? <div className="space-y-2"><textarea autoFocus value={editing.body} onChange={event => setEditing({ ...editing, body: event.target.value })} className="min-h-20 w-full resize-none border border-brass/20 bg-obsidian p-2 text-sm text-ivory outline-none" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="h-8 px-3 text-xs text-ivory/50">Cancel</button><button type="button" onClick={saveEdit} className="h-8 bg-brass px-3 text-xs text-obsidian">Save</button></div></div> : message.body && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm leading-6 text-ivory/75">{message.body}</p>}
                   {message.richMedia && <a href={message.richMedia.url || '#'} target={message.richMedia.url ? '_blank' : undefined} rel="noreferrer" className="mt-3 block overflow-hidden border border-brass/15 bg-obsidian">{message.richMedia.imageUrl && <img src={message.richMedia.imageUrl} alt="" className="max-h-56 w-full object-cover" />}<span className="block p-3"><b className="text-sm text-ivory">{message.richMedia.title || (message.richMedia.type === 'film' ? 'Art Film' : 'Featured studio item')}</b><small className="mt-1 block uppercase tracking-wider text-brass">View {message.richMedia.type}</small></span></a>}
                   {message.action?.url && <a href={message.action.url} target="_blank" rel="noreferrer" className="mt-3 flex min-h-10 items-center justify-center bg-brass px-4 text-xs uppercase tracking-wider text-obsidian">{message.action.label || 'Learn more'}</a>}
-                  <AttachmentPreview attachment={attachment} onOpen={setPreview} />
+                  {message.sharedLocation && <a href={`https://www.google.com/maps?q=${encodeURIComponent(`${message.sharedLocation.latitude},${message.sharedLocation.longitude}`)}`} target="_blank" rel="noreferrer" className="mt-3 flex items-center gap-3 border border-brass/15 bg-obsidian p-3 text-sm text-brass"><MapPin size={20} /><span><b className="block text-ivory">Shared location</b><small>Open safely in Maps</small></span></a>}
+                  {message.sharedContact && <a href={`tel:${String(message.sharedContact.phone || '').replace(/[^+\d]/g, '')}`} className="mt-3 flex items-center gap-3 border border-brass/15 bg-obsidian p-3 text-sm text-brass"><Contact size={20} /><span><b className="block text-ivory">{message.sharedContact.name}</b><small>{message.sharedContact.phone}</small></span></a>}
+                  {attachment && message.viewOnce && !mine && message.viewedOnceBy?.includes(user.id) ? <div className="mt-3 flex items-center gap-2 border border-brass/15 p-3 text-xs text-ivory/40"><Eye size={15} />View-once attachment opened</div> : attachment && message.viewOnce && !mine ? <button type="button" onClick={async () => { await studioClient.chat.consume(message.id); setPreview(attachment); await loadMessages(activeId); }} className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 border border-brass/20 text-sm text-brass"><Eye size={17} />Open view-once attachment</button> : <AttachmentPreview attachment={attachment} onOpen={setPreview} />}
+                  {attachment?.type?.startsWith('audio/') && <button type="button" disabled={transcribingId === message.id} onClick={() => transcribeMessage(message)} className="mt-2 text-[10px] uppercase tracking-wider text-brass disabled:opacity-40">{transcribingId === message.id ? 'Requesting transcription…' : 'Transcribe voice note'}</button>}
+                  {message.transcription?.text && <p className="mt-2 border-l-2 border-brass/30 px-3 text-xs leading-5 text-ivory/55">{message.transcription.text}</p>}
+                  {message.expiresAt && <p className="mt-2 flex items-center gap-1 text-[10px] text-ivory/30"><Timer size={11} />Disappears {new Date(message.expiresAt).toLocaleString()}</p>}
                   {message.starredBy?.includes(user.id) && <Star size={12} className="absolute right-2 top-2 fill-brass text-brass" aria-label="Starred message" />}
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     {!message.deletedForEveryone && <div data-chat-popover className="relative flex items-center gap-1"><button type="button" onClick={() => setReplyingTo(message)} title="Reply" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Reply size={13} /></button><button type="button" onClick={event => { const opening = reactionPickerId !== message.id; setReactionPickerId(opening ? message.id : ''); setReactionPickerPosition(opening ? floatingPosition(event.currentTarget, 238, 60) : null); setMessageMenuId(''); }} title="React" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Smile size={13} /></button><button type="button" onClick={event => { const opening = messageMenuId !== message.id; setMessageMenuId(opening ? message.id : ''); setMessageMenuPosition(opening ? floatingPosition(event.currentTarget, 220, 190) : null); setReactionPickerId(''); }} title="Message options" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><MoreVertical size={13} /></button></div>}
@@ -758,6 +800,8 @@ export default function ChatWorkspace({ adminMode = false }) {
                     <button type="button" onClick={() => { setShowAttachmentMenu(false); photosInputRef.current?.click(); }} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Image size={17} className="text-sky-400" /><span><b className="block font-medium">Photos & videos</b><small className="text-ivory/35">Choose one or several</small></span></button>
                     <button type="button" onClick={() => { setShowAttachmentMenu(false); documentsInputRef.current?.click(); }} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><FileText size={17} className="text-purple-400" /><span><b className="block font-medium">Documents</b><small className="text-ivory/35">PDF, Word, Excel, slides or ZIP</small></span></button>
                     <button type="button" onClick={() => { setShowAttachmentMenu(false); audioInputRef.current?.click(); }} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Mic size={17} className="text-orange-400" /><span><b className="block font-medium">Audio</b><small className="text-ivory/35">Choose an audio recording</small></span></button>
+                    <button type="button" onClick={shareLocation} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><MapPin size={17} className="text-green-400" /><span><b className="block font-medium">Location</b><small className="text-ivory/35">Share your current position</small></span></button>
+                    <button type="button" onClick={shareContact} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Contact size={17} className="text-cyan-400" /><span><b className="block font-medium">Contact</b><small className="text-ivory/35">Share a name and phone number</small></span></button>
                     <button type="button" onClick={openShopPicker} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><ShoppingBag size={17} className="text-brass" /><span><b className="block font-medium">Art Shop items</b><small className="text-ivory/35">Share items for discussion</small></span></button>
                     <button type="button" onClick={() => openResourcePicker('gallery')} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Images size={17} className="text-emerald-400" /><span><b className="block font-medium">Gallery artworks</b><small className="text-ivory/35">Share finished works</small></span></button>
                     <button type="button" onClick={() => openResourcePicker('films')} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Clapperboard size={17} className="text-violet-400" /><span><b className="block font-medium">Art Films</b><small className="text-ivory/35">Share a studio film</small></span></button>
@@ -770,6 +814,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                 {!recording && (text.trim() || attachments.length) ? <button disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={send} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian disabled:opacity-40" aria-label="Send message">{busy ? <Loader2 className="animate-spin" size={17} /> : <Send size={17} />}</button> : <button type="button" disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={toggleRecording} title={recording ? 'Stop recording' : 'Record voice message'} aria-label={recording ? 'Stop voice recording' : 'Record voice message'} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border disabled:opacity-40 ${recording ? 'animate-pulse border-red-400 bg-red-400/10 text-red-300' : 'border-brass/20 bg-brass text-obsidian'}`}>{recording ? <Square size={15} fill="currentColor" /> : <Mic size={18} />}</button>}
               </div>
               {recording && <p className="mt-2 text-xs text-red-300">Recording voice message… press the stop button when you are finished.</p>}
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wider"><button type="button" disabled={!attachments.length} onClick={() => setViewOnce(value => !value)} className={`flex min-h-8 items-center gap-1.5 border px-3 disabled:opacity-30 ${viewOnce ? 'border-brass bg-brass/10 text-brass' : 'border-brass/15 text-ivory/40'}`}><Eye size={12} />View once</button><label className="flex min-h-8 items-center gap-2 border border-brass/15 px-3 text-ivory/40"><Timer size={12} /><span>Disappear</span><select value={disappearAfter} onChange={event => setDisappearAfter(Number(event.target.value))} className="bg-carbon text-brass outline-none"><option value="0">Off</option><option value="86400">24 hours</option><option value="604800">7 days</option><option value="7776000">90 days</option></select></label></div>
             </footer>
           </> : <div className="m-auto p-8 text-center"><MessageCircle className="mx-auto text-brass" size={34} /><p className="mt-4 font-display text-2xl text-ivory">Choose a conversation</p><p className="mt-2 text-sm text-ivory/40">Search signed-in people or continue an existing chat.</p></div>}
         </section>
