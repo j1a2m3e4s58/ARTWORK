@@ -1610,7 +1610,9 @@ app.post('/api/admin/mfa/recovery-codes', requireAdmin, authLimiter, async (req,
 
 const chatTyping = new Map();
 const chatStreams = new Map();
-const chatMember = (conversation, user) => Boolean(user && conversation.participantIds?.includes(user.id));
+const chatMember = (conversation, user) => Boolean(user && (
+  conversation.type === 'announcement' || conversation.participantIds?.includes(user.id)
+));
 const emitChatEvent = (userIds, event, data = {}) => {
   [...new Set(userIds || [])].forEach(userId => {
     (chatStreams.get(userId) || new Set()).forEach(response => {
@@ -1636,12 +1638,18 @@ const refreshConversationSummary = conversation => {
   conversation.lastMessageAt = latest?.created_date || conversation.created_date;
   conversation.lastMessage = latest ? (latest.body || latest.attachmentName || 'Attachment') : 'Conversation started';
 };
+const unreadNotificationCount = userId => db.data.Notification.filter(item => (
+  item.userId === userId && !item.read && !item.deleted_at
+)).length;
 const pushToUsers = async (userIds, payload, mutedBy = []) => {
   if (!pushConfigured) return;
   const recipients = db.data.PushSubscription.filter(item => userIds.includes(item.userId) && !mutedBy.includes(item.userId) && !item.deleted_at);
   await Promise.all(recipients.map(async item => {
     try {
-      await webpush.sendNotification(item.subscription, JSON.stringify(payload));
+      await webpush.sendNotification(item.subscription, JSON.stringify({
+        ...payload,
+        badgeCount: unreadNotificationCount(item.userId),
+      }));
       item.lastUsedAt = now();
     } catch (error) {
       if ([404, 410].includes(error.statusCode)) item.deleted_at = now();
@@ -1733,10 +1741,29 @@ app.post('/api/chat/presence', requireVerifiedUser, async (req, res) => {
   res.json({ online: true });
 });
 
-app.get('/api/chat/conversations', requireVerifiedUser, (req, res) => {
+app.get('/api/chat/conversations', requireVerifiedUser, async (req, res) => {
+  let community = db.data.ChatConversation.find(item => item.type === 'announcement' && !item.deleted_at);
+  let communityChanged = false;
+  if (!community) {
+    const participantIds = db.data.User.filter(item => !item.deleted_at && item.status === 'active').map(item => item.id);
+    community = {
+      id: newId(), type: 'announcement', title: 'Community Updates',
+      participantIds, pinnedBy: participantIds,
+      createdBy: db.data.User.find(item => item.role === 'admin' && !item.deleted_at)?.id || req.user.id,
+      created_date: now(),
+    };
+    db.data.ChatConversation.push(community);
+    communityChanged = true;
+  } else if (!community.participantIds?.includes(req.user.id)) {
+    community.participantIds = [...new Set([...(community.participantIds || []), req.user.id])];
+    community.pinnedBy = [...new Set([...(community.pinnedBy || []), req.user.id])];
+    communityChanged = true;
+  }
+  if (communityChanged) await save();
   const conversations = db.data.ChatConversation
     .filter(item => !item.deleted_at && chatMember(item, req.user))
-    .sort((a, b) => Number(Boolean(b.pinnedBy?.includes(req.user.id))) - Number(Boolean(a.pinnedBy?.includes(req.user.id)))
+    .sort((a, b) => Number(b.type === 'announcement') - Number(a.type === 'announcement')
+      || Number(Boolean(b.pinnedBy?.includes(req.user.id))) - Number(Boolean(a.pinnedBy?.includes(req.user.id)))
       || String(b.lastMessageAt || b.created_date).localeCompare(String(a.lastMessageAt || a.created_date)))
     .map(item => conversationView(item, req.user));
   res.json(conversations);
@@ -1758,17 +1785,18 @@ app.post('/api/chat/conversations', requireVerifiedUser, mutationLimiter, async 
 });
 
 app.post('/api/chat/announcements', requireAdmin, mutationLimiter, async (req, res) => {
-  const title = String(req.body.title || 'Studio announcements').trim().slice(0, 100);
+  const title = String(req.body.title || 'Community Updates').trim().slice(0, 100);
   const body = String(req.body.body || '').trim().slice(0, 10_000);
   if (!body) return res.status(400).json({ error: 'Write an announcement.' });
   const participantIds = db.data.User.filter(item => !item.deleted_at && item.status === 'active').map(item => item.id);
   let conversation = db.data.ChatConversation.find(item => item.type === 'announcement' && !item.deleted_at);
   if (!conversation) {
-    conversation = { id: newId(), type: 'announcement', title, participantIds, createdBy: req.user.id, created_date: now() };
+    conversation = { id: newId(), type: 'announcement', title, participantIds, pinnedBy: participantIds, createdBy: req.user.id, created_date: now() };
     db.data.ChatConversation.push(conversation);
   } else {
     conversation.title = title;
     conversation.participantIds = [...new Set([...conversation.participantIds, ...participantIds])];
+    conversation.pinnedBy = [...new Set([...(conversation.pinnedBy || []), ...participantIds])];
   }
   const message = { id: newId(), conversationId: conversation.id, senderId: req.user.id, body, announcement: true, deliveredAt: now(), readBy: [req.user.id], reactions: {}, created_date: now() };
   db.data.ChatMessage.push(message);
@@ -1925,6 +1953,9 @@ app.post('/api/chat/conversations/:id/read', requireVerifiedUser, async (req, re
   db.data.ChatMessage
     .filter(item => item.conversationId === conversation.id && item.senderId !== req.user.id && !(item.readBy || []).includes(req.user.id))
     .forEach(item => { item.readBy = [...new Set([...(item.readBy || []), req.user.id])]; item.readAt ||= firstReadAt; });
+  db.data.Notification
+    .filter(item => item.userId === req.user.id && item.entity === 'ChatConversation' && item.entityId === conversation.id && !item.read && !item.deleted_at)
+    .forEach(item => { item.read = true; item.readAt = firstReadAt; });
   await save();
   emitChatEvent(conversation.participantIds, 'read', { conversationId: conversation.id, userId: req.user.id });
   res.json({ success: true });
@@ -2891,7 +2922,20 @@ app.post('/api/admin/recycle-bin/purge', requireAdmin, mutationLimiter, async (r
   res.json({ success: true, purged });
 });
 
-app.post('/api/notifications/:id/read', requireStaff, mutationLimiter, async (req, res) => {
+app.get('/api/notifications/unread-count', requireVerifiedUser, (req, res) => {
+  res.json({ count: unreadNotificationCount(req.user.id) });
+});
+
+app.post('/api/notifications/read-all', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const readAt = now();
+  db.data.Notification
+    .filter(item => item.userId === req.user.id && !item.read && !item.deleted_at)
+    .forEach(item => { item.read = true; item.readAt = readAt; });
+  await save();
+  res.json({ success: true, count: 0 });
+});
+
+app.post('/api/notifications/:id/read', requireVerifiedUser, mutationLimiter, async (req, res) => {
   const notification = db.data.Notification.find(item => item.id === req.params.id && item.userId === req.user.id && !item.deleted_at);
   if (!notification) return res.status(404).json({ error: 'Notification not found.' });
   notification.read = true;

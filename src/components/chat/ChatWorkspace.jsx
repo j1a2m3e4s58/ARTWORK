@@ -149,7 +149,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [shopProducts, setShopProducts] = useState([]);
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [shopLoading, setShopLoading] = useState(false);
-  const [announcement, setAnnouncement] = useState({ title: 'Studio announcements', body: '' });
+  const [announcement, setAnnouncement] = useState({ title: 'Community Updates', body: '' });
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [error, setError] = useState('');
@@ -286,7 +286,10 @@ export default function ChatWorkspace({ adminMode = false }) {
       ? [...new Map([...current, ...rows].map(item => [item.id, item])).values()].sort((a, b) => String(a.created_date).localeCompare(String(b.created_date)))
       : rows);
     const hasUnreadIncoming = rows.some(message => message.senderId !== user.id && !(message.readBy || []).includes(user.id));
-    if (hasUnreadIncoming) await studioClient.chat.markRead(id);
+    if (hasUnreadIncoming) {
+      await studioClient.chat.markRead(id);
+      window.dispatchEvent(new CustomEvent('atelier:refresh-badge'));
+    }
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       const currentPane = messagesPaneRef.current;
       if (!currentPane) return;
@@ -592,7 +595,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     setBusy(true);
     try {
       const conversation = await studioClient.chat.announce(announcement);
-      setAnnouncement({ title: 'Studio announcements', body: '' }); setShowAnnouncement(false);
+      setAnnouncement({ title: 'Community Updates', body: '' }); setShowAnnouncement(false);
       await load(); setActiveId(conversation.id);
     } catch (announcementError) { setError(announcementError.message); }
     finally { setBusy(false); }
@@ -627,14 +630,14 @@ export default function ChatWorkspace({ adminMode = false }) {
           <div className="shrink-0 border-b border-brass/15 p-4">
             <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-2">{!adminMode && <Link to="/" aria-label="Return to the studio" className="flex h-9 w-9 shrink-0 items-center justify-center border border-brass/15 text-brass lg:hidden"><ArrowLeft size={17} /></Link>}<h2 className="truncate font-display text-2xl text-ivory">{adminMode ? 'Studio conversations' : 'Messages'}</h2></div><div className="flex items-center gap-1">
               <button type="button" onClick={enablePush} aria-label={pushState === 'enabled' ? 'Disable push alerts' : 'Enable push alerts'} title={pushState === 'enabled' ? 'Disable push alerts' : 'Enable push alerts'} className={`flex h-9 w-9 items-center justify-center border ${pushState === 'enabled' ? 'border-green-400/30 text-green-400' : 'border-brass/15 text-brass'}`}><Bell size={15} /></button>
-              {adminMode && user?.role === 'admin' && <button type="button" onClick={() => setShowAnnouncement(value => !value)} aria-label="New announcement" title="New announcement" className="flex h-9 w-9 items-center justify-center border border-brass/15 text-brass"><Megaphone size={15} /></button>}
+              {adminMode && user?.role === 'admin' && <button type="button" onClick={() => setShowAnnouncement(value => !value)} aria-label="Post a community update" title="Post a community update" className="flex h-9 w-9 items-center justify-center border border-brass/15 text-brass"><Megaphone size={15} /></button>}
             </div></div>
             <p className="mt-1 text-xs text-ivory/35">Private conversations with signed-in members</p>
             <label className="mt-4 flex h-11 items-center gap-2 border border-brass/15 bg-obsidian px-3 text-ivory/55"><Search size={15} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search people or chats" className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></label>
             <button type="button" onClick={() => setShowArchived(value => !value)} className="mt-2 flex items-center gap-2 text-[10px] uppercase tracking-widest text-ivory/40 hover:text-brass"><Archive size={13} />{showArchived ? 'Show active chats' : 'Archived chats'}</button>
             <div className="mt-3 flex max-w-full gap-1 overflow-x-auto pb-1">{[['all', 'All'], ['unread', 'Unread'], ['favourites', 'Favourites'], ['groups', 'Groups']].map(([value, label]) => <button type="button" key={value} onClick={() => setConversationFilter(value)} className={`min-h-8 shrink-0 rounded-full border px-3 text-[10px] uppercase tracking-wider ${conversationFilter === value ? 'border-brass bg-brass/15 text-brass' : 'border-brass/10 text-ivory/40'}`}>{label}</button>)}</div>
             {queuedCount > 0 && <p className="mt-2 flex items-center gap-2 text-[10px] uppercase tracking-wider text-amber-300"><WifiOff size={12} />{queuedCount} queued message{queuedCount === 1 ? '' : 's'} will retry automatically</p>}
-            {showAnnouncement && user?.role === 'admin' && <div className="mt-3 space-y-2 border border-brass/15 bg-obsidian p-3"><input value={announcement.title} onChange={event => setAnnouncement(value => ({ ...value, title: event.target.value }))} className="h-10 w-full border border-brass/15 bg-carbon px-3 text-sm text-ivory outline-none" placeholder="Announcement title" /><textarea value={announcement.body} onChange={event => setAnnouncement(value => ({ ...value, body: event.target.value }))} className="h-24 w-full resize-none border border-brass/15 bg-carbon p-3 text-sm text-ivory outline-none" placeholder="Message every signed-in member" /><button type="button" disabled={busy || !announcement.body.trim()} onClick={publishAnnouncement} className="h-10 w-full bg-brass text-xs uppercase tracking-wider text-obsidian disabled:opacity-40">Publish announcement</button></div>}
+            {showAnnouncement && user?.role === 'admin' && <div className="mt-3 space-y-2 border border-brass/15 bg-obsidian p-3"><p className="text-xs uppercase tracking-[0.2em] text-brass">Community Updates</p><p className="text-xs leading-5 text-ivory/45">Only administrators can publish. Every active member receives this update and an unread notification.</p><input value={announcement.title} onChange={event => setAnnouncement(value => ({ ...value, title: event.target.value }))} className="h-10 w-full border border-brass/15 bg-carbon px-3 text-sm text-ivory outline-none" placeholder="Update title" /><textarea value={announcement.body} onChange={event => setAnnouncement(value => ({ ...value, body: event.target.value }))} className="h-24 w-full resize-none border border-brass/15 bg-carbon p-3 text-sm text-ivory outline-none" placeholder="Write an update for every signed-in member" /><button type="button" disabled={busy || !announcement.body.trim()} onClick={publishAnnouncement} className="h-10 w-full bg-brass text-xs uppercase tracking-wider text-obsidian disabled:opacity-40">Post community update</button></div>}
           </div>
           {error && !activeId && <p role="alert" className="border-b border-red-400/20 bg-red-400/5 p-3 text-xs text-red-300">{error}</p>}
           <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto pb-20 [scrollbar-gutter:stable] md:pb-5">
@@ -659,7 +662,7 @@ export default function ChatWorkspace({ adminMode = false }) {
             <header className="shrink-0 flex items-center gap-2 border-b border-brass/15 p-3 sm:gap-3 sm:p-4">
               <button onClick={() => setMobileConversationOpen(false)} className="flex h-10 w-10 items-center justify-center text-brass lg:hidden" aria-label="Back to conversations"><ArrowLeft size={19} /></button>
               <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass"><span className="flex h-full w-full overflow-hidden rounded-full">{active.type === 'announcement' ? <span className="m-auto"><Megaphone size={17} /></span> : other?.avatarUrl ? <img src={other.avatarUrl} alt="" className="h-full w-full object-cover" /> : <span className="m-auto">{initials(other?.name)}</span>}</span>{other?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
-              <div className="min-w-0 flex-1"><p className="truncate font-display text-xl text-ivory">{conversationName(active, user.id)}</p><p className={`truncate text-xs ${active.typingUsers?.length || other?.online ? 'text-green-400' : 'text-ivory/35'}`}>{active.typingUsers?.length ? `${active.typingUsers[0].name} is typing…` : active.type === 'announcement' ? 'Studio updates for every member' : lastSeen(other)}</p></div>
+              <div className="min-w-0 flex-1"><p className="truncate font-display text-xl text-ivory">{conversationName(active, user.id)}</p><p className={`truncate text-xs ${active.typingUsers?.length || other?.online ? 'text-green-400' : 'text-ivory/35'}`}>{active.typingUsers?.length ? `${active.typingUsers[0].name} is typing…` : active.type === 'announcement' ? 'Official updates — only administrators can post' : lastSeen(other)}</p></div>
               {connectionState !== 'connected' && <span className="hidden items-center gap-1 text-[10px] uppercase tracking-wider text-amber-300 sm:flex"><WifiOff size={13} />{connectionState === 'offline' ? 'Offline' : 'Reconnecting'}</span>}
               <button type="button" onClick={() => setSearchingMessages(value => !value)} className="flex h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass" aria-label="Search this conversation"><Search size={17} /></button>
               <div data-chat-popover className="relative"><button type="button" onClick={() => setShowConversationMenu(value => !value)} className="flex h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass" aria-label="Conversation options"><MoreVertical size={18} /></button>
@@ -719,7 +722,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                   <input ref={documentsInputRef} type="file" multiple className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} />
                   <input ref={audioInputRef} type="file" multiple className="hidden" accept="audio/*" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} />
                 </div>
-                <textarea value={text} disabled={recording || active.blocked || (active.type === 'announcement' && !adminMode)} onChange={event => updateTyping(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); } }} rows={2} placeholder={recording ? 'Recording voice message…' : active.type === 'announcement' && !adminMode ? 'Only studio staff can publish announcements' : 'Write a message…'} className="min-w-0 flex-1 resize-none border border-brass/20 bg-obsidian p-3 text-sm text-ivory outline-none disabled:opacity-50" />
+                <textarea value={text} disabled={recording || active.blocked || (active.type === 'announcement' && !adminMode)} onChange={event => updateTyping(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); } }} rows={2} placeholder={recording ? 'Recording voice message…' : active.type === 'announcement' && !adminMode ? 'Community Updates is read-only for members' : 'Write a message…'} className="min-w-0 flex-1 resize-none border border-brass/20 bg-obsidian p-3 text-sm text-ivory outline-none disabled:opacity-50" />
                 {!recording && (text.trim() || attachments.length) ? <button disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={send} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian disabled:opacity-40" aria-label="Send message">{busy ? <Loader2 className="animate-spin" size={17} /> : <Send size={17} />}</button> : <button type="button" disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={toggleRecording} title={recording ? 'Stop recording' : 'Record voice message'} aria-label={recording ? 'Stop voice recording' : 'Record voice message'} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border disabled:opacity-40 ${recording ? 'animate-pulse border-red-400 bg-red-400/10 text-red-300' : 'border-brass/20 bg-brass text-obsidian'}`}>{recording ? <Square size={15} fill="currentColor" /> : <Mic size={18} />}</button>}
               </div>
               {recording && <p className="mt-2 text-xs text-red-300">Recording voice message… press the stop button when you are finished.</p>}

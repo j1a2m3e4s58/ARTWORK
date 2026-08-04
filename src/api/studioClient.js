@@ -146,6 +146,12 @@ export const studioClient = {
     },
   },
   notifications: {
+    unreadCount() {
+      return request('/api/notifications/unread-count');
+    },
+    readAll() {
+      return request('/api/notifications/read-all', { method: 'POST' });
+    },
     markRead(id) {
       return request(`/api/notifications/${id}/read`, { method: 'POST' });
     },

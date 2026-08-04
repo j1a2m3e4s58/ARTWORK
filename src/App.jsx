@@ -15,6 +15,7 @@ import AccountLayout from '@/components/AccountLayout';
 import FeatureRoute from '@/components/FeatureRoute';
 import SiteMetadata from '@/components/SiteMetadata';
 import PointerAccent from '@/components/PointerAccent';
+import AppBadgeSync from '@/components/AppBadgeSync';
 
 const Home = lazy(() => import('@/pages/Home'));
 const Gallery = lazy(() => import('@/pages/Gallery'));
@@ -110,6 +111,7 @@ function App() {
     <AuthProvider>
         <Router>
           <SiteMetadata />
+          <AppBadgeSync />
           <PointerAccent />
           {!loaded && <LoadingScreen onComplete={finishLoading} />}
           {loaded && (

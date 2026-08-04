@@ -1,4 +1,4 @@
-const CACHE = 'reigns-atelier-v7';
+const CACHE = 'reigns-atelier-v8';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/brand/reigns-app-icon-192.png', '/brand/reigns-app-icon-512.png'];
 
 self.addEventListener('install', event => {
@@ -17,6 +17,12 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('message', event => {
   if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+  if (event.data?.type === 'SET_APP_BADGE') {
+    const count = Math.max(0, Number(event.data.count) || 0);
+    event.waitUntil(Promise.resolve(count
+      ? self.registration.setAppBadge?.(count)
+      : self.registration.clearAppBadge?.()));
+  }
 });
 
 // Push events are deliberately handled here so the installed app can show
@@ -24,7 +30,8 @@ self.addEventListener('message', event => {
 self.addEventListener('push', event => {
   const payload = event.data?.json?.() || {};
   const title = payload.title || 'Reigns Atelier';
-  event.waitUntil(self.registration.showNotification(title, {
+  const badgeCount = Math.max(0, Number(payload.badgeCount) || 0);
+  const notification = self.registration.showNotification(title, {
     body: payload.body || 'You have a new studio action to review.',
     icon: '/brand/reigns-app-icon-192.png',
     badge: '/brand/reigns-app-icon-192.png',
@@ -32,7 +39,11 @@ self.addEventListener('push', event => {
     renotify: true,
     data: { url: payload.url || '/admin?section=alerts' },
     actions: [{ action: 'open', title: 'Open message' }],
-  }));
+  });
+  const badge = badgeCount
+    ? self.registration.setAppBadge?.(badgeCount)
+    : self.registration.clearAppBadge?.();
+  event.waitUntil(Promise.all([notification, badge].filter(Boolean)));
 });
 
 self.addEventListener('notificationclick', event => {

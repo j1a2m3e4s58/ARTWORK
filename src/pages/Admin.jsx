@@ -200,7 +200,10 @@ export default function Admin() {
   };
 
   const openAlert = async alert => {
-    try { await studioClient.notifications.markRead(alert.id); } catch { /* the alert is still useful even if the read marker is delayed */ }
+    try {
+      await studioClient.notifications.markRead(alert.id);
+      window.dispatchEvent(new CustomEvent('atelier:refresh-badge'));
+    } catch { /* the alert is still useful even if the read marker is delayed */ }
     setNotifications(current => current.map(item => item.id === alert.id ? { ...item, read: true } : item));
     selectTab(alert.section || 'overview');
   };
