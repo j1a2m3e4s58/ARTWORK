@@ -14,7 +14,7 @@ const navLinks = [
   { label: 'Art Films', path: '/videos' },
   { label: 'Commission', path: '/commission' },
   { label: 'Internships', path: '/internships', settingKey: 'show_internships' },
-  { label: 'Art Shop', path: '/shop', settingKey: 'show_shop' },
+  { label: 'Art Shop', path: '/shop' },
   { label: 'About', path: '/about' },
   { label: 'Contact', path: '/contact' },
 ];
@@ -28,7 +28,7 @@ export default function Navbar() {
   const settings = useSettings();
   const { user, logout } = useAuth();
   const isVisible = link => {
-    if (link.path === '/internships') return true;
+    if (['/internships', '/shop'].includes(link.path)) return true;
     const key = link.settingKey || `show_${link.label.toLowerCase()}`;
     if (['show_videos', 'show_blog', 'show_internships'].includes(key)) return settings[key] === 'true';
     if (key === 'show_awards') return settings[key] !== 'false';

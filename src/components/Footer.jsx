@@ -103,7 +103,7 @@ export default function Footer() {
               {[
                 settings.show_gallery !== 'false' && ['Gallery', '/gallery'],
                 ['Commission', '/commission'],
-                settings.show_shop !== 'false' && ['Art Shop', '/shop'],
+                ['Art Shop', '/shop'],
                 ['Art Films', '/videos'],
                 ['About', '/about'],
               ].filter(Boolean).map(([label, path]) => (

@@ -6,7 +6,7 @@ const items = [
   { label: 'Home', path: '/', icon: Home },
   { label: 'Gallery', path: '/gallery', icon: Images },
   { label: 'Create', path: '/commission', icon: Palette },
-  { label: 'Art Shop', path: '/shop', icon: ShoppingBag, settingKey: 'show_shop' },
+  { label: 'Art Shop', path: '/shop', icon: ShoppingBag },
   { label: 'Contact', path: '/contact', icon: MessageCircle },
 ];
 
@@ -14,7 +14,7 @@ export default function MobileBottomNav() {
   const location = useLocation();
   const settings = useSettings();
   const visibleItems = items.filter(item => {
-    if (item.path === '/') return true;
+    if (['/', '/shop'].includes(item.path)) return true;
     const key = item.settingKey || `show_${item.label === 'Create' ? 'commission' : item.label.toLowerCase()}`;
     return settings[key] !== 'false';
   });

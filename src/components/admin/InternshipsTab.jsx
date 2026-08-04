@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ExternalLink, Save } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Loader2, Save, XCircle } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import ResponsiveSelect from '@/components/ResponsiveSelect';
 
@@ -24,6 +24,7 @@ export default function InternshipsTab() {
   const [records, setRecords] = useState([]);
   const [values, setValues] = useState(Object.fromEntries(fields.map(([key, , value]) => [key, value])));
   const [notice, setNotice] = useState('');
+  const [updatingId, setUpdatingId] = useState('');
 
   const load = async () => {
     const [apps, content] = await Promise.all([
@@ -56,8 +57,21 @@ export default function InternshipsTab() {
   };
 
   const updateStatus = async (application, status) => {
-    const saved = await studioClient.entities.InternshipApplication.update(application.id, { status });
-    setApplications(current => current.map(item => item.id === saved.id ? saved : item));
+    setUpdatingId(application.id);
+    setNotice('');
+    try {
+      const saved = await studioClient.entities.InternshipApplication.update(application.id, { status });
+      setApplications(current => current.map(item => item.id === saved.id ? saved : item));
+      setNotice(['accepted', 'approved'].includes(status)
+        ? saved.approvalDelivery?.error
+          ? 'Application approved. The customer update is queued for retry.'
+          : 'Application approved. Customer message, email, and push update prepared.'
+        : `Application marked ${status}.`);
+    } catch (error) {
+      setNotice(error.message || 'Unable to update this application. Please try again.');
+    } finally {
+      setUpdatingId('');
+    }
   };
 
   return (
@@ -115,6 +129,14 @@ export default function InternshipsTab() {
                   onChange={status => updateStatus(item, status)}
                   options={statusOptions}
                 />
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2 border-t border-brass/10 pt-4">
+                <button type="button" disabled={updatingId === item.id || item.status === 'accepted'} onClick={() => updateStatus(item, 'accepted')} className="inline-flex min-h-10 items-center gap-2 bg-green-500/15 px-4 text-xs uppercase tracking-wider text-green-300 disabled:cursor-not-allowed disabled:opacity-45">
+                  {updatingId === item.id ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Approve
+                </button>
+                <button type="button" disabled={updatingId === item.id || item.status === 'declined'} onClick={() => updateStatus(item, 'declined')} className="inline-flex min-h-10 items-center gap-2 border border-red-400/25 px-4 text-xs uppercase tracking-wider text-red-300 disabled:cursor-not-allowed disabled:opacity-45"><XCircle size={15} /> Decline</button>
+                {item.approvalDelivery?.deliveredAt && <span className="self-center text-xs text-green-300/70">Approval update delivered.</span>}
+                {item.approvalDelivery?.error && <span className="self-center text-xs text-amber-300/70">Delivery will be retried.</span>}
               </div>
               <p className="mt-4 break-words text-sm leading-relaxed text-ivory/60">{item.interests}</p>
               {item.notice && (

@@ -364,8 +364,8 @@ export default function Admin() {
   };
 
   const handleUpdate = async (entity, id, data, setter) => {
-    await studioClient.entities[entity].update(id, data);
-    setter(prev => prev.map(i => i.id === id ? { ...i, ...data } : i));
+    const saved = await studioClient.entities[entity].update(id, data);
+    setter(prev => prev.map(i => i.id === id ? saved : i));
     setEditItem(null); setEditType(null);
   };
 
@@ -726,6 +726,8 @@ export default function Admin() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className={`font-tight text-xs px-2 py-0.5 uppercase tracking-widest ${STATUS_COLORS[c.status] || 'text-ivory/40 bg-ivory/5'}`}>{c.status}</span>
                           <div className="w-40"><ResponsiveSelect label="Choose status" value={c.status} onChange={status => handleUpdate('CommissionRequest', c.id, { status }, setCommissions)} options={['pending','reviewing','accepted','in_progress','completed','declined']} className="text-xs" /></div>
+                          <button type="button" disabled={c.status === 'accepted'} onClick={() => handleUpdate('CommissionRequest', c.id, { status: 'accepted' }, setCommissions)} className="inline-flex min-h-9 items-center gap-1.5 bg-green-500/15 px-3 text-[10px] uppercase tracking-wider text-green-300 disabled:opacity-45"><Check size={13} /> Approve</button>
+                          <button type="button" disabled={c.status === 'declined'} onClick={() => handleUpdate('CommissionRequest', c.id, { status: 'declined' }, setCommissions)} className="inline-flex min-h-9 items-center gap-1.5 border border-red-400/25 px-3 text-[10px] uppercase tracking-wider text-red-300 disabled:opacity-45"><X size={13} /> Decline</button>
                           {confirmDel === c.id ? (
                             <ConfirmDelete onConfirm={() => handleDelete('CommissionRequest', c.id, setCommissions)} onCancel={() => setConfirmDel(null)} />
                           ) : (
@@ -733,6 +735,8 @@ export default function Admin() {
                           )}
                         </div>
                       </div>
+                      {c.approvalDelivery?.deliveredAt && <p className="mb-3 text-xs text-green-300/70">Approval update delivered to the customer.</p>}
+                      {c.approvalDelivery?.error && <p className="mb-3 text-xs text-amber-300/70">Commission approved; customer delivery is queued for retry.</p>}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs mb-3">
                         <div><span className="text-ivory/25 uppercase tracking-widest block mb-0.5">Type</span><span className="text-ivory/60">{c.artworkType}{c.otherArtworkType ? ` — ${c.otherArtworkType}` : ''}</span></div>
                         <div><span className="text-ivory/25 uppercase tracking-widest block mb-0.5">Budget</span><span className="text-ivory/60">{c.budget}</span></div>

@@ -770,7 +770,6 @@ async function ensureSeeds() {
   }
   const operationalDefaults = [
     ['contact_phone', '+233 55 915 5792', 'Call / Phone Number'],
-    ['show_shop', 'false', 'Show Shop Navigation'],
     ['show_blog', 'false', 'Show Blog Navigation'],
     ['show_testimonials', 'false', 'Enable Testimonials Page'],
     ['show_contact_map', 'false', 'Show Contact Map'],
@@ -3450,10 +3449,19 @@ app.patch('/api/entities/:name/:id', requireStaff, mutationLimiter, async (req, 
   }
   const wasApproved = ['approved', 'accepted'].includes(String(record.status || '').toLowerCase());
   const isApproved = ['approved', 'accepted'].includes(String(changes.status || '').toLowerCase());
-  if (!wasApproved && isApproved && (record.userId || record.accountEmail || record.email)) {
-    record.approvalDelivery = await deliverApprovalUpdate({ entityName: req.params.name, record, actor: req.user });
-  }
   Object.assign(record, changes, { updated_date: now() });
+  if (!wasApproved && isApproved && (record.userId || record.accountEmail || record.email)) {
+    try {
+      record.approvalDelivery = await deliverApprovalUpdate({ entityName: req.params.name, record, actor: req.user });
+    } catch (error) {
+      record.approvalDelivery = { failedAt: now(), error: error.message || 'Customer delivery failed.' };
+      void reportOperationalError('approval_delivery_failed', error, {
+        entityName: req.params.name,
+        entityId: record.id,
+        actorId: req.user.id,
+      }).catch(() => {});
+    }
+  }
   await audit(req.user, `${req.params.name.toLowerCase()}.updated`, req.params.name, record.id, { fields: Object.keys(changes) });
   await save();
   res.json(req.params.name === 'User' ? hiddenUserFields(record) : record);

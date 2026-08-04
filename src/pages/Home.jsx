@@ -542,11 +542,11 @@ export default function Home() {
               >
                 Start Commission <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
               </Link>
-              {settings.show_shop !== 'false' && <Link to="/shop"
+              <Link to="/shop"
                 className="flex items-center gap-2 border border-brass/20 text-ivory/70 px-10 py-4 font-tight text-sm tracking-widest uppercase hover:border-brass/40 hover:text-brass transition-all duration-300"
               >
                 Browse Shop
-              </Link>}
+              </Link>
             </div>
           </ScrollReveal>
         </div>
