@@ -178,6 +178,11 @@ function GifPicker({ query, setQuery, results, loading, configured, busy, onSear
 
 export default function ChatWorkspace({ adminMode = false }) {
   const { user } = useAuth();
+  const isIos = typeof navigator !== 'undefined' && (
+    /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+  const isInstalledIos = typeof navigator !== 'undefined' && navigator.standalone === true;
   const [conversations, setConversations] = useState([]);
   const [directory, setDirectory] = useState([]);
   const [activeId, setActiveId] = useState('');
@@ -736,6 +741,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   };
   const enablePush = async () => {
     try {
+      if (isIos && !isInstalledIos) throw new Error('On iPhone, first add Reigns Atelier to your Home Screen, open the installed app, then enable alerts here.');
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error('This browser does not support push notifications.');
       const registration = await navigator.serviceWorker.ready;
       const existing = await registration.pushManager.getSubscription();
@@ -833,7 +839,8 @@ export default function ChatWorkspace({ adminMode = false }) {
               <button type="button" onClick={enablePush} aria-label={pushState === 'enabled' ? 'Disable push alerts' : 'Enable push alerts'} title={pushState === 'enabled' ? 'Disable push alerts' : 'Enable push alerts'} className={`flex h-9 w-9 items-center justify-center border ${pushState === 'enabled' ? 'border-green-400/30 text-green-400' : 'border-brass/15 text-brass'}`}><Bell size={15} /></button>
               {adminMode && user?.role === 'admin' && <button type="button" onClick={() => setShowAnnouncement(value => !value)} aria-label="Post a community update" title="Post a community update" className="flex h-9 w-9 items-center justify-center border border-brass/15 text-brass"><Megaphone size={15} /></button>}
             </div></div>
-            <p className="mt-1 text-xs text-ivory/35">Private conversations with signed-in members</p>
+            <p className="mt-1 text-xs text-ivory/35">{adminMode ? 'Private studio and customer conversations' : 'Private conversations with studio administrators'}</p>
+            {isIos && !isInstalledIos && <p className="mt-2 text-[10px] leading-4 text-brass/70">iPhone alerts: Share → Add to Home Screen, then open the installed app and tap the bell.</p>}
             <label className="mt-4 flex h-11 items-center gap-2 border border-brass/15 bg-obsidian px-3 text-ivory/55"><Search size={15} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search people or chats" className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></label>
             <button type="button" onClick={() => setShowArchived(value => !value)} className="mt-2 flex items-center gap-2 text-[10px] uppercase tracking-widest text-ivory/40 hover:text-brass"><Archive size={13} />{showArchived ? 'Show active chats' : 'Archived chats'}</button>
             <div className="mt-3 flex max-w-full gap-1 overflow-x-auto pb-1">{[['all', 'All'], ['unread', 'Unread'], ['favourites', 'Favourites'], ['groups', 'Groups']].map(([value, label]) => <button type="button" key={value} onClick={() => setConversationFilter(value)} className={`min-h-8 shrink-0 rounded-full border px-3 text-[10px] uppercase tracking-wider ${conversationFilter === value ? 'border-brass bg-brass/15 text-brass' : 'border-brass/10 text-ivory/40'}`}>{label}</button>)}</div>

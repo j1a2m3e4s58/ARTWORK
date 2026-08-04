@@ -1638,8 +1638,18 @@ let redisPublisher = null;
 let redisSubscriber = null;
 let redisReady = false;
 const redisInstanceId = randomBytes(8).toString('hex');
+const isAdministrator = user => user?.role === 'admin';
+const conversationHasAdministrator = conversation => (conversation.participantIds || []).some(id => {
+  const participant = db.data.User.find(user => user.id === id && !user.deleted_at && user.status === 'active');
+  return isAdministrator(participant);
+});
+// Customer messaging is a private studio-support channel. Staff can work with
+// the full directory, while customers can access only Community Updates and
+// conversations that include a current administrator.
 const chatMember = (conversation, user) => Boolean(user && (
-  conversation.type === 'announcement' || conversation.participantIds?.includes(user.id)
+  conversation.type === 'announcement'
+  || (conversation.participantIds?.includes(user.id)
+    && (staffRoles.has(user.role) || conversationHasAdministrator(conversation)))
 ));
 const emitLocalChatEvent = (userIds, event, data = {}) => {
   [...new Set(userIds || [])].forEach(userId => {
@@ -1909,12 +1919,12 @@ app.get('/api/chat/events', requireVerifiedUser, (req, res) => {
 });
 
 app.get('/api/chat/directory', requireVerifiedUser, (req, res) => {
-  // The directory deliberately exposes only a display name, role and presence;
-  // private email addresses are never returned. Every active account is
-  // discoverable so customers can find other signed-in community members.
+  // Customer accounts may discover studio administrators only. Staff retain
+  // the operational directory needed to answer and manage customer chats.
   const people = db.data.User.filter(item => !item.deleted_at
     && item.status === 'active'
     && item.id !== req.user.id
+    && (staffRoles.has(req.user.role) || item.role === 'admin')
     && (item.chatDiscoverable !== false || staffRoles.has(req.user.role)));
   res.json(people.map(chatUser));
 });
@@ -1960,6 +1970,7 @@ app.post('/api/chat/conversations', requireVerifiedUser, mutationLimiter, async 
   let recipient = db.data.User.find(item => item.id === String(req.body.userId || '') && !item.deleted_at && item.status === 'active');
   if (!recipient) return res.status(404).json({ error: 'That person is no longer available. Choose another signed-in member.' });
   if (recipient.id === req.user.id) return res.status(400).json({ error: 'Choose another person.' });
+  if (!staffRoles.has(req.user.role) && recipient.role !== 'admin') return res.status(403).json({ error: 'Customer conversations can be started with a studio administrator only.' });
   if (recipient.chatDiscoverable === false && !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'That person is not accepting new conversations.' });
   const ids = [req.user.id, recipient.id].sort();
   let conversation = db.data.ChatConversation.find(item => !item.deleted_at && item.type !== 'announcement' && JSON.stringify([...(item.participantIds || [])].sort()) === JSON.stringify(ids));
@@ -1972,6 +1983,7 @@ app.post('/api/chat/conversations', requireVerifiedUser, mutationLimiter, async 
 });
 
 app.post('/api/chat/groups', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  if (!staffRoles.has(req.user.role)) return res.status(403).json({ error: 'Only studio staff can create group conversations.' });
   const title = String(req.body.title || '').trim().slice(0, 100);
   const requested = Array.isArray(req.body.participantIds) ? req.body.participantIds.slice(0, 255).map(String) : [];
   const participantIds = [...new Set([req.user.id, ...requested])].filter(id => db.data.User.some(user => user.id === id && user.status === 'active' && !user.deleted_at));

@@ -52,9 +52,12 @@ self.addEventListener('push', event => {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const target = event.action === 'reply'
+  const targetPath = event.action === 'reply'
     ? `${event.notification.data?.replyUrl || '/messages'}${String(event.notification.data?.replyUrl || '/messages').includes('?') ? '&' : '?'}compose=1`
     : event.notification.data?.url || '/messages';
+  // iOS may omit action buttons, but tapping the notification still opens the
+  // exact conversation. Use an absolute URL for reliable installed-PWA routing.
+  const target = new URL(targetPath, self.location.origin).href;
   event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windows => {
     const existing = windows.find(client => new URL(client.url).origin === self.location.origin);
     if (existing) { existing.navigate(target); return existing.focus(); }
