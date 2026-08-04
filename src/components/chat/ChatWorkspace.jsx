@@ -57,18 +57,72 @@ const formatAudioTime = value => {
 
 function VoiceMessagePlayer({ src, name = 'Voice message' }) {
   const audioRef = useRef(null);
+  const animationRef = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
   const bars = [35, 58, 42, 78, 50, 88, 46, 66, 38, 82, 55, 72, 44, 64, 36, 76, 48, 60, 40, 70, 52, 84, 45, 62];
   const progress = duration ? Math.min(100, (current / duration) * 100) : 0;
+
+  useEffect(() => {
+    if (!playing) {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+      return undefined;
+    }
+    const updateProgress = () => {
+      const player = audioRef.current;
+      if (player) setCurrent(player.currentTime || 0);
+      animationRef.current = requestAnimationFrame(updateProgress);
+    };
+    animationRef.current = requestAnimationFrame(updateProgress);
+    return () => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    };
+  }, [playing]);
+
+  const togglePlayback = async () => {
+    const player = audioRef.current;
+    if (!player) return;
+    if (!player.paused) {
+      player.pause();
+      setPlaying(false);
+      return;
+    }
+    if (duration && player.currentTime >= duration - 0.05) player.currentTime = 0;
+    try {
+      await player.play();
+      setPlaying(true);
+    } catch {
+      setPlaying(false);
+    }
+  };
+
+  const seekTo = value => {
+    const player = audioRef.current;
+    if (!player || !duration) return;
+    const next = Math.max(0, Math.min(duration, Number(value) || 0));
+    player.currentTime = next;
+    setCurrent(next);
+  };
+
   return <div className="flex min-w-0 max-w-full items-center gap-3 rounded-2xl bg-black/25 px-3 py-2 sm:min-w-[14rem]">
-    <audio ref={audioRef} src={src} preload="metadata" onLoadedMetadata={event => setDuration(event.currentTarget.duration || 0)} onTimeUpdate={event => setCurrent(event.currentTarget.currentTime)} onEnded={() => setPlaying(false)} />
-    <button type="button" onClick={() => { const player = audioRef.current; if (!player) return; if (player.paused) { player.play(); setPlaying(true); } else { player.pause(); setPlaying(false); } }} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian" aria-label={playing ? 'Pause voice note' : 'Play voice note'}>{playing ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" />}</button>
+    <audio ref={audioRef} src={src} preload="metadata" onLoadedMetadata={event => { setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0); setCurrent(event.currentTarget.currentTime || 0); }} onDurationChange={event => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)} onTimeUpdate={event => setCurrent(event.currentTarget.currentTime)} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); setCurrent(audioRef.current?.duration || duration); }} />
+    <button type="button" onClick={togglePlayback} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian transition-transform active:scale-95" aria-label={playing ? 'Pause voice note' : 'Play voice note'}>{playing ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" />}</button>
     <div className="min-w-0 flex-1">
-      <button type="button" onClick={event => { const player = audioRef.current; if (!player || !duration) return; const rect = event.currentTarget.getBoundingClientRect(); player.currentTime = Math.max(0, Math.min(duration, ((event.clientX - rect.left) / rect.width) * duration)); }} className="relative flex h-8 w-full items-center gap-[2px] overflow-hidden" aria-label="Seek voice note">
-        {bars.map((height, index) => <span key={index} className={`w-[3px] shrink-0 rounded-full ${((index + 1) / bars.length) * 100 <= progress ? 'bg-brass' : 'bg-ivory/25'}`} style={{ height: `${height}%` }} />)}
-      </button>
+      <div className="relative flex h-9 w-full touch-none items-center overflow-hidden">
+        <div className="flex h-8 w-full items-center justify-between gap-[2px]">
+          {bars.map((height, index) => {
+            const barProgress = ((index + 1) / bars.length) * 100;
+            const isPlayed = barProgress <= progress;
+            const isNearPlayhead = playing && Math.abs(barProgress - progress) < 8;
+            return <span key={index} className={`w-[3px] min-w-[2px] rounded-full transition-colors duration-100 ${isPlayed ? 'bg-brass' : 'bg-ivory/25'}`} style={{ height: `${height}%`, transform: isNearPlayhead ? 'scaleY(1.18)' : 'scaleY(1)', transition: 'transform 120ms ease, background-color 100ms linear' }} />;
+          })}
+        </div>
+        <span className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-obsidian bg-brass shadow-md transition-[left] duration-75" style={{ left: `${progress}%` }} />
+        <input type="range" min="0" max={duration || 0} step="0.01" value={Math.min(current, duration || 0)} onChange={event => seekTo(event.target.value)} disabled={!duration} aria-label={`Seek ${name}`} aria-valuetext={`${formatAudioTime(current)} of ${formatAudioTime(duration)}`} className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default" />
+      </div>
       <div className="flex justify-between text-[10px] text-ivory/45"><span>{formatAudioTime(current)}</span><span>{formatAudioTime(duration)}</span></div>
     </div>
     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brass/10" title={name}><Mic size={15} className="text-brass" /></span>
