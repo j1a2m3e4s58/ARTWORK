@@ -542,6 +542,14 @@ async function runMaintenance() {
   const outboxBefore = db.data.Outbox.length;
   db.data.Outbox = db.data.Outbox.filter(item => item.status !== 'delivered' || new Date(item.created_date).getTime() > outboxCutoff);
   changed ||= outboxBefore !== db.data.Outbox.length;
+  const notificationCutoff = currentTime - Number(process.env.NOTIFICATION_RETENTION_DAYS || 180) * 86_400_000;
+  const notificationsBefore = db.data.Notification.length;
+  db.data.Notification = db.data.Notification.filter(item => !item.read || new Date(item.created_date || 0).getTime() > notificationCutoff);
+  changed ||= notificationsBefore !== db.data.Notification.length;
+  const pushCutoff = currentTime - 120 * 86_400_000;
+  const pushBefore = db.data.PushSubscription.length;
+  db.data.PushSubscription = db.data.PushSubscription.filter(item => !item.deleted_at || new Date(item.deleted_at).getTime() > pushCutoff);
+  changed ||= pushBefore !== db.data.PushSubscription.length;
   if (changed) await save();
 }
 
@@ -1654,6 +1662,8 @@ const conversationView = (item, viewer) => {
     unread: db.data.ChatMessage.filter(message => message.conversationId === item.id && message.senderId !== viewer.id && !(message.readBy || []).includes(viewer.id) && !(message.hiddenFor || []).includes(viewer.id) && !message.deleted_at).length,
     muted: Boolean(item.mutedBy?.includes(viewer.id)),
     archived: Boolean(item.archivedBy?.includes(viewer.id)),
+    favourite: Boolean(item.favouritedBy?.includes(viewer.id)),
+    pinned: Boolean(item.pinnedBy?.includes(viewer.id)),
     blocked: Boolean(item.blockedBy?.length),
     blockedByMe: Boolean(item.blockedBy?.includes(viewer.id)),
     typingUsers,
@@ -1726,7 +1736,8 @@ app.post('/api/chat/presence', requireVerifiedUser, async (req, res) => {
 app.get('/api/chat/conversations', requireVerifiedUser, (req, res) => {
   const conversations = db.data.ChatConversation
     .filter(item => !item.deleted_at && chatMember(item, req.user))
-    .sort((a, b) => String(b.lastMessageAt || b.created_date).localeCompare(String(a.lastMessageAt || a.created_date)))
+    .sort((a, b) => Number(Boolean(b.pinnedBy?.includes(req.user.id))) - Number(Boolean(a.pinnedBy?.includes(req.user.id)))
+      || String(b.lastMessageAt || b.created_date).localeCompare(String(a.lastMessageAt || a.created_date)))
     .map(item => conversationView(item, req.user));
   res.json(conversations);
 });
@@ -1788,7 +1799,15 @@ app.patch('/api/chat/conversations/:id/settings', requireVerifiedUser, mutationL
   };
   if (typeof req.body.muted === 'boolean') toggle('mutedBy', req.body.muted);
   if (typeof req.body.archived === 'boolean') toggle('archivedBy', req.body.archived);
+  if (typeof req.body.favourite === 'boolean') toggle('favouritedBy', req.body.favourite);
+  if (typeof req.body.pinned === 'boolean') toggle('pinnedBy', req.body.pinned);
   if (typeof req.body.blocked === 'boolean') toggle('blockedBy', req.body.blocked);
+  if (req.body.markUnread === true) {
+    const latestIncoming = [...db.data.ChatMessage]
+      .filter(message => message.conversationId === conversation.id && message.senderId !== req.user.id && !message.deleted_at)
+      .sort((a, b) => String(b.created_date).localeCompare(String(a.created_date)))[0];
+    if (latestIncoming) latestIncoming.readBy = (latestIncoming.readBy || []).filter(id => id !== req.user.id);
+  }
   conversation.updated_date = now();
   await save();
   emitChatEvent(conversation.participantIds, 'conversation', { conversationId: conversation.id });
@@ -1815,6 +1834,11 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLi
   if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
   if (conversation.type === 'announcement' && !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'Only studio staff can post announcements.' });
   if (isConversationBlocked(conversation)) return res.status(403).json({ error: 'Unblock this conversation before sending a message.' });
+  const clientId = String(req.body.clientId || '').trim().slice(0, 100);
+  if (clientId) {
+    const existing = db.data.ChatMessage.find(item => item.conversationId === conversation.id && item.senderId === req.user.id && item.clientId === clientId && !item.deleted_at);
+    if (existing) return res.status(200).json(existing);
+  }
   const body = String(req.body.body || '').trim().slice(0, 10000);
   const attachmentUrl = String(req.body.attachmentUrl || '').trim().slice(0, 2048);
   if (!body && !attachmentUrl) return res.status(400).json({ error: 'Write a message or attach a file.' });
@@ -1826,7 +1850,7 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLi
     ? db.data.ChatMessage.find(item => item.id === replyToId && item.conversationId === conversation.id && !item.deleted_at)
     : null;
   const message = {
-    id: newId(), conversationId: conversation.id, senderId: req.user.id, body,
+    id: newId(), clientId: clientId || null, conversationId: conversation.id, senderId: req.user.id, body,
     attachmentUrl, attachmentName: String(req.body.attachmentName || '').slice(0, 240),
     attachmentType: String(req.body.attachmentType || '').slice(0, 120),
     attachmentBytes: Math.max(0, Number(req.body.attachmentBytes || 0)),
@@ -1859,6 +1883,9 @@ app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, muta
     : null;
   const created = [];
   for (const [index, entry] of entries.entries()) {
+    const clientId = String(entry?.clientId || '').trim().slice(0, 100);
+    const existing = clientId && db.data.ChatMessage.find(item => item.conversationId === conversation.id && item.senderId === req.user.id && item.clientId === clientId && !item.deleted_at);
+    if (existing) { created.push(existing); continue; }
     const body = String(entry?.body || '').trim().slice(0, 10000);
     const attachmentUrl = String(entry?.attachmentUrl || '').trim().slice(0, 2048);
     if (!body && !attachmentUrl) return res.status(400).json({ error: `Message ${index + 1} is empty.` });
@@ -1866,7 +1893,7 @@ app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, muta
       return res.status(400).json({ error: `Attachment ${index + 1} has an invalid address.` });
     }
     created.push({
-      id: newId(), conversationId: conversation.id, senderId: req.user.id, body,
+      id: newId(), clientId: clientId || null, conversationId: conversation.id, senderId: req.user.id, body,
       attachmentUrl, attachmentName: String(entry?.attachmentName || '').slice(0, 240),
       attachmentType: String(entry?.attachmentType || '').slice(0, 120),
       attachmentBytes: Math.max(0, Number(entry?.attachmentBytes || 0)),
@@ -1876,15 +1903,18 @@ app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, muta
       deliveredAt: now(), readBy: [req.user.id], reactions: {}, created_date: now(),
     });
   }
-  db.data.ChatMessage.push(...created);
-  const last = created.at(-1);
+  const existingMessageIds = new Set(db.data.ChatMessage.map(item => item.id));
+  const fresh = created.filter(item => !existingMessageIds.has(item.id));
+  if (!fresh.length) return res.status(200).json(created);
+  db.data.ChatMessage.push(...fresh);
+  const last = fresh.at(-1);
   conversation.lastMessageAt = last.created_date;
-  conversation.lastMessage = last.body || last.attachmentName || (created.length > 1 ? `${created.length} attachments` : 'Attachment');
+  conversation.lastMessage = last.body || last.attachmentName || (fresh.length > 1 ? `${fresh.length} attachments` : 'Attachment');
   const recipientIds = (conversation.participantIds || []).filter(id => id !== req.user.id);
   recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.message', title: `New message from ${req.user.full_name || req.user.email}`, message: conversation.lastMessage.slice(0, 180), section: 'messages', entity: 'ChatConversation', entityId: conversation.id, priority: 'normal', read: false, created_date: now() }));
   await pushToUsers(recipientIds, { title: `New message from ${req.user.full_name || 'Reigns Atelier'}`, body: conversation.lastMessage.slice(0, 180), url: `/messages?conversation=${conversation.id}`, tag: `chat-${conversation.id}` }, conversation.mutedBy || []);
   await save();
-  emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageIds: created.map(item => item.id) });
+  emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageIds: fresh.map(item => item.id) });
   res.status(201).json(created);
 });
 
@@ -1946,6 +1976,32 @@ app.post('/api/chat/messages/:id/reaction', requireVerifiedUser, mutationLimiter
   await save();
   emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageId: message.id });
   res.json(message);
+});
+
+app.patch('/api/chat/messages/:id/star', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at);
+  const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+  if (!message || !conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Message not found.' });
+  message.starredBy ||= [];
+  message.starredBy = req.body.starred === false
+    ? message.starredBy.filter(id => id !== req.user.id)
+    : [...new Set([...message.starredBy, req.user.id])];
+  message.updated_date = now();
+  await save();
+  res.json(message);
+});
+
+app.get('/api/chat/capabilities', requireVerifiedUser, (_req, res) => {
+  res.json({
+    realtime: 'server-sent-events',
+    push: pushConfigured,
+    secureTransport: process.env.NODE_ENV !== 'production' || /^https:/i.test(String(process.env.SITE_URL || '')),
+    encryptedAtRest: false,
+    endToEndEncryption: false,
+    voiceCalls: false,
+    videoCalls: false,
+    note: 'Calls and end-to-end encryption require dedicated signaling and audited key-management infrastructure.',
+  });
 });
 
 app.patch('/api/chat/messages/:id', requireVerifiedUser, mutationLimiter, async (req, res) => {

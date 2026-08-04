@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import {
   Archive, ArrowDown, ArrowLeft, Ban, Bell, BellOff, CheckCheck, Clapperboard, Download, File, FileArchive, FileSpreadsheet, FileText, Forward, Image, Images, Loader2,
   Megaphone, MessageCircle, Mic, MoreVertical, Paperclip, Pencil, Plus, Reply, RotateCcw,
-  Search, Send, ShoppingBag, Smile, Square, Trash2, Users, WifiOff, X,
+  Mail, Pin, Search, Send, ShoppingBag, Smile, Square, Star, Trash2, Users, WifiOff, X,
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
@@ -131,6 +131,8 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [searchingMessages, setSearchingMessages] = useState(false);
   const [searchBusy, setSearchBusy] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [conversationFilter, setConversationFilter] = useState('all');
+  const [queuedCount, setQueuedCount] = useState(0);
   const [showConversationMenu, setShowConversationMenu] = useState(false);
   const [editing, setEditing] = useState(null);
   const [messageMenuId, setMessageMenuId] = useState('');
@@ -169,6 +171,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const typingLastSentRef = useRef({ value: false, at: 0 });
   const activeIdRef = useRef('');
   const text = drafts[activeId] || '';
+  const queueKey = `reigns-chat-outbox:${user?.id || 'guest'}`;
   const resourceCopy = {
     shop: { eyebrow: 'Share for negotiation', title: 'Choose Art Shop items', description: 'Select one or several products to send in this conversation.' },
     gallery: { eyebrow: 'Share studio work', title: 'Choose gallery artworks', description: 'Select one or several artworks to share in this conversation.' },
@@ -187,6 +190,31 @@ export default function ChatWorkspace({ adminMode = false }) {
     return { left, top, width, maxHeight: Math.max(120, window.innerHeight - top - gutter) };
   };
   useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
+  useEffect(() => {
+    const readQueue = () => {
+      try { return JSON.parse(window.localStorage.getItem(queueKey) || '[]'); } catch { return []; }
+    };
+    const flushQueue = async () => {
+      if (!navigator.onLine) return;
+      const pending = readQueue();
+      if (!pending.length) return setQueuedCount(0);
+      const remaining = [];
+      for (const item of pending) {
+        try { await studioClient.chat.send(item.conversationId, item.payload); }
+        catch { remaining.push(item); }
+      }
+      window.localStorage.setItem(queueKey, JSON.stringify(remaining));
+      setQueuedCount(remaining.length);
+      if (!remaining.length) {
+        load().catch(() => {});
+        if (activeIdRef.current) loadMessages(activeIdRef.current, '', { mergeLatest: true }).catch(() => {});
+      }
+    };
+    setQueuedCount(readQueue().length);
+    window.addEventListener('online', flushQueue);
+    flushQueue();
+    return () => window.removeEventListener('online', flushQueue);
+  }, [queueKey]);
   useEffect(() => {
     if (adminMode) return undefined;
     document.documentElement.classList.toggle('messages-conversation-open', mobileConversationOpen);
@@ -334,8 +362,11 @@ export default function ChatWorkspace({ adminMode = false }) {
   const other = active?.participants?.find(person => person.id !== user.id);
   const matchingConversations = useMemo(() => conversations.filter(conversation => {
     if (Boolean(conversation.archived) !== showArchived) return false;
+    if (conversationFilter === 'unread' && !conversation.unread) return false;
+    if (conversationFilter === 'favourites' && !conversation.favourite) return false;
+    if (conversationFilter === 'groups' && !['group', 'announcement'].includes(conversation.type)) return false;
     return `${conversationName(conversation, user.id)} ${conversation.lastMessage || ''}`.toLowerCase().includes(query.toLowerCase());
-  }), [conversations, query, showArchived, user.id]);
+  }), [conversations, conversationFilter, query, showArchived, user.id]);
   const existingIds = new Set(conversations.filter(conversation => conversation.type !== 'announcement').flatMap(conversation => conversation.participantIds || []));
   const matchingPeople = useMemo(() => directory.filter(person => !existingIds.has(person.id) && `${person.name} ${person.role}`.toLowerCase().includes(query.toLowerCase())), [directory, conversations, query]);
 
@@ -413,7 +444,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     setError('');
     try {
       if (!attachments.length) {
-        await studioClient.chat.send(activeId, { body: text.trim(), replyToId: replyingTo?.id || null, allowForward: false });
+        await studioClient.chat.send(activeId, { clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`, body: text.trim(), replyToId: replyingTo?.id || null, allowForward: false });
       } else {
         uploadAbortRef.current = new AbortController();
         const messages = [];
@@ -426,6 +457,7 @@ export default function ChatWorkspace({ adminMode = false }) {
             onProgress: progress => setUploadProgress(current => ({ ...current, [item.id]: progress })),
           });
           messages.push({
+            clientId: crypto.randomUUID?.() || `${Date.now()}-${index}-${Math.random()}`,
             body: index === 0 ? text.trim() : '',
             attachmentUrl: uploaded.file_url,
             attachmentName: item.file.name,
@@ -443,6 +475,17 @@ export default function ChatWorkspace({ adminMode = false }) {
       setUploadProgress({});
       await loadMessages(activeId, '', { scrollToBottom: true }); await load();
     } catch (sendError) {
+      if (!attachments.length && (!navigator.onLine || /fetch|network|offline/i.test(String(sendError.message)))) {
+        const queued = { conversationId: activeId, payload: { clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`, body: text.trim(), replyToId: replyingTo?.id || null, allowForward: false }, queuedAt: new Date().toISOString() };
+        let pending = [];
+        try { pending = JSON.parse(window.localStorage.getItem(queueKey) || '[]'); } catch { /* start a clean queue */ }
+        pending.push(queued);
+        window.localStorage.setItem(queueKey, JSON.stringify(pending.slice(-100)));
+        setQueuedCount(pending.length);
+        setText(''); setReplyingTo(null);
+        setError('You are offline. This message is queued and will send automatically when the connection returns.');
+        return;
+      }
       setUploadFailed(Boolean(attachments.length) && sendError.name !== 'AbortError');
       setError(sendError.name === 'AbortError' ? 'Upload cancelled. Your files are still ready to retry.' : sendError.message);
     } finally { setBusy(false); uploadAbortRef.current = null; }
@@ -460,6 +503,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     finally { setBusy(false); }
   };
   const react = async (message, emoji) => { await studioClient.chat.react(message.id, message.reactions?.[user.id] === emoji ? '' : emoji); await loadMessages(activeId); };
+  const starMessage = async message => { await studioClient.chat.star(message.id, !(message.starredBy || []).includes(user.id)); await loadMessages(activeId); };
   const saveEdit = async () => {
     if (!editing?.body?.trim()) return;
     setBusy(true);
@@ -588,6 +632,8 @@ export default function ChatWorkspace({ adminMode = false }) {
             <p className="mt-1 text-xs text-ivory/35">Private conversations with signed-in members</p>
             <label className="mt-4 flex h-11 items-center gap-2 border border-brass/15 bg-obsidian px-3 text-ivory/55"><Search size={15} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search people or chats" className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></label>
             <button type="button" onClick={() => setShowArchived(value => !value)} className="mt-2 flex items-center gap-2 text-[10px] uppercase tracking-widest text-ivory/40 hover:text-brass"><Archive size={13} />{showArchived ? 'Show active chats' : 'Archived chats'}</button>
+            <div className="mt-3 flex max-w-full gap-1 overflow-x-auto pb-1">{[['all', 'All'], ['unread', 'Unread'], ['favourites', 'Favourites'], ['groups', 'Groups']].map(([value, label]) => <button type="button" key={value} onClick={() => setConversationFilter(value)} className={`min-h-8 shrink-0 rounded-full border px-3 text-[10px] uppercase tracking-wider ${conversationFilter === value ? 'border-brass bg-brass/15 text-brass' : 'border-brass/10 text-ivory/40'}`}>{label}</button>)}</div>
+            {queuedCount > 0 && <p className="mt-2 flex items-center gap-2 text-[10px] uppercase tracking-wider text-amber-300"><WifiOff size={12} />{queuedCount} queued message{queuedCount === 1 ? '' : 's'} will retry automatically</p>}
             {showAnnouncement && user?.role === 'admin' && <div className="mt-3 space-y-2 border border-brass/15 bg-obsidian p-3"><input value={announcement.title} onChange={event => setAnnouncement(value => ({ ...value, title: event.target.value }))} className="h-10 w-full border border-brass/15 bg-carbon px-3 text-sm text-ivory outline-none" placeholder="Announcement title" /><textarea value={announcement.body} onChange={event => setAnnouncement(value => ({ ...value, body: event.target.value }))} className="h-24 w-full resize-none border border-brass/15 bg-carbon p-3 text-sm text-ivory outline-none" placeholder="Message every signed-in member" /><button type="button" disabled={busy || !announcement.body.trim()} onClick={publishAnnouncement} className="h-10 w-full bg-brass text-xs uppercase tracking-wider text-obsidian disabled:opacity-40">Publish announcement</button></div>}
           </div>
           {error && !activeId && <p role="alert" className="border-b border-red-400/20 bg-red-400/5 p-3 text-xs text-red-300">{error}</p>}
@@ -596,7 +642,7 @@ export default function ChatWorkspace({ adminMode = false }) {
               const person = conversation.participants?.find(entry => entry.id !== user.id);
               return <button key={conversation.id} onClick={() => { setActiveId(conversation.id); setMobileConversationOpen(true); }} className={`flex w-full items-center gap-3 border-b border-brass/10 p-4 text-left ${activeId === conversation.id ? 'bg-brass/10' : 'hover:bg-ivory/[0.03]'}`}>
                 <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass"><span className="flex h-full w-full overflow-hidden rounded-full">{conversation.type === 'announcement' ? <span className="m-auto"><Megaphone size={17} /></span> : person?.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : <span className="m-auto">{initials(person?.name)}</span>}</span>{person?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}</span>
-                <span className="min-w-0 flex-1"><b className="block truncate text-sm text-ivory">{conversationName(conversation, user.id)}</b><small className="block truncate text-ivory/35">{conversation.typingUsers?.length ? `${conversation.typingUsers[0].name} is typing…` : conversation.lastMessage || 'Conversation started'}</small></span>
+                <span className="min-w-0 flex-1"><span className="flex items-center gap-1.5"><b className="block truncate text-sm text-ivory">{conversationName(conversation, user.id)}</b>{conversation.pinned && <Pin size={11} className="shrink-0 text-brass" aria-label="Pinned" />}{conversation.favourite && <Star size={11} className="shrink-0 fill-brass text-brass" aria-label="Favourite" />}</span><small className="block truncate text-ivory/35">{conversation.typingUsers?.length ? `${conversation.typingUsers[0].name} is typing…` : conversation.lastMessage || 'Conversation started'}</small></span>
                 {conversation.unread > 0 && <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-green-500 px-1 text-xs text-white">{conversation.unread}</span>}
               </button>;
             })}
@@ -619,6 +665,9 @@ export default function ChatWorkspace({ adminMode = false }) {
               <div data-chat-popover className="relative"><button type="button" onClick={() => setShowConversationMenu(value => !value)} className="flex h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass" aria-label="Conversation options"><MoreVertical size={18} /></button>
                 {showConversationMenu && <div data-chat-popover className="absolute right-0 top-11 z-30 w-52 border border-brass/20 bg-carbon p-1 shadow-2xl">
                   <button type="button" onClick={() => updateConversation({ muted: !active.muted })} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">{active.muted ? <Bell size={15} /> : <BellOff size={15} />}{active.muted ? 'Unmute alerts' : 'Mute alerts'}</button>
+                  <button type="button" onClick={() => updateConversation({ favourite: !active.favourite })} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10"><Star size={15} className={active.favourite ? 'fill-brass text-brass' : ''} />{active.favourite ? 'Remove favourite' : 'Add to favourites'}</button>
+                  <button type="button" onClick={() => updateConversation({ pinned: !active.pinned })} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10"><Pin size={15} />{active.pinned ? 'Unpin chat' : 'Pin chat'}</button>
+                  <button type="button" onClick={() => updateConversation({ markUnread: true })} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10"><Mail size={15} />Mark as unread</button>
                   <button type="button" onClick={() => updateConversation({ archived: !active.archived })} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10"><Archive size={15} />{active.archived ? 'Restore chat' : 'Archive chat'}</button>
                   {active.type !== 'announcement' && <button type="button" onClick={() => updateConversation({ blocked: !active.blockedByMe })} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-red-300 hover:bg-red-400/10"><Ban size={15} />{active.blockedByMe ? 'Unblock person' : 'Block person'}</button>}
                 </div>}
@@ -639,6 +688,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                   {message.replyPreview && <div className="mb-2 border-l-2 border-brass/50 bg-black/20 px-3 py-2 text-xs text-ivory/45"><Reply size={12} className="mb-1 inline text-brass" /> {message.replyPreview}</div>}
                   {message.deletedForEveryone ? <div className="flex items-center gap-3"><p className="flex items-center gap-2 text-sm italic text-ivory/35"><Ban size={14} />This message was deleted.</p><button type="button" onClick={() => removeMessage(message, 'me')} className="text-[10px] uppercase tracking-wider text-ivory/30 hover:text-brass">Remove</button></div> : editing?.id === message.id ? <div className="space-y-2"><textarea autoFocus value={editing.body} onChange={event => setEditing({ ...editing, body: event.target.value })} className="min-h-20 w-full resize-none border border-brass/20 bg-obsidian p-2 text-sm text-ivory outline-none" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="h-8 px-3 text-xs text-ivory/50">Cancel</button><button type="button" onClick={saveEdit} className="h-8 bg-brass px-3 text-xs text-obsidian">Save</button></div></div> : message.body && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm leading-6 text-ivory/75">{message.body}</p>}
                   <AttachmentPreview attachment={attachment} onOpen={setPreview} />
+                  {message.starredBy?.includes(user.id) && <Star size={12} className="absolute right-2 top-2 fill-brass text-brass" aria-label="Starred message" />}
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     {!message.deletedForEveryone && <div data-chat-popover className="relative flex items-center gap-1"><button type="button" onClick={() => setReplyingTo(message)} title="Reply" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Reply size={13} /></button><button type="button" onClick={event => { const opening = reactionPickerId !== message.id; setReactionPickerId(opening ? message.id : ''); setReactionPickerPosition(opening ? floatingPosition(event.currentTarget, 238, 60) : null); setMessageMenuId(''); }} title="React" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><Smile size={13} /></button><button type="button" onClick={event => { const opening = messageMenuId !== message.id; setMessageMenuId(opening ? message.id : ''); setMessageMenuPosition(opening ? floatingPosition(event.currentTarget, 220, 190) : null); setReactionPickerId(''); }} title="Message options" className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"><MoreVertical size={13} /></button></div>}
                     <div className="flex items-center gap-1 text-[10px] text-ivory/30">{message.editedAt && <span>edited · </span>}{new Date(message.created_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{mine && <CheckCheck size={13} aria-label={message.readAt ? 'Read' : 'Delivered'} className={message.readAt ? 'text-sky-400' : 'text-ivory/35'} />}</div>
@@ -685,6 +735,7 @@ export default function ChatWorkspace({ adminMode = false }) {
         const closeMenu = () => { setMessageMenuId(''); setMessageMenuPosition(null); };
         return createPortal(<div data-chat-popover style={messageMenuPosition} className="fixed z-[220] overflow-y-auto border border-brass/20 bg-carbon p-1 shadow-2xl">
           {mine && message.body && <button type="button" onClick={() => { setEditing({ id: message.id, body: message.body }); closeMenu(); }} className="flex min-h-11 w-full items-center gap-2 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Pencil size={14} />Edit message</button>}
+          <button type="button" onClick={() => { starMessage(message); closeMenu(); }} className="flex min-h-11 w-full items-center gap-2 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Star size={14} className={message.starredBy?.includes(user.id) ? 'fill-brass text-brass' : ''} />{message.starredBy?.includes(user.id) ? 'Unstar message' : 'Star message'}</button>
           {(message.allowForward || ['admin', 'editor', 'support'].includes(user.role)) && <button type="button" onClick={() => { setForwardingMessage(message); closeMenu(); }} className="flex min-h-11 w-full items-center gap-2 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Forward size={14} />Forward</button>}
           <button type="button" onClick={() => { removeMessage(message, 'me'); closeMenu(); }} className="flex min-h-11 w-full items-center gap-2 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Trash2 size={14} />Delete for me</button>
           {mine && <button type="button" onClick={() => { removeMessage(message, 'everyone'); closeMenu(); }} className="flex min-h-11 w-full items-center gap-2 px-3 text-left text-sm text-red-300 hover:bg-red-400/10"><Trash2 size={14} />Delete for everyone</button>}

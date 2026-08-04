@@ -153,10 +153,15 @@ test('API keeps public reads open while blocking unverified customer mutations',
     assert.equal(conversationResponse.status, 201);
     const conversation = await conversationResponse.json();
     const chatMessageResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, {
-      method: 'POST', headers: securedHeaders, body: JSON.stringify({ body: 'Welcome to the studio messenger.' }),
+      method: 'POST', headers: securedHeaders, body: JSON.stringify({ clientId: 'integration-chat-message-1', body: 'Welcome to the studio messenger.' }),
     });
     assert.equal(chatMessageResponse.status, 201);
     const chatMessage = await chatMessageResponse.json();
+    const repeatedMessageResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, {
+      method: 'POST', headers: securedHeaders, body: JSON.stringify({ clientId: 'integration-chat-message-1', body: 'Welcome to the studio messenger.' }),
+    });
+    assert.equal(repeatedMessageResponse.status, 200);
+    assert.equal((await repeatedMessageResponse.json()).id, chatMessage.id, 'Retrying the same client message must not create a duplicate.');
     const invalidRecipientResponse = await fetch(`${baseUrl}/api/chat/conversations`, {
       method: 'POST', headers: securedHeaders, body: JSON.stringify({ userId: 'missing-user' }),
     });
@@ -206,6 +211,12 @@ test('API keeps public reads open while blocking unverified customer mutations',
     assert.equal(reactionResponse.status, 200);
     assert.equal(Object.values((await reactionResponse.json()).reactions)[0], '👍');
 
+    const starResponse = await fetch(`${baseUrl}/api/chat/messages/${chatMessage.id}/star`, {
+      method: 'PATCH', headers: securedHeaders, body: JSON.stringify({ starred: true }),
+    });
+    assert.equal(starResponse.status, 200);
+    assert.ok((await starResponse.json()).starredBy.length, 'A member should be able to star a message privately.');
+
     const typingResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/typing`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'X-CSRF-Token': csrf }, body: JSON.stringify({ typing: true }),
     });
@@ -223,13 +234,15 @@ test('API keeps public reads open while blocking unverified customer mutations',
     assert.equal((await searchResponse.json()).length, 1);
 
     const muteResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/settings`, {
-      method: 'PATCH', headers: securedHeaders, body: JSON.stringify({ muted: true, archived: true, blocked: true }),
+      method: 'PATCH', headers: securedHeaders, body: JSON.stringify({ muted: true, archived: true, blocked: true, favourite: true, pinned: true }),
     });
     assert.equal(muteResponse.status, 200);
     const mutedConversation = await muteResponse.json();
     assert.equal(mutedConversation.muted, true);
     assert.equal(mutedConversation.archived, true);
     assert.equal(mutedConversation.blockedByMe, true);
+    assert.equal(mutedConversation.favourite, true);
+    assert.equal(mutedConversation.pinned, true);
     const blockedSend = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'X-CSRF-Token': csrf }, body: JSON.stringify({ body: 'This must be blocked.' }),
     });
@@ -243,6 +256,9 @@ test('API keeps public reads open while blocking unverified customer mutations',
     });
     assert.equal(announcementResponse.status, 201);
     assert.equal((await announcementResponse.json()).type, 'announcement');
+    const capabilitiesResponse = await fetch(`${baseUrl}/api/chat/capabilities`, { headers: { Cookie: adminCookieHeader } });
+    assert.equal(capabilitiesResponse.status, 200);
+    assert.equal((await capabilitiesResponse.json()).realtime, 'server-sent-events');
 
     const deleteResponse = await fetch(`${baseUrl}/api/chat/messages/${chatMessage.id}?mode=everyone`, { method: 'DELETE', headers: securedHeaders });
     assert.equal(deleteResponse.status, 200);
