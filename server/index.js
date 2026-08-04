@@ -2557,6 +2557,53 @@ app.get('/api/chat/gifs', requireVerifiedUser, async (req, res) => {
   } catch { res.status(503).json({ error: 'GIF search is temporarily unavailable.' }); }
 });
 
+app.post('/api/chat/gifs/import', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const key = String(process.env.GIPHY_API_KEY || '').trim();
+  if (!key) return res.status(503).json({ error: 'GIF sharing is not configured yet.' });
+  const gifId = String(req.body?.id || '').trim();
+  if (!/^[a-zA-Z0-9_-]{1,80}$/.test(gifId)) return res.status(400).json({ error: 'Choose a valid GIF.' });
+  try {
+    // Resolve the asset through GIPHY by ID so this route cannot be used to
+    // fetch an arbitrary address supplied by a browser.
+    const detailsUrl = new URL(`https://api.giphy.com/v1/gifs/${encodeURIComponent(gifId)}`);
+    detailsUrl.searchParams.set('api_key', key);
+    const detailsResponse = await fetch(detailsUrl, { signal: AbortSignal.timeout(8000) });
+    if (!detailsResponse.ok) throw new Error('GIF provider unavailable.');
+    const details = await detailsResponse.json();
+    const source = String(details.data?.images?.fixed_height?.url || details.data?.images?.original?.url || '');
+    const sourceUrl = new URL(source);
+    if (sourceUrl.protocol !== 'https:' || !/(^|\.)giphy\.com$/i.test(sourceUrl.hostname)) {
+      return res.status(400).json({ error: 'The selected GIF source is invalid.' });
+    }
+    const gifResponse = await fetch(sourceUrl, { signal: AbortSignal.timeout(20_000) });
+    if (!gifResponse.ok) throw new Error('The selected GIF could not be downloaded.');
+    const declaredBytes = Number(gifResponse.headers.get('content-length') || 0);
+    if (declaredBytes > 15 * 1024 * 1024) return res.status(413).json({ error: 'Choose a GIF smaller than 15 MB.' });
+    const buffer = Buffer.from(await gifResponse.arrayBuffer());
+    if (!buffer.length || buffer.length > 15 * 1024 * 1024) return res.status(413).json({ error: 'Choose a GIF smaller than 15 MB.' });
+    const detected = await fileTypeFromBuffer(buffer);
+    if (detected?.mime !== 'image/gif') return res.status(400).json({ error: 'The selected file is not a GIF.' });
+    const fileId = newId();
+    const stored = await storeFile({ buffer, mime: 'image/gif', extension: 'gif', uploadDir, id: fileId });
+    const media = {
+      id: fileId,
+      url: stored.url,
+      filename: `${String(details.data?.title || 'GIPHY GIF').trim().slice(0, 180) || 'GIPHY GIF'}.gif`,
+      mime: 'image/gif', bytes: buffer.length, provider: storageProvider,
+      publicId: stored.publicId, resourceType: stored.resourceType,
+      scanStatus: 'provider-import', userId: req.user.id,
+      purpose: 'chat-attachment', altText: String(details.data?.title || 'Shared GIF').slice(0, 240),
+      sourceName: 'GIPHY', contentStatus: 'licensed-provider', created_date: now(),
+    };
+    db.data.Media.push(media);
+    await save();
+    res.status(201).json({ file_url: media.url, media });
+  } catch (error) {
+    reportOperationalError('giphy_import_failed', error, { userId: req.user.id, gifId });
+    res.status(503).json({ error: 'This GIF could not be prepared. Please try another one.' });
+  }
+});
+
 app.get('/api/admin/chat/analytics', requireAdmin, async (_req, res) => {
   const sent = db.data.ChatMessage.filter(item => !item.deleted_at);
   const replies = [];

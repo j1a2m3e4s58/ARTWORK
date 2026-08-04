@@ -230,6 +230,7 @@ export const studioClient = {
     capabilities: () => request('/api/chat/capabilities'),
     sync: since => request(`/api/chat/sync?since=${encodeURIComponent(since || '')}`),
     gifs: query => request(`/api/chat/gifs?q=${encodeURIComponent(query || '')}`),
+    importGif: id => request('/api/chat/gifs/import', { method: 'POST', body: JSON.stringify({ id }) }),
   },
   push: {
     config: () => request('/api/push/config'),

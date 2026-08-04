@@ -114,6 +114,31 @@ function PreviewOverlay({ attachment, onClose }) {
   );
 }
 
+function GifPicker({ query, setQuery, results, loading, configured, busy, onSearch, onSend, onClose }) {
+  return createPortal(
+    <div onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }} className="fixed inset-0 z-[225] flex items-end justify-center bg-black/85 p-0 backdrop-blur-md sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="gif-picker-title">
+      <section className="flex max-h-[88dvh] w-full max-w-3xl flex-col overflow-hidden border border-brass/25 bg-carbon shadow-2xl">
+        <header className="flex items-center justify-between gap-3 border-b border-brass/15 p-4">
+          <div><p className="text-[10px] uppercase tracking-[.25em] text-brass">Animated reactions</p><h3 id="gif-picker-title" className="font-display text-2xl text-ivory">Choose a GIF</h3></div>
+          <button type="button" onClick={onClose} aria-label="Close GIF picker" className="flex h-10 w-10 items-center justify-center border border-brass/15"><X size={17} /></button>
+        </header>
+        <form onSubmit={event => { event.preventDefault(); onSearch(); }} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-brass/15 p-3 sm:p-4">
+          <label className="flex min-w-0 items-center gap-2 border border-brass/20 bg-obsidian px-3"><Search size={16} className="shrink-0 text-brass" /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search GIFs" autoFocus className="h-11 min-w-0 flex-1 bg-transparent text-sm text-ivory outline-none" /></label>
+          <button type="submit" disabled={loading || !query.trim()} className="min-h-11 bg-brass px-4 text-xs uppercase tracking-wider text-obsidian disabled:opacity-40">Search</button>
+        </form>
+        <div className="min-h-48 flex-1 overflow-y-auto overscroll-contain p-2 sm:p-3">
+          {loading ? <div className="flex min-h-56 items-center justify-center"><Loader2 className="animate-spin text-brass" /></div>
+            : !configured ? <div className="flex min-h-56 items-center justify-center px-6 text-center text-sm text-ivory/50">GIF search is not configured on this deployment yet.</div>
+              : results.length ? <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">{results.map(gif => <button type="button" key={gif.id} disabled={busy} onClick={() => onSend(gif)} title={gif.title || 'Send GIF'} className="group relative aspect-square overflow-hidden bg-obsidian disabled:opacity-40"><img src={gif.previewUrl || gif.url} alt={gif.title || 'GIF result'} loading="lazy" className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105" /><span className="absolute inset-x-0 bottom-0 truncate bg-black/65 px-2 py-1 text-left text-[10px] text-white/80">{gif.title || 'GIF'}</span></button>)}</div>
+                : <div className="flex min-h-56 items-center justify-center px-6 text-center text-sm text-ivory/45">Search for a reaction, mood, or art moment.</div>}
+        </div>
+        <footer className="flex items-center justify-between border-t border-brass/15 px-4 py-3"><span className="text-[10px] uppercase tracking-widest text-ivory/35">Tap a GIF to send it</span><strong className="text-xs tracking-wide text-ivory/60">Powered by GIPHY</strong></footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 export default function ChatWorkspace({ adminMode = false }) {
   const { user } = useAuth();
   const [conversations, setConversations] = useState([]);
@@ -149,6 +174,11 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [shopProducts, setShopProducts] = useState([]);
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [shopLoading, setShopLoading] = useState(false);
+  const [gifPickerOpen, setGifPickerOpen] = useState(false);
+  const [gifQuery, setGifQuery] = useState('art reactions');
+  const [gifResults, setGifResults] = useState([]);
+  const [gifLoading, setGifLoading] = useState(false);
+  const [gifConfigured, setGifConfigured] = useState(true);
   const emptyAnnouncement = { title: 'Community Updates', body: '', audience: 'all', scheduledAt: '', richMedia: { type: '', title: '', imageUrl: '', url: '' }, action: { label: '', url: '' } };
   const [announcement, setAnnouncement] = useState(emptyAnnouncement);
   const [reporting, setReporting] = useState(false);
@@ -428,6 +458,42 @@ export default function ChatWorkspace({ adminMode = false }) {
     finally { setShopLoading(false); }
   };
   const openShopPicker = () => openResourcePicker('shop');
+  const searchGifs = async (search = gifQuery) => {
+    const normalized = String(search || '').trim();
+    if (!normalized) return;
+    setGifLoading(true); setError('');
+    try {
+      const result = await studioClient.chat.gifs(normalized);
+      setGifConfigured(result.configured !== false);
+      setGifResults(Array.isArray(result.items) ? result.items : []);
+    } catch (searchError) { setError(searchError.message); setGifResults([]); }
+    finally { setGifLoading(false); }
+  };
+  const openGifPicker = () => {
+    setShowAttachmentMenu(false);
+    setGifPickerOpen(true);
+    if (!gifResults.length) searchGifs('art reactions');
+  };
+  const sendGif = async gif => {
+    if (!gif?.url || !activeId || busy) return;
+    setBusy(true); setError('');
+    try {
+      const imported = await studioClient.chat.importGif(gif.id);
+      await studioClient.chat.send(activeId, {
+        clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+        body: '',
+        attachmentUrl: imported.file_url,
+        attachmentName: imported.media?.filename || gif.title || 'GIF',
+        attachmentType: imported.media?.mime || 'image/gif',
+        attachmentBytes: imported.media?.bytes || 0,
+        allowForward: true,
+      });
+      setGifPickerOpen(false);
+      await loadMessages(activeId, '', { scrollToBottom: true });
+      await load();
+    } catch (sendError) { setError(sendError.message); }
+    finally { setBusy(false); }
+  };
   const sendShopSelection = async () => {
     const chosen = shopProducts.filter(product => selectedProducts.includes(product.id));
     if (!chosen.length || !activeId) return;
@@ -800,6 +866,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     <button type="button" onClick={() => { setShowAttachmentMenu(false); photosInputRef.current?.click(); }} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Image size={17} className="text-sky-400" /><span><b className="block font-medium">Photos & videos</b><small className="text-ivory/35">Choose one or several</small></span></button>
                     <button type="button" onClick={() => { setShowAttachmentMenu(false); documentsInputRef.current?.click(); }} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><FileText size={17} className="text-purple-400" /><span><b className="block font-medium">Documents</b><small className="text-ivory/35">PDF, Word, Excel, slides or ZIP</small></span></button>
                     <button type="button" onClick={() => { setShowAttachmentMenu(false); audioInputRef.current?.click(); }} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Mic size={17} className="text-orange-400" /><span><b className="block font-medium">Audio</b><small className="text-ivory/35">Choose an audio recording</small></span></button>
+                    <button type="button" onClick={openGifPicker} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><span className="flex h-[18px] min-w-[27px] items-center justify-center rounded-sm bg-gradient-to-r from-fuchsia-500 via-cyan-400 to-emerald-400 px-1 text-[8px] font-bold tracking-wide text-black">GIF</span><span><b className="block font-medium">GIFs</b><small className="text-ivory/35">Search and send with GIPHY</small></span></button>
                     <button type="button" onClick={shareLocation} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><MapPin size={17} className="text-green-400" /><span><b className="block font-medium">Location</b><small className="text-ivory/35">Share your current position</small></span></button>
                     <button type="button" onClick={shareContact} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Contact size={17} className="text-cyan-400" /><span><b className="block font-medium">Contact</b><small className="text-ivory/35">Share a name and phone number</small></span></button>
                     <button type="button" onClick={openShopPicker} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><ShoppingBag size={17} className="text-brass" /><span><b className="block font-medium">Art Shop items</b><small className="text-ivory/35">Share items for discussion</small></span></button>
@@ -834,6 +901,7 @@ export default function ChatWorkspace({ adminMode = false }) {
         </div>, document.body);
       })()}
       <PreviewOverlay attachment={preview} onClose={() => setPreview(null)} />
+      {gifPickerOpen && <GifPicker query={gifQuery} setQuery={setGifQuery} results={gifResults} loading={gifLoading} configured={gifConfigured} busy={busy} onSearch={searchGifs} onSend={sendGif} onClose={() => setGifPickerOpen(false)} />}
       {shopPickerOpen && <div onMouseDown={event => { if (event.target === event.currentTarget) { setShopPickerOpen(false); setSelectedProducts([]); } }} className="fixed inset-0 z-[176] flex items-center justify-center bg-black/85 p-3 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="shop-picker-title"><section className="flex max-h-[88dvh] w-full max-w-4xl flex-col border border-brass/25 bg-carbon shadow-2xl"><header className="flex items-center justify-between gap-3 border-b border-brass/15 p-4 sm:p-5"><div><p className="text-[10px] uppercase tracking-[.25em] text-brass">{resourceCopy.eyebrow}</p><h3 id="shop-picker-title" className="font-display text-2xl text-ivory sm:text-3xl">{resourceCopy.title}</h3><p className="mt-1 text-xs text-ivory/40">{resourceCopy.description}</p></div><button type="button" onClick={() => { setShopPickerOpen(false); setSelectedProducts([]); }} className="flex h-10 w-10 items-center justify-center border border-brass/15"><X size={17} /></button></header><div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">{shopLoading ? <div className="flex min-h-60 items-center justify-center"><Loader2 className="animate-spin text-brass" /></div> : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{shopProducts.map(product => { const selected = selectedProducts.includes(product.id); return <button type="button" key={product.id} onClick={() => setSelectedProducts(current => selected ? current.filter(id => id !== product.id) : [...current, product.id])} className={`overflow-hidden border text-left ${selected ? 'border-brass bg-brass/10' : 'border-brass/10 bg-obsidian'}`}><div className="relative aspect-[4/3] bg-black/30">{product.imageUrl ? <img src={product.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center"><Image className="text-ivory/20" /></div>}{selected && <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-brass text-obsidian"><CheckCheck size={15} /></span>}</div><div className="p-3"><b title={product.title} className="block truncate text-sm text-ivory">{product.title}</b>{resourceKind === 'shop' && <span className="mt-1 block text-sm text-brass">GHS {Number(product.price || 0).toLocaleString('en-GH', { minimumFractionDigits: 2 })}</span>}</div></button>; })}</div>}</div><footer className="flex items-center justify-between gap-3 border-t border-brass/15 p-4"><span className="text-xs text-ivory/40">{selectedProducts.length} selected</span><button type="button" disabled={!selectedProducts.length || busy} onClick={sendShopSelection} className="min-h-11 bg-brass px-5 text-xs uppercase tracking-wider text-obsidian disabled:opacity-40">{busy ? 'Sending…' : 'Send selected items'}</button></footer></section></div>}
       {forwardingMessage && <div className="fixed inset-0 z-[175] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="forward-message-title"><div className="max-h-[80dvh] w-full max-w-md overflow-hidden border border-brass/25 bg-carbon shadow-2xl"><header className="flex items-center justify-between border-b border-brass/15 p-4"><div><h3 id="forward-message-title" className="font-display text-2xl text-ivory">Forward message</h3><p className="text-xs text-ivory/40">Choose one of your conversations</p></div><button type="button" onClick={() => setForwardingMessage(null)} aria-label="Close forward message" className="flex h-10 w-10 items-center justify-center border border-brass/15"><X size={17} /></button></header><div className="max-h-[60dvh] overflow-y-auto p-2">{conversations.filter(item => item.id !== activeId && !item.archived).map(item => <button type="button" disabled={busy} key={item.id} onClick={() => forwardMessage(item.id)} className="flex min-h-14 w-full items-center gap-3 border-b border-brass/10 px-3 text-left hover:bg-brass/10 disabled:opacity-40"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-brass/10 text-xs text-brass">{initials(conversationName(item, user.id))}</span><span className="truncate text-sm text-ivory/70">{conversationName(item, user.id)}</span></button>)}</div></div></div>}
     </>
