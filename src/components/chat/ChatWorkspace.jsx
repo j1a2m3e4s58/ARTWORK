@@ -141,6 +141,15 @@ function VoiceMessagePlayer({ src, name = 'Voice message' }) {
   const bars = [35, 58, 42, 78, 50, 88, 46, 66, 38, 82, 55, 72, 44, 64, 36, 76, 48, 60, 40, 70, 52, 84, 45, 62];
   const progress = duration ? Math.min(100, (current / duration) * 100) : 0;
 
+  const synchronizeDuration = (player) => {
+    const mediaDuration = Number(player?.duration);
+    if (Number.isFinite(mediaDuration) && mediaDuration > 0) {
+      setDuration(mediaDuration);
+      return true;
+    }
+    return false;
+  };
+
   useEffect(() => {
     if (!playing) {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
@@ -149,7 +158,10 @@ function VoiceMessagePlayer({ src, name = 'Voice message' }) {
     }
     const updateProgress = () => {
       const player = audioRef.current;
-      if (player) setCurrent(player.currentTime || 0);
+      if (player) {
+        synchronizeDuration(player);
+        setCurrent(Number.isFinite(player.currentTime) ? player.currentTime : 0);
+      }
       animationRef.current = requestAnimationFrame(updateProgress);
     };
     animationRef.current = requestAnimationFrame(updateProgress);
@@ -191,16 +203,42 @@ function VoiceMessagePlayer({ src, name = 'Voice message' }) {
         src={src}
         preload="metadata"
         onLoadedMetadata={(event) => {
-          setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0);
+          const player = event.currentTarget;
+          if (!synchronizeDuration(player)) {
+            // MediaRecorder WebM files can initially report Infinity/NaN. A
+            // temporary seek asks Chromium/WebKit to parse the final cluster;
+            // durationchange/seeked then expose the real length.
+            const restoreAt = Number.isFinite(player.currentTime) ? player.currentTime : 0;
+            const restore = () => {
+              synchronizeDuration(player);
+              player.currentTime = restoreAt;
+              setCurrent(restoreAt);
+            };
+            player.addEventListener('durationchange', restore, { once: true });
+            player.addEventListener('seeked', restore, { once: true });
+            try {
+              player.currentTime = Number.MAX_SAFE_INTEGER;
+            } catch {
+              setDuration(0);
+            }
+          }
           setCurrent(event.currentTarget.currentTime || 0);
         }}
-        onDurationChange={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
-        onTimeUpdate={(event) => setCurrent(event.currentTarget.currentTime)}
+        onDurationChange={(event) => synchronizeDuration(event.currentTarget)}
+        onTimeUpdate={(event) => {
+          synchronizeDuration(event.currentTarget);
+          setCurrent(Number.isFinite(event.currentTarget.currentTime) ? event.currentTarget.currentTime : 0);
+        }}
+        onSeeked={(event) => {
+          synchronizeDuration(event.currentTarget);
+          setCurrent(Number.isFinite(event.currentTarget.currentTime) ? event.currentTarget.currentTime : 0);
+        }}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onEnded={() => {
           setPlaying(false);
-          setCurrent(audioRef.current?.duration || duration);
+          const finalDuration = Number(audioRef.current?.duration);
+          setCurrent(Number.isFinite(finalDuration) ? finalDuration : duration);
         }}
       />
       <button
@@ -221,18 +259,18 @@ function VoiceMessagePlayer({ src, name = 'Voice message' }) {
               return (
                 <span
                   key={index}
-                  className={`w-[3px] min-w-[2px] rounded-full transition-colors duration-100 ${isPlayed ? 'bg-brass' : 'bg-ivory/25'}`}
+                  className={`w-[3px] min-w-[2px] rounded-full ${isPlayed ? 'bg-brass' : 'bg-ivory/25'}`}
                   style={{
                     height: `${height}%`,
                     transform: isNearPlayhead ? 'scaleY(1.18)' : 'scaleY(1)',
-                    transition: 'transform 120ms ease, background-color 100ms linear',
+                    transition: 'transform 80ms linear',
                   }}
                 />
               );
             })}
           </div>
           <span
-            className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-obsidian bg-brass shadow-md transition-[left] duration-75"
+            className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-obsidian bg-brass shadow-md"
             style={{ left: `${progress}%` }}
           />
           <input

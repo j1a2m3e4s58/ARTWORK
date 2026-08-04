@@ -109,6 +109,47 @@ app.use((req, res, next) => {
   next();
 });
 
+// The application keeps a synchronized in-memory view of the database so a
+// mutation must own that view until its response has finished. Without this
+// gate, frequent chat presence/typing requests can mutate the same User record
+// while a message, attachment, edit, or delete is being committed. The second
+// commit then sees the first request's stale snapshot and PostgreSQL correctly
+// rejects it as a conflict. Serialize state-changing API requests at the HTTP
+// boundary; read-only requests and long-lived chat event streams remain fully
+// concurrent.
+let mutationRequestTail = Promise.resolve();
+app.use((req, res, next) => {
+  if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method) || !req.path.startsWith('/api/')) {
+    next();
+    return;
+  }
+
+  const previous = mutationRequestTail.catch(() => {});
+  let releaseMutation;
+  mutationRequestTail = new Promise((resolve) => {
+    releaseMutation = resolve;
+  });
+
+  previous.then(() => {
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      res.off('finish', release);
+      res.off('close', release);
+      releaseMutation();
+    };
+    res.once('finish', release);
+    res.once('close', release);
+    try {
+      next();
+    } catch (error) {
+      release();
+      next(error);
+    }
+  });
+});
+
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true });
 const mutationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 120, standardHeaders: true });
 const publicFormLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 20, standardHeaders: true });
