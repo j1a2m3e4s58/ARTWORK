@@ -733,7 +733,7 @@ async function ensureSeeds() {
     ['show_blog', 'false', 'Show Blog Navigation'],
     ['show_testimonials', 'false', 'Enable Testimonials Page'],
     ['show_contact_map', 'false', 'Show Contact Map'],
-    ['show_internships', 'false', 'Show Internships Navigation'],
+    ['show_internships', 'true', 'Show Internships Navigation'],
   ];
   for (const [key, value, label] of operationalDefaults) {
     if (db.data.SiteContent.some(item => item.page === 'Settings' && item.key === key && !item.deleted_at)) continue;
@@ -3241,6 +3241,63 @@ app.post('/api/email/send', requireVerifiedUser, async (req, res) => {
   res.json(delivery);
 });
 
+const latestSetting = (key, fallback = '') => {
+  const rows = (db.data.SiteContent || [])
+    .filter(item => item.page === 'Settings' && item.key === key && !item.deleted_at)
+    .sort((a, b) => String(a.updated_date || a.created_date || '').localeCompare(String(b.updated_date || b.created_date || '')));
+  return String(rows.at(-1)?.value || fallback);
+};
+
+const approvalCopy = (entityName, record, recipient) => {
+  const definitions = {
+    InternshipApplication: ['internship', 'internship application', 'Internship application approved — Reigns Atelier', 'Good news, {{name}} — your internship application has been approved. The studio will contact you with the next steps.'],
+    CommissionRequest: ['commission', 'commission request', 'Commission request approved — Reigns Atelier', 'Good news, {{name}} — your commission request has been approved. Open your account or messages to continue with the studio.'],
+    ArtRequest: ['art_request', 'Studio Art Finder request', 'Studio Art Finder request approved — Reigns Atelier', 'Good news, {{name}} — your Studio Art Finder request has been approved. The studio will message you with the available options.'],
+    FilmRequest: ['film_request', 'art film request', 'Art film request approved — Reigns Atelier', 'Good news, {{name}} — your art film request has been approved. Watch your studio messages for the next update.'],
+  };
+  const [key, item, fallbackSubject, fallbackMessage] = definitions[entityName] || ['generic', String(entityName || 'request').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase(), 'Your request was approved — Reigns Atelier', 'Good news, {{name}} — your {{item}} has been approved. Sign in to view the update and continue with the studio.'];
+  const name = recipient.full_name || record.name || 'there';
+  const expand = value => String(value).replaceAll('{{name}}', name).replaceAll('{{item}}', item);
+  return {
+    subject: expand(latestSetting(`approval_${key}_subject`, fallbackSubject)),
+    message: expand(latestSetting(`approval_${key}_message`, fallbackMessage)),
+  };
+};
+
+const deliverApprovalUpdate = async ({ entityName, record, actor }) => {
+  const email = String(record.accountEmail || record.email || '').trim().toLowerCase();
+  const recipient = (db.data.User || []).find(item => !item.deleted_at && (item.id === record.userId || (email && String(item.email || '').toLowerCase() === email)));
+  if (!recipient || recipient.id === actor.id) return { skipped: true, reason: 'recipient_not_found' };
+  const copy = approvalCopy(entityName, record, recipient);
+  const participantIds = [actor.id, recipient.id].sort();
+  let conversation = (db.data.ChatConversation || []).find(item => !item.deleted_at && item.type !== 'announcement' && JSON.stringify([...(item.participantIds || [])].sort()) === JSON.stringify(participantIds));
+  if (!conversation) {
+    conversation = { id: newId(), participantIds, createdBy: actor.id, lastMessageAt: now(), created_date: now() };
+    db.data.ChatConversation.push(conversation);
+  }
+  const message = {
+    id: newId(), conversationId: conversation.id, senderId: actor.id, body: copy.message,
+    attachmentUrl: '', attachmentName: '', attachmentType: '', attachmentBytes: 0,
+    allowForward: false, deliveredAt: now(), readBy: [actor.id], reactions: {},
+    systemEvent: 'approval', entity: entityName, entityId: record.id, created_date: now(),
+  };
+  db.data.ChatMessage.push(message);
+  conversation.lastMessageAt = message.created_date;
+  db.data.Notification.push({
+    id: newId(), userId: recipient.id, type: `${entityName}.approved`, title: copy.subject,
+    message: copy.message.slice(0, 240), section: 'messages', entity: entityName, entityId: record.id,
+    conversationId: conversation.id, priority: 'high', read: false, created_date: now(),
+  });
+  await pushToUsers([recipient.id], chatPushPayload(message, actor, conversation.id), conversation.mutedBy || []);
+  emitChatEvent(participantIds, 'message.created', { conversationId: conversation.id, message });
+  const emailDelivery = email || recipient.email ? await deliverEmail({
+    to: email || recipient.email,
+    subject: copy.subject,
+    text: `${copy.message}\n\nSign in to Reigns Atelier to view the update and reply to the studio.`,
+  }) : { skipped: true, reason: 'email_missing' };
+  return { deliveredAt: now(), conversationId: conversation.id, messageId: message.id, emailDelivery };
+};
+
 app.patch('/api/entities/:name/:id', requireStaff, mutationLimiter, async (req, res) => {
   const records = db.data[req.params.name];
   const record = records?.find(item => item.id === req.params.id);
@@ -3349,6 +3406,11 @@ app.patch('/api/entities/:name/:id', requireStaff, mutationLimiter, async (req, 
         });
       }
     }
+  }
+  const wasApproved = ['approved', 'accepted'].includes(String(record.status || '').toLowerCase());
+  const isApproved = ['approved', 'accepted'].includes(String(changes.status || '').toLowerCase());
+  if (!wasApproved && isApproved && (record.userId || record.accountEmail || record.email)) {
+    record.approvalDelivery = await deliverApprovalUpdate({ entityName: req.params.name, record, actor: req.user });
   }
   Object.assign(record, changes, { updated_date: now() });
   await audit(req.user, `${req.params.name.toLowerCase()}.updated`, req.params.name, record.id, { fields: Object.keys(changes) });

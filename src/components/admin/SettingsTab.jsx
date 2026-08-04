@@ -19,7 +19,7 @@ const SETTING_DEFAULTS = [
   { key: 'show_shop', label: 'Show Shop Navigation', value: 'false', group: 'Navigation', icon: 'globe', hint: 'Enable after at least one product is published and ordering has been rehearsed.' },
   { key: 'show_videos', label: 'Show Art Films Navigation', value: 'true', group: 'Navigation', icon: 'globe' },
   { key: 'show_awards', label: 'Show Honours Navigation', value: 'true', group: 'Navigation', icon: 'globe' },
-  { key: 'show_internships', label: 'Show Internships Navigation', value: 'false', group: 'Navigation', icon: 'globe', hint: 'Enable when the internship programme is accepting applications.' },
+  { key: 'show_internships', label: 'Show Internships Navigation', value: 'true', group: 'Navigation', icon: 'globe', hint: 'Internships is a core page and remains available in site navigation.' },
   { key: 'show_blog', label: 'Show Blog Navigation', value: 'false', group: 'Navigation', icon: 'globe' },
   { key: 'show_testimonials', label: 'Enable Testimonials Page', value: 'false', group: 'Navigation', icon: 'globe' },
   { key: 'show_contact', label: 'Show Contact Navigation', value: 'true', group: 'Navigation', icon: 'globe' },
@@ -46,11 +46,21 @@ const SETTING_DEFAULTS = [
   { key: 'newsletter_success', label: 'Success Message (after subscribing)', value: 'Thank you for subscribing ✦', group: 'Newsletter & Offers', icon: 'mail' },
   { key: 'promo_banner_text', label: 'Promo Banner Text (leave blank to hide)', value: '', group: 'Newsletter & Offers', icon: 'globe', hint: 'Example: "10% off all prints this week — use code ART10". Leave empty to hide the banner.' },
   { key: 'promo_banner_link', label: 'Promo Banner Link (optional)', value: '/shop', group: 'Newsletter & Offers', icon: 'globe', hint: 'Where the banner links to, e.g. /shop or /commission' },
+  { key: 'approval_internship_subject', label: 'Internship Approval Email Subject', value: 'Internship application approved — Reigns Atelier', group: 'Approval Messages', icon: 'mail' },
+  { key: 'approval_internship_message', label: 'Internship Approval Message', value: 'Good news, {{name}} — your internship application has been approved. The studio will contact you with the next steps.', group: 'Approval Messages', icon: 'message', multiline: true },
+  { key: 'approval_commission_subject', label: 'Commission Approval Email Subject', value: 'Commission request approved — Reigns Atelier', group: 'Approval Messages', icon: 'mail' },
+  { key: 'approval_commission_message', label: 'Commission Approval Message', value: 'Good news, {{name}} — your commission request has been approved. Open your account or messages to continue with the studio.', group: 'Approval Messages', icon: 'message', multiline: true },
+  { key: 'approval_art_request_subject', label: 'Art Finder Approval Email Subject', value: 'Studio Art Finder request approved — Reigns Atelier', group: 'Approval Messages', icon: 'mail' },
+  { key: 'approval_art_request_message', label: 'Art Finder Approval Message', value: 'Good news, {{name}} — your Studio Art Finder request has been approved. The studio will message you with the available options.', group: 'Approval Messages', icon: 'message', multiline: true },
+  { key: 'approval_film_request_subject', label: 'Art Film Approval Email Subject', value: 'Art film request approved — Reigns Atelier', group: 'Approval Messages', icon: 'mail' },
+  { key: 'approval_film_request_message', label: 'Art Film Approval Message', value: 'Good news, {{name}} — your art film request has been approved. Watch your studio messages for the next update.', group: 'Approval Messages', icon: 'message', multiline: true },
+  { key: 'approval_generic_subject', label: 'Other Approval Email Subject', value: 'Your request was approved — Reigns Atelier', group: 'Approval Messages', icon: 'mail' },
+  { key: 'approval_generic_message', label: 'Other Approval Message', value: 'Good news, {{name}} — your {{item}} has been approved. Sign in to view the update and continue with the studio.', group: 'Approval Messages', icon: 'message', multiline: true },
 ];
 
 const ICON_MAP = { phone: Phone, mail: Mail, instagram: Instagram, twitter: Twitter, youtube: Youtube, tiktok: Music2, facebook: Facebook, linkedin: Linkedin, pinterest: Pin, globe: Globe, message: MessageCircle };
 
-const GROUP_ORDER = ['Contact', 'Social', 'Branding', 'Navigation', 'Business', 'SEO & App', 'Banners', 'Newsletter & Offers'];
+const GROUP_ORDER = ['Contact', 'Social', 'Branding', 'Navigation', 'Business', 'Approval Messages', 'SEO & App', 'Banners', 'Newsletter & Offers'];
 
 function SettingRow({ setting, onSave }) {
   const [val, setVal] = useState(setting.value);
@@ -68,8 +78,7 @@ function SettingRow({ setting, onSave }) {
         {setting.hint && <p className="text-ivory/25 text-xs mb-2">{setting.hint}</p>}
         {editing ? (
           <div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-            <input value={val} onChange={e => setVal(e.target.value)}
-              className="flex-1 bg-obsidian border border-brass/30 text-ivory/80 px-3 py-2 text-sm focus:outline-none focus:border-brass/50 transition-colors" />
+            {setting.multiline ? <textarea rows={4} value={val} onChange={e => setVal(e.target.value)} className="flex-1 resize-y bg-obsidian border border-brass/30 text-ivory/80 px-3 py-2 text-sm focus:outline-none focus:border-brass/50 transition-colors" /> : <input value={val} onChange={e => setVal(e.target.value)} className="flex-1 bg-obsidian border border-brass/30 text-ivory/80 px-3 py-2 text-sm focus:outline-none focus:border-brass/50 transition-colors" />}
             <button onClick={() => { onSave(val); setEditing(false); }}
               className="flex items-center gap-1 bg-brass text-obsidian px-3 py-2 text-xs font-tight tracking-wide hover:bg-brass-light transition-all flex-shrink-0">
               <Check size={11} /> Save

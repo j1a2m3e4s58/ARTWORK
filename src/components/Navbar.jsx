@@ -28,6 +28,7 @@ export default function Navbar() {
   const settings = useSettings();
   const { user, logout } = useAuth();
   const isVisible = link => {
+    if (link.path === '/internships') return true;
     const key = link.settingKey || `show_${link.label.toLowerCase()}`;
     if (['show_videos', 'show_blog', 'show_internships'].includes(key)) return settings[key] === 'true';
     if (key === 'show_awards') return settings[key] !== 'false';
