@@ -71,6 +71,7 @@
     "express-rate-limit": "^8.6.0",
     "file-type": "^21.3.4",
     "framer-motion": "^11.16.4",
+    "heic2any": "^0.0.4",
     "helmet": "^8.3.0",
     "input-otp": "^1.4.2",
     "ioredis": "^6.0.0",

@@ -12,6 +12,9 @@ export default function Messages() {
       bodyOverflow: document.body.style.overflow,
       overscroll: document.body.style.overscrollBehavior,
     };
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
     document.documentElement.style.overflow = 'hidden';
     document.body.style.overflow = 'hidden';
     document.body.style.overscrollBehavior = 'none';

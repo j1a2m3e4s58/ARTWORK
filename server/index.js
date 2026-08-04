@@ -2187,6 +2187,25 @@ const messageExtensions = (entry, replyTo) => ({
   ciphertext: String(entry?.ciphertext || '').slice(0, 50_000),
   encryption: entry?.ciphertext ? { algorithm: String(entry?.encryption?.algorithm || 'X25519-AES-GCM').slice(0, 40), keyId: String(entry?.encryption?.keyId || '').slice(0, 120), version: 1 } : null,
 });
+const chatPushPayload = (message, sender, conversationId, batchCount = 1) => {
+  const type = String(message?.attachmentType || '').toLowerCase();
+  const attachmentLabel = type.startsWith('image/') ? '📷 Photo'
+    : type.startsWith('video/') ? '🎥 Video'
+      : type.startsWith('audio/') ? '🎙️ Voice message'
+        : message?.attachmentName ? `📎 ${message.attachmentName}` : '';
+  const body = String(message?.body || (batchCount > 1 ? `${batchCount} new attachments` : attachmentLabel) || 'New message').slice(0, 180);
+  const url = `/messages?conversation=${conversationId}`;
+  return {
+    title: `New message from ${sender.full_name || 'Reigns Atelier'}`,
+    body,
+    url,
+    replyUrl: url,
+    tag: `chat-${conversationId}`,
+    icon: sender.avatarUrl || '/brand/reigns-app-icon-192.png',
+    image: type.startsWith('image/') ? message.attachmentUrl : undefined,
+    category: 'chat',
+  };
+};
 
 app.get('/api/chat/conversations/:id/messages', requireVerifiedUser, (req, res) => {
   const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
@@ -2244,7 +2263,7 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLi
   conversation.lastMessage = body || message.attachmentName || 'Attachment';
   const recipientIds = (conversation.participantIds || []).filter(id => id !== req.user.id);
   recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.message', title: `New message from ${req.user.full_name || req.user.email}`, message: conversation.lastMessage.slice(0, 180), section: 'messages', entity: 'ChatConversation', entityId: conversation.id, priority: 'normal', read: false, created_date: now() }));
-  await pushToUsers(recipientIds, { title: `New message from ${req.user.full_name || 'Reigns Atelier'}`, body: conversation.lastMessage.slice(0, 180), url: `/messages?conversation=${conversation.id}`, tag: `chat-${conversation.id}` }, conversation.mutedBy || []);
+  await pushToUsers(recipientIds, chatPushPayload(message, req.user, conversation.id), conversation.mutedBy || []);
   await save();
   emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageId: message.id });
   res.status(201).json(message);
@@ -2292,7 +2311,7 @@ app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, muta
   conversation.lastMessage = last.body || last.attachmentName || (fresh.length > 1 ? `${fresh.length} attachments` : 'Attachment');
   const recipientIds = (conversation.participantIds || []).filter(id => id !== req.user.id);
   recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.message', title: `New message from ${req.user.full_name || req.user.email}`, message: conversation.lastMessage.slice(0, 180), section: 'messages', entity: 'ChatConversation', entityId: conversation.id, priority: 'normal', read: false, created_date: now() }));
-  await pushToUsers(recipientIds, { title: `New message from ${req.user.full_name || 'Reigns Atelier'}`, body: conversation.lastMessage.slice(0, 180), url: `/messages?conversation=${conversation.id}`, tag: `chat-${conversation.id}` }, conversation.mutedBy || []);
+  await pushToUsers(recipientIds, chatPushPayload(last, req.user, conversation.id, fresh.length), conversation.mutedBy || []);
   await save();
   emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageIds: fresh.map(item => item.id) });
   res.status(201).json(created);

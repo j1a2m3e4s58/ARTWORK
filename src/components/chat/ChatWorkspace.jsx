@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
-  Archive, ArrowDown, ArrowLeft, Ban, Bell, BellOff, CheckCheck, Clapperboard, Download, File, FileArchive, FileSpreadsheet, FileText, Forward, Image, Images, Loader2,
+  Archive, ArrowDown, ArrowLeft, Ban, Bell, BellOff, CheckCheck, Clapperboard, Download, File, FileArchive, FileSpreadsheet, FileText, Forward, Image, Images, Loader2, Pause, Play,
   Megaphone, MessageCircle, Mic, MoreVertical, Paperclip, Pencil, Plus, Reply, RotateCcw,
-  Contact, Eye, Flag, Mail, MapPin, Phone, Pin, Search, Send, ShoppingBag, Smile, Square, Star, Timer, Trash2, Users, Video, WifiOff, X,
+  Contact, Eye, Flag, Mail, MapPin, Phone, Pin, Search, Send, ShoppingBag, Smile, Star, Timer, Trash2, Users, Video, WifiOff, X,
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
@@ -14,7 +14,7 @@ const MAX_FILE_BYTES = 75 * 1024 * 1024;
 const inferMimeType = file => {
   if (file?.type) return file.type;
   const extension = String(file?.name || '').split('.').pop()?.toLowerCase();
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic'].includes(extension)) return `image/${extension === 'jpg' ? 'jpeg' : extension}`;
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'heif'].includes(extension)) return `image/${extension === 'jpg' ? 'jpeg' : extension}`;
   if (['mp4', 'webm', 'mov'].includes(extension)) return `video/${extension === 'mov' ? 'quicktime' : extension}`;
   if (['mp3', 'wav', 'm4a', 'ogg'].includes(extension)) return `audio/${extension === 'm4a' ? 'mp4' : extension}`;
   if (extension === 'pdf') return 'application/pdf';
@@ -50,6 +50,44 @@ const urlBase64ToUint8Array = value => {
   return Uint8Array.from([...raw].map(character => character.charCodeAt(0)));
 };
 
+const formatAudioTime = value => {
+  const seconds = Math.max(0, Math.floor(Number(value) || 0));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+};
+
+function VoiceMessagePlayer({ src, name = 'Voice message' }) {
+  const audioRef = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const bars = [35, 58, 42, 78, 50, 88, 46, 66, 38, 82, 55, 72, 44, 64, 36, 76, 48, 60, 40, 70, 52, 84, 45, 62];
+  const progress = duration ? Math.min(100, (current / duration) * 100) : 0;
+  return <div className="flex min-w-0 max-w-full items-center gap-3 rounded-2xl bg-black/25 px-3 py-2 sm:min-w-[14rem]">
+    <audio ref={audioRef} src={src} preload="metadata" onLoadedMetadata={event => setDuration(event.currentTarget.duration || 0)} onTimeUpdate={event => setCurrent(event.currentTarget.currentTime)} onEnded={() => setPlaying(false)} />
+    <button type="button" onClick={() => { const player = audioRef.current; if (!player) return; if (player.paused) { player.play(); setPlaying(true); } else { player.pause(); setPlaying(false); } }} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian" aria-label={playing ? 'Pause voice note' : 'Play voice note'}>{playing ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" />}</button>
+    <div className="min-w-0 flex-1">
+      <button type="button" onClick={event => { const player = audioRef.current; if (!player || !duration) return; const rect = event.currentTarget.getBoundingClientRect(); player.currentTime = Math.max(0, Math.min(duration, ((event.clientX - rect.left) / rect.width) * duration)); }} className="relative flex h-8 w-full items-center gap-[2px] overflow-hidden" aria-label="Seek voice note">
+        {bars.map((height, index) => <span key={index} className={`w-[3px] shrink-0 rounded-full ${((index + 1) / bars.length) * 100 <= progress ? 'bg-brass' : 'bg-ivory/25'}`} style={{ height: `${height}%` }} />)}
+      </button>
+      <div className="flex justify-between text-[10px] text-ivory/45"><span>{formatAudioTime(current)}</span><span>{formatAudioTime(duration)}</span></div>
+    </div>
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brass/10" title={name}><Mic size={15} className="text-brass" /></span>
+  </div>;
+}
+
+function QuotedMessage({ message }) {
+  const media = message?.replyMediaPreview;
+  const mediaType = String(media?.type || '').toLowerCase();
+  const label = mediaType.startsWith('audio/') ? 'Voice message' : mediaType.startsWith('image/') ? 'Photo' : mediaType.startsWith('video/') ? 'Video' : media?.name || message?.replyPreview || 'Message';
+  return <div className="mb-2 flex min-w-0 items-center gap-2 overflow-hidden rounded-r-md border-l-4 border-brass bg-black/25 p-2 text-xs text-ivory/55">
+    {mediaType.startsWith('image/') && media?.url && <img src={media.url} alt="Replied image" className="h-11 w-11 shrink-0 rounded object-cover" />}
+    {mediaType.startsWith('video/') && <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded bg-black/40 text-brass"><Video size={18} /></span>}
+    {mediaType.startsWith('audio/') && <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brass/15 text-brass"><Mic size={16} /></span>}
+    {media && !/^(image|video|audio)\//.test(mediaType) && <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-brass/10 text-brass"><FileText size={16} /></span>}
+    <span className="min-w-0 flex-1"><b className="block text-[10px] uppercase tracking-wider text-brass">Reply</b><span className="block truncate">{message?.replyPreview && !mediaType.startsWith('audio/') ? message.replyPreview : label}</span></span>
+  </div>;
+}
+
 function AttachmentPreview({ attachment, compact = false, onOpen }) {
   if (!attachment?.url) return null;
   const { url, name, type, bytes } = attachment;
@@ -67,8 +105,7 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
   );
   if (type?.startsWith('audio/')) return (
     <div className="mt-2 w-full min-w-0 max-w-full border border-brass/15 bg-obsidian p-3">
-      <p title={name || 'Voice message'} className="mb-2 flex items-center gap-2 truncate text-xs text-brass"><Mic size={15} />{name || 'Voice message'}</p>
-      <audio src={url} controls preload="metadata" className="h-9 w-full" />
+      <VoiceMessagePlayer src={url} name={name} />
     </div>
   );
   const { Icon, label, color } = fileVisual(type, name);
@@ -187,6 +224,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [moderationReports, setModerationReports] = useState([]);
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [viewOnce, setViewOnce] = useState(false);
   const [disappearAfter, setDisappearAfter] = useState(0);
   const [transcribingId, setTranscribingId] = useState('');
@@ -198,12 +236,15 @@ export default function ChatWorkspace({ adminMode = false }) {
   const messagesPaneRef = useRef(null);
   const recorderRef = useRef(null);
   const recordingStreamRef = useRef(null);
+  const recordingTimerRef = useRef(null);
+  const discardRecordingRef = useRef(false);
   const attachmentsRef = useRef([]);
   const chunksRef = useRef([]);
   const uploadAbortRef = useRef(null);
   const photosInputRef = useRef(null);
   const documentsInputRef = useRef(null);
   const audioInputRef = useRef(null);
+  const composerRef = useRef(null);
   const typingTimerRef = useRef(null);
   const initializedSelectionRef = useRef(false);
   const typingLastSentRef = useRef({ value: false, at: 0 });
@@ -228,6 +269,10 @@ export default function ChatWorkspace({ adminMode = false }) {
     return { left, top, width, maxHeight: Math.max(120, window.innerHeight - top - gutter) };
   };
   useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
+  useEffect(() => () => {
+    window.clearInterval(recordingTimerRef.current);
+    recordingStreamRef.current?.getTracks?.().forEach(track => track.stop());
+  }, []);
   useEffect(() => {
     const readQueue = () => {
       try { return JSON.parse(window.localStorage.getItem(queueKey) || '[]'); } catch { return []; }
@@ -379,6 +424,12 @@ export default function ChatWorkspace({ adminMode = false }) {
     loadMessages(activeId, '', { scrollToBottom: true }).catch(loadError => setError(loadError.message));
   }, [activeId]);
   useEffect(() => {
+    if (!activeId || new URLSearchParams(window.location.search).get('compose') !== '1') return;
+    setMobileConversationOpen(true);
+    const timer = window.setTimeout(() => composerRef.current?.focus(), 180);
+    return () => window.clearTimeout(timer);
+  }, [activeId]);
+  useEffect(() => {
     const detectPush = async () => {
       if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return setPushState('unsupported');
       const registration = await navigator.serviceWorker.ready;
@@ -420,21 +471,28 @@ export default function ChatWorkspace({ adminMode = false }) {
       setMobileConversationOpen(true);
     } catch (startError) { setError(startError.message); }
   };
-  const chooseFiles = selectedFiles => {
+  const chooseFiles = async selectedFiles => {
     setError('');
     const selected = [...(selectedFiles || [])];
     if (!selected.length) return;
     const oversized = selected.find(item => item.size > MAX_FILE_BYTES);
     if (oversized) return setError(`${oversized.name} is larger than the 75 MB limit.`);
     const availableSlots = Math.max(0, 10 - attachments.length);
-    const additions = selected.slice(0, availableSlots).map(item => ({
-      id: `${Date.now()}-${crypto.randomUUID?.() || Math.random()}`,
-      file: item,
-      mime: inferMimeType(item),
-      previewUrl: URL.createObjectURL(item),
-    }));
-    setAttachments(current => [...current, ...additions].slice(0, 10));
-    if (selected.length > availableSlots) setError('You can attach up to 10 files to one send.');
+    try {
+      const normalized = await Promise.all(selected.slice(0, availableSlots).map(async item => {
+        const isHeic = /image\/(heic|heif)/i.test(inferMimeType(item)) || /\.(heic|heif)$/i.test(item.name);
+        if (!isHeic) return item;
+        const { default: convertHeic } = await import('heic2any');
+        const converted = await convertHeic({ blob: item, toType: 'image/jpeg', quality: 0.9 });
+        const jpeg = Array.isArray(converted) ? converted[0] : converted;
+        return new File([jpeg], item.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg', lastModified: item.lastModified });
+      }));
+      const additions = normalized.map(item => ({ id: `${Date.now()}-${crypto.randomUUID?.() || Math.random()}`, file: item, mime: inferMimeType(item), previewUrl: URL.createObjectURL(item) }));
+      setAttachments(current => [...current, ...additions].slice(0, 10));
+      if (selected.length > availableSlots) setError('You can attach up to 10 files to one send.');
+    } catch {
+      setError('This phone photo could not be prepared. Try selecting it from Photos again or save it as JPG first.');
+    }
   };
   const removeAttachment = id => setAttachments(current => {
     const removed = current.find(item => item.id === id);
@@ -740,17 +798,30 @@ export default function ChatWorkspace({ adminMode = false }) {
       chunksRef.current = [];
       recorder.ondataavailable = event => { if (event.data.size) chunksRef.current.push(event.data); };
       recorder.onstop = () => {
+        window.clearInterval(recordingTimerRef.current);
         const type = recorder.mimeType || 'audio/webm';
         const blob = new Blob(chunksRef.current, { type });
-        const voiceFile = new window.File([blob], `voice-message-${Date.now()}.webm`, { type });
-        setAttachments(current => [...current, { id: `voice-${Date.now()}`, file: voiceFile, mime: type, previewUrl: URL.createObjectURL(voiceFile) }]);
+        if (!discardRecordingRef.current && blob.size) {
+          const extension = type.includes('ogg') ? 'ogg' : type.includes('mp4') ? 'm4a' : 'webm';
+          const voiceFile = new window.File([blob], `voice-message-${Date.now()}.${extension}`, { type });
+          setAttachments(current => [...current, { id: `voice-${Date.now()}`, file: voiceFile, mime: type, previewUrl: URL.createObjectURL(voiceFile) }]);
+        }
         stream.getTracks().forEach(track => track.stop());
         recordingStreamRef.current = null;
         setRecording(false);
+        setRecordingSeconds(0);
+        discardRecordingRef.current = false;
       };
       recorderRef.current = recorder;
-      recorder.start(); setRecording(true);
+      discardRecordingRef.current = false;
+      recorder.start(250); setRecording(true); setRecordingSeconds(0);
+      recordingTimerRef.current = window.setInterval(() => setRecordingSeconds(value => value + 1), 1000);
     } catch { setError('Microphone access was not granted. You can still attach an audio file.'); }
+  };
+  const cancelRecording = () => {
+    discardRecordingRef.current = true;
+    window.clearInterval(recordingTimerRef.current);
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
   };
 
   return (
@@ -833,7 +904,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                 const previous = messages[index - 1];
                 const showDate = !previous || new Date(previous.created_date).toDateString() !== new Date(message.created_date).toDateString();
                 return <div key={message.id} className="min-w-0 max-w-full">{showDate && <div className="my-4 flex items-center gap-3" aria-label={`Messages from ${new Date(message.created_date).toLocaleDateString()}`}><span className="h-px flex-1 bg-brass/10" /><span className="text-[10px] uppercase tracking-widest text-ivory/35">{new Date(message.created_date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</span><span className="h-px flex-1 bg-brass/10" /></div>}<div className={`group flex min-w-0 max-w-full ${mine ? 'justify-end' : 'justify-start'}`}><article className={`relative min-w-0 max-w-[90%] border p-3 sm:max-w-[72%] ${mine ? 'border-brass/20 bg-brass/10' : 'border-ivory/10 bg-carbon'}`}>
-                  {message.replyPreview && <div className="mb-2 border-l-2 border-brass/50 bg-black/20 px-3 py-2 text-xs text-ivory/45"><Reply size={12} className="mb-1 inline text-brass" /> {message.replyPreview}</div>}
+                  {message.replyPreview && <QuotedMessage message={message} />}
                   {message.deletedForEveryone ? <div className="flex items-center gap-3"><p className="flex items-center gap-2 text-sm italic text-ivory/35"><Ban size={14} />This message was deleted.</p><button type="button" onClick={() => removeMessage(message, 'me')} className="text-[10px] uppercase tracking-wider text-ivory/30 hover:text-brass">Remove</button></div> : editing?.id === message.id ? <div className="space-y-2"><textarea autoFocus value={editing.body} onChange={event => setEditing({ ...editing, body: event.target.value })} className="min-h-20 w-full resize-none border border-brass/20 bg-obsidian p-2 text-sm text-ivory outline-none" /><div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="h-8 px-3 text-xs text-ivory/50">Cancel</button><button type="button" onClick={saveEdit} className="h-8 bg-brass px-3 text-xs text-obsidian">Save</button></div></div> : message.body && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm leading-6 text-ivory/75">{message.body}</p>}
                   {message.richMedia && <a href={message.richMedia.url || '#'} target={message.richMedia.url ? '_blank' : undefined} rel="noreferrer" className="mt-3 block overflow-hidden border border-brass/15 bg-obsidian">{message.richMedia.imageUrl && <img src={message.richMedia.imageUrl} alt="" className="max-h-56 w-full object-cover" />}<span className="block p-3"><b className="text-sm text-ivory">{message.richMedia.title || (message.richMedia.type === 'film' ? 'Art Film' : 'Featured studio item')}</b><small className="mt-1 block uppercase tracking-wider text-brass">View {message.richMedia.type}</small></span></a>}
                   {message.action?.url && <a href={message.action.url} target="_blank" rel="noreferrer" className="mt-3 flex min-h-10 items-center justify-center bg-brass px-4 text-xs uppercase tracking-wider text-obsidian">{message.action.label || 'Learn more'}</a>}
@@ -856,7 +927,7 @@ export default function ChatWorkspace({ adminMode = false }) {
               {showJumpToLatest && <button type="button" onClick={jumpToLatest} className="sticky bottom-2 ml-auto flex h-10 items-center gap-2 rounded-full border border-brass/30 bg-carbon px-4 text-xs text-brass shadow-xl"><ArrowDown size={14} />Latest</button>}
             </div>
             <footer className="shrink-0 border-t border-brass/15 bg-carbon p-2.5 sm:p-3">
-              {replyingTo && <div className="mb-2 flex items-center gap-3 border-l-2 border-brass bg-obsidian px-3 py-2"><Reply size={14} className="text-brass" /><p className="min-w-0 flex-1 truncate text-xs text-ivory/50">Replying to: {replyingTo.body || replyingTo.attachmentName || 'Attachment'}</p><button type="button" onClick={() => setReplyingTo(null)}><X size={15} /></button></div>}
+              {replyingTo && <div className="relative mb-2 pr-9"><QuotedMessage message={{ replyPreview: replyingTo.body || replyingTo.attachmentName || 'Message', replyMediaPreview: replyingTo.attachmentUrl ? { type: replyingTo.attachmentType, name: replyingTo.attachmentName, url: replyingTo.attachmentUrl } : null }} /><button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-ivory/50 hover:bg-white/5 hover:text-ivory"><X size={15} /></button></div>}
               {attachments.length > 0 && <div className="mb-2 min-w-0 max-w-full overflow-hidden border border-brass/15 bg-obsidian p-2"><div className="flex max-h-52 max-w-full gap-2 overflow-x-auto overscroll-contain pb-1 [scrollbar-gutter:stable]">{attachments.map(item => <div key={item.id} className="relative w-40 shrink-0 border border-brass/10 bg-carbon p-2"><AttachmentPreview compact attachment={{ url: item.previewUrl, name: item.file.name, type: item.mime, bytes: item.file.size }} onOpen={setPreview} /><button type="button" disabled={busy} onClick={() => removeAttachment(item.id)} aria-label={`Remove ${item.file.name}`} className="absolute right-1 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/80 text-white disabled:opacity-40"><X size={14} /></button>{busy && <div className="mt-2"><div className="flex justify-between text-[10px] text-ivory/45"><span>Uploading</span><span>{uploadProgress[item.id] || 0}%</span></div><div className="mt-1 h-1 overflow-hidden bg-ivory/10"><div className="h-full bg-brass transition-all" style={{ width: `${uploadProgress[item.id] || 0}%` }} /></div></div>}</div>)}</div><div className="mt-2 flex flex-wrap items-center justify-between gap-3"><span className="text-[10px] uppercase tracking-wider text-ivory/35">{attachments.length} of 10 files selected</span><div className="flex items-center gap-3">{attachments.length < 10 && !busy && <label className="flex min-h-9 cursor-pointer items-center gap-1.5 border border-brass/20 px-3 text-[10px] uppercase tracking-wider text-brass"><Plus size={13} />Add more<input type="file" multiple className="hidden" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} /></label>}{busy && <button type="button" onClick={() => uploadAbortRef.current?.abort()} className="text-[10px] uppercase tracking-wider text-red-300">Cancel upload</button>}</div></div></div>}
               {uploadFailed && attachments.length > 0 && !busy && <button type="button" onClick={send} className="mb-2 flex h-10 w-full items-center justify-center gap-2 border border-red-400/25 text-xs text-red-300"><RotateCcw size={14} />Retry failed upload</button>}
               <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-2">
@@ -873,14 +944,13 @@ export default function ChatWorkspace({ adminMode = false }) {
                     <button type="button" onClick={() => openResourcePicker('gallery')} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Images size={17} className="text-emerald-400" /><span><b className="block font-medium">Gallery artworks</b><small className="text-ivory/35">Share finished works</small></span></button>
                     <button type="button" onClick={() => openResourcePicker('films')} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"><Clapperboard size={17} className="text-violet-400" /><span><b className="block font-medium">Art Films</b><small className="text-ivory/35">Share a studio film</small></span></button>
                   </div>}
-                  <input ref={photosInputRef} type="file" multiple className="hidden" accept="image/*,video/*" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} />
+                  <input ref={photosInputRef} type="file" multiple className="hidden" accept="image/*,video/*,.heic,.heif" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} />
                   <input ref={documentsInputRef} type="file" multiple className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} />
                   <input ref={audioInputRef} type="file" multiple className="hidden" accept="audio/*" onChange={event => { chooseFiles(event.target.files); event.target.value = ''; }} />
                 </div>
-                <textarea value={text} disabled={recording || active.blocked || (active.type === 'announcement' && !adminMode)} onChange={event => updateTyping(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); } }} rows={2} placeholder={recording ? 'Recording voice message…' : active.type === 'announcement' && !adminMode ? 'Community Updates is read-only for members' : 'Write a message…'} className="min-w-0 flex-1 resize-none border border-brass/20 bg-obsidian p-3 text-sm text-ivory outline-none disabled:opacity-50" />
-                {!recording && (text.trim() || attachments.length) ? <button disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={send} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian disabled:opacity-40" aria-label="Send message">{busy ? <Loader2 className="animate-spin" size={17} /> : <Send size={17} />}</button> : <button type="button" disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={toggleRecording} title={recording ? 'Stop recording' : 'Record voice message'} aria-label={recording ? 'Stop voice recording' : 'Record voice message'} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border disabled:opacity-40 ${recording ? 'animate-pulse border-red-400 bg-red-400/10 text-red-300' : 'border-brass/20 bg-brass text-obsidian'}`}>{recording ? <Square size={15} fill="currentColor" /> : <Mic size={18} />}</button>}
+                {recording ? <div className="flex h-12 min-w-0 flex-1 items-center gap-3 rounded-full border border-red-400/30 bg-obsidian px-3"><span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-red-400" /><span className="shrink-0 tabular-nums text-sm text-red-200">{formatAudioTime(recordingSeconds)}</span><div className="flex min-w-0 flex-1 items-center gap-[3px] overflow-hidden">{[45,75,38,88,52,68,42,82,55,72,40,64,48,78,36,66,50,84].map((height,index) => <span key={index} className="w-[3px] shrink-0 rounded-full bg-red-300/65" style={{height:`${height}%`, minHeight:'8px'}} />)}</div><button type="button" onClick={cancelRecording} className="shrink-0 text-xs text-ivory/50 hover:text-red-300">Cancel</button></div> : <textarea ref={composerRef} value={text} disabled={active.blocked || (active.type === 'announcement' && !adminMode)} onChange={event => updateTyping(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); } }} rows={2} placeholder={active.type === 'announcement' && !adminMode ? 'Community Updates is read-only for members' : 'Write a message…'} className="min-w-0 flex-1 resize-none rounded-2xl border border-brass/20 bg-obsidian px-4 py-3 text-sm text-ivory outline-none disabled:opacity-50" />}
+                {!recording && (text.trim() || attachments.length) ? <button disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={send} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian disabled:opacity-40" aria-label="Send message">{busy ? <Loader2 className="animate-spin" size={17} /> : <Send size={17} />}</button> : <button type="button" disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)} onClick={toggleRecording} title={recording ? 'Finish recording' : 'Record voice message'} aria-label={recording ? 'Finish voice recording' : 'Record voice message'} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border disabled:opacity-40 ${recording ? 'border-red-400 bg-red-400 text-white' : 'border-brass/20 bg-brass text-obsidian'}`}>{recording ? <Send size={17} /> : <Mic size={18} />}</button>}
               </div>
-              {recording && <p className="mt-2 text-xs text-red-300">Recording voice message… press the stop button when you are finished.</p>}
               <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wider"><button type="button" disabled={!attachments.length} onClick={() => setViewOnce(value => !value)} className={`flex min-h-8 items-center gap-1.5 border px-3 disabled:opacity-30 ${viewOnce ? 'border-brass bg-brass/10 text-brass' : 'border-brass/15 text-ivory/40'}`}><Eye size={12} />View once</button><label className="flex min-h-8 items-center gap-2 border border-brass/15 px-3 text-ivory/40"><Timer size={12} /><span>Disappear</span><select value={disappearAfter} onChange={event => setDisappearAfter(Number(event.target.value))} className="bg-carbon text-brass outline-none"><option value="0">Off</option><option value="86400">24 hours</option><option value="604800">7 days</option><option value="7776000">90 days</option></select></label></div>
             </footer>
           </> : <div className="m-auto p-8 text-center"><MessageCircle className="mx-auto text-brass" size={34} /><p className="mt-4 font-display text-2xl text-ivory">Choose a conversation</p><p className="mt-2 text-sm text-ivory/40">Search signed-in people or continue an existing chat.</p></div>}

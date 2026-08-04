@@ -1,4 +1,4 @@
-const CACHE = 'reigns-atelier-v8';
+const CACHE = 'reigns-atelier-v9';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/brand/reigns-app-icon-192.png', '/brand/reigns-app-icon-512.png'];
 
 self.addEventListener('install', event => {
@@ -33,12 +33,16 @@ self.addEventListener('push', event => {
   const badgeCount = Math.max(0, Number(payload.badgeCount) || 0);
   const notification = self.registration.showNotification(title, {
     body: payload.body || 'You have a new studio action to review.',
-    icon: '/brand/reigns-app-icon-192.png',
+    icon: payload.icon || '/brand/reigns-app-icon-192.png',
     badge: '/brand/reigns-app-icon-192.png',
+    image: payload.image || undefined,
     tag: payload.tag || 'reigns-atelier',
     renotify: true,
-    data: { url: payload.url || '/admin?section=alerts' },
-    actions: [{ action: 'open', title: 'Open message' }],
+    data: { url: payload.url || '/admin?section=alerts', replyUrl: payload.replyUrl || payload.url || '/messages' },
+    actions: [
+      { action: 'reply', title: 'Reply' },
+      { action: 'open', title: 'Open message' },
+    ],
   });
   const badge = badgeCount
     ? self.registration.setAppBadge?.(badgeCount)
@@ -48,7 +52,9 @@ self.addEventListener('push', event => {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const target = event.notification.data?.url || '/messages';
+  const target = event.action === 'reply'
+    ? `${event.notification.data?.replyUrl || '/messages'}${String(event.notification.data?.replyUrl || '/messages').includes('?') ? '&' : '?'}compose=1`
+    : event.notification.data?.url || '/messages';
   event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windows => {
     const existing = windows.find(client => new URL(client.url).origin === self.location.origin);
     if (existing) { existing.navigate(target); return existing.focus(); }
