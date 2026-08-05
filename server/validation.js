@@ -50,12 +50,14 @@ export const schemas = {
     pricingFinish: optionalText(100),
     quotedPrice: z.union([z.string().max(40), z.coerce.number().nonnegative().max(10000000)]).optional().default(''),
     referenceImageUrl: safeUrl.optional().default(''),
+    status: z.enum(['pending', 'reviewing', 'accepted', 'in_progress', 'completed', 'declined']).optional(),
   }),
   InternshipApplication: z.object({
     name: text(120), email: email, phone: optionalText(40),
     school: optionalText(180), programme: optionalText(180), availability: optionalText(160),
     interests: text(3000).min(20), notice: optionalText(3000),
     hasLetter: z.boolean().optional().default(false), letterUrl: safeUrl.optional().default(''),
+    status: z.enum(['received', 'reviewing', 'shortlisted', 'accepted', 'declined']).optional(),
   }),
   PartnerApplication: z.object({
     fullName: text(160), email: email.optional(), phone: optionalText(40),

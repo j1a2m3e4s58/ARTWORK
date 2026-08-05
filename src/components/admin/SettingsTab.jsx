@@ -53,6 +53,8 @@ const SETTING_DEFAULTS = [
   { key: 'approval_art_request_message', label: 'Art Finder Approval Message', value: 'Good news, {{name}} — your Studio Art Finder request has been approved. The studio will message you with the available options.', group: 'Approval Messages', icon: 'message', multiline: true },
   { key: 'approval_film_request_subject', label: 'Art Film Approval Email Subject', value: 'Art film request approved — Reigns Atelier', group: 'Approval Messages', icon: 'mail' },
   { key: 'approval_film_request_message', label: 'Art Film Approval Message', value: 'Good news, {{name}} — your art film request has been approved. Watch your studio messages for the next update.', group: 'Approval Messages', icon: 'message', multiline: true },
+  { key: 'approval_partner_subject', label: 'Partner Approval Email Subject', value: 'Partner application approved — Reigns Atelier', group: 'Approval Messages', icon: 'mail' },
+  { key: 'approval_partner_message', label: 'Partner Approval Message', value: 'Good news, {{name}} — your partner application has been approved. Your partner workspace is ready and you can now submit items for studio review.', group: 'Approval Messages', icon: 'message', multiline: true },
   { key: 'approval_generic_subject', label: 'Other Approval Email Subject', value: 'Your request was approved — Reigns Atelier', group: 'Approval Messages', icon: 'mail' },
   { key: 'approval_generic_message', label: 'Other Approval Message', value: 'Good news, {{name}} — your {{item}} has been approved. Sign in to view the update and continue with the studio.', group: 'Approval Messages', icon: 'message', multiline: true },
 ];

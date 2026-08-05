@@ -16,6 +16,7 @@ import FeatureRoute from '@/components/FeatureRoute';
 import SiteMetadata from '@/components/SiteMetadata';
 import PointerAccent from '@/components/PointerAccent';
 import AppBadgeSync from '@/components/AppBadgeSync';
+import RequestFeedbackOverlay from '@/components/RequestFeedbackOverlay';
 
 const Home = lazy(() => import('@/pages/Home'));
 const Gallery = lazy(() => import('@/pages/Gallery'));
@@ -112,6 +113,7 @@ function App() {
         <Router>
           <SiteMetadata />
           <AppBadgeSync />
+          <RequestFeedbackOverlay />
           <PointerAccent />
           {!loaded && <LoadingScreen onComplete={finishLoading} />}
           {loaded && (

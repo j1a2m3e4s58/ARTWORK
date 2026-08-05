@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, ExternalLink, Loader2, Save, XCircle } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
-import ResponsiveSelect from '@/components/ResponsiveSelect';
 
 const fields = [
   ['internship_title', 'Page title', 'Learn inside the atelier'],
@@ -9,14 +8,6 @@ const fields = [
   ['internship_eligibility', 'Eligibility text', 'Students, recent graduates, and early-career creatives are welcome to apply.'],
   ['internship_noLetter', 'No-letter guidance', 'No official internship letter yet? Apply anyway. Tell us your school, availability and why you would like to learn here. We can discuss the next step with you.'],
   ['internship_letterLabel', 'Letter upload label', 'Upload internship letter (optional)'],
-];
-
-const statusOptions = [
-  { value: 'received', label: 'Received' },
-  { value: 'reviewing', label: 'Reviewing' },
-  { value: 'shortlisted', label: 'Shortlisted' },
-  { value: 'accepted', label: 'Accepted' },
-  { value: 'declined', label: 'Declined' },
 ];
 
 export default function InternshipsTab() {
@@ -123,12 +114,9 @@ export default function InternshipsTab() {
                     {item.availability ? ` · ${item.availability}` : ''}
                   </p>
                 </div>
-                <ResponsiveSelect
-                  label="Application status"
-                  value={item.status || 'received'}
-                  onChange={status => updateStatus(item, status)}
-                  options={statusOptions}
-                />
+                <span className="h-fit justify-self-start border border-brass/20 px-3 py-2 text-xs uppercase tracking-wider text-brass sm:justify-self-end">
+                  {(item.status || 'received').replaceAll('_', ' ')}
+                </span>
               </div>
               <div className="mt-4 flex flex-wrap gap-2 border-t border-brass/10 pt-4">
                 <button type="button" disabled={updatingId === item.id || item.status === 'accepted'} onClick={() => updateStatus(item, 'accepted')} className="inline-flex min-h-10 items-center gap-2 bg-green-500/15 px-4 text-xs uppercase tracking-wider text-green-300 disabled:cursor-not-allowed disabled:opacity-45">

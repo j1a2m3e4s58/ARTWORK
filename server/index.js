@@ -2910,6 +2910,7 @@ app.patch('/api/partner/products/:id', requireVerifiedUser, mutationLimiter, asy
 app.patch('/api/admin/partners/:id', requireAdmin, mutationLimiter, async (req, res) => {
   const application = db.data.PartnerApplication.find(item => item.id === req.params.id && !item.deleted_at);
   if (!application) return res.status(404).json({ error: 'Partner application not found.' });
+  const wasApproved = application.status === 'approved';
   const status = ['pending', 'approved', 'rejected', 'suspended'].includes(req.body.status) ? req.body.status : application.status || 'pending';
   const commissionRate = Math.max(0, Math.min(100, Number(req.body.commissionRate ?? application.commissionRate ?? 0)));
   Object.assign(application, { status, commissionRate, contractUrl: String(req.body.contractUrl || application.contractUrl || '').slice(0, 2048), reviewedAt: now(), reviewedBy: req.user.id, updated_date: now() });
@@ -2918,8 +2919,14 @@ app.patch('/api/admin/partners/:id', requireAdmin, mutationLimiter, async (req, 
     partner.role = status === 'approved' ? 'partner' : 'customer';
     partner.partnerProfile = { shopName: application.shopName, commissionRate, status: status === 'approved' ? 'active' : status };
     partner.updated_date = now();
-    db.data.Notification.push({ id: newId(), userId: partner.id, type: 'partner.application', title: `Partner application ${status}`, message: status === 'approved' ? 'Your partner workspace is ready. Submit your first item for review.' : 'Your application status has been updated. Please contact the studio for details.', section: status === 'approved' ? 'partner' : 'account', entity: 'PartnerApplication', entityId: application.id, priority: 'normal', read: false, created_date: now() });
-    await deliverEmail({ to: partner.email, subject: `Partner application ${status}`, text: status === 'approved' ? 'Your Reigns Atelier partner application is approved. Sign in to submit items for review.' : 'Your Reigns Atelier partner application status has changed. Please contact the studio if you have questions.' });
+  }
+  if (!wasApproved && status === 'approved') {
+    try {
+      application.approvalDelivery = await deliverApprovalUpdate({ entityName: 'PartnerApplication', record: application, actor: req.user });
+    } catch (error) {
+      application.approvalDelivery = { failedAt: now(), error: error.message || 'Customer delivery failed.' };
+      void reportOperationalError('approval_delivery_failed', error, { entityName: 'PartnerApplication', entityId: application.id });
+    }
   }
   await audit(req.user, 'partner.application_reviewed', 'PartnerApplication', application.id, { status, commissionRate });
   await save();
@@ -3071,26 +3078,34 @@ app.post('/api/entities/:name', mutationLimiter, limitPublicForms, verifyHuman, 
     const quote = record.deliveryQuoteRequested;
     notifyStudioStaff({ title: quote ? 'Delivery quote required' : 'New shop order', message: quote ? `${record.shippingAddress?.recipientName || 'A customer'} needs a custom delivery quote for ${record.trackingCode}.` : `${record.shippingAddress?.recipientName || 'A customer'} placed order ${record.trackingCode}.`, section: 'orders', entity: name, entityId: record.id, priority: quote ? 'high' : 'normal' });
   }
-  if (name === 'CommissionRequest') {
+  if (false && name === 'CommissionRequest') {
     record.confirmationDelivery = await deliverEmail({
       to: record.email,
       subject: 'Your commission request — Reigns Atelier',
       text: `Hi ${record.name},\n\nYour commission request has been received. The studio will review it and respond with next steps.\n\nArtwork type: ${record.artworkType}${record.otherArtworkType ? ` (${record.otherArtworkType})` : ''}\nBudget: ${record.budget}\n\nReigns Atelier`,
     });
   }
-  if (name === 'InternshipApplication') {
+  if (false && name === 'InternshipApplication') {
     record.confirmationDelivery = await deliverEmail({
       to: record.email,
       subject: 'Internship application received — Reigns Atelier',
       text: `Hi ${record.name},\n\nWe received your internship application and will review it with care. We will contact you about next steps.\n\nReigns Atelier`,
     });
   }
-  if (name === 'PartnerApplication') {
+  if (false && name === 'PartnerApplication') {
     record.confirmationDelivery = await deliverEmail({
       to: record.email,
       subject: 'Partner application received — Reigns Atelier',
       text: `Hi ${record.fullName},\n\nYour partner application has been received. The studio will review your work and contact you about next steps.\n\nReigns Atelier`,
     });
+  }
+  if (['CommissionRequest', 'InternshipApplication', 'PartnerApplication', 'ArtRequest', 'FilmRequest'].includes(name)) {
+    try {
+      record.confirmationDelivery = await deliverSubmissionUpdate({ entityName: name, record, requester: user });
+    } catch (error) {
+      record.confirmationDelivery = { failedAt: now(), error: error.message || 'Submission confirmation failed.' };
+      void reportOperationalError('submission_delivery_failed', error, { entityName: name, entityId: record.id });
+    }
   }
   await audit(user, `${name.toLowerCase()}.created`, name, record.id);
   await save();
@@ -3294,6 +3309,7 @@ const approvalCopy = (entityName, record, recipient) => {
     CommissionRequest: ['commission', 'commission request', 'Commission request approved — Reigns Atelier', 'Good news, {{name}} — your commission request has been approved. Open your account or messages to continue with the studio.'],
     ArtRequest: ['art_request', 'Studio Art Finder request', 'Studio Art Finder request approved — Reigns Atelier', 'Good news, {{name}} — your Studio Art Finder request has been approved. The studio will message you with the available options.'],
     FilmRequest: ['film_request', 'art film request', 'Art film request approved — Reigns Atelier', 'Good news, {{name}} — your art film request has been approved. Watch your studio messages for the next update.'],
+    PartnerApplication: ['partner', 'partner application', 'Partner application approved — Reigns Atelier', 'Good news, {{name}} — your partner application has been approved. Your partner workspace is ready and you can now submit items for studio review.'],
   };
   const [key, item, fallbackSubject, fallbackMessage] = definitions[entityName] || ['generic', String(entityName || 'request').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase(), 'Your request was approved — Reigns Atelier', 'Good news, {{name}} — your {{item}} has been approved. Sign in to view the update and continue with the studio.'];
   const name = recipient.full_name || record.name || 'there';
@@ -3304,21 +3320,35 @@ const approvalCopy = (entityName, record, recipient) => {
   };
 };
 
+const approvalSenderFor = (recipient, actor) => {
+  if (!recipient || recipient.id !== actor.id) return actor;
+  return (db.data.User || []).find(item => (
+    !item.deleted_at && item.status === 'active' && staffRoles.has(item.role) && item.id !== recipient.id
+  )) || actor;
+};
+
 const deliverApprovalUpdate = async ({ entityName, record, actor }) => {
   const email = String(record.accountEmail || record.email || '').trim().toLowerCase();
   const recipient = (db.data.User || []).find(item => !item.deleted_at && (item.id === record.userId || (email && String(item.email || '').toLowerCase() === email)));
-  if (!recipient || recipient.id === actor.id) return { skipped: true, reason: 'recipient_not_found' };
-  const copy = approvalCopy(entityName, record, recipient);
-  const participantIds = [actor.id, recipient.id].sort();
+  const copy = approvalCopy(entityName, record, recipient || { full_name: record.name || record.fullName || '' });
+  if (!recipient) {
+    const emailDelivery = email ? await deliverEmail({
+      to: email, subject: copy.subject,
+      text: `${copy.message}\n\nSign in to Reigns Atelier to view the update and reply to the studio.`,
+    }) : { skipped: true, reason: 'recipient_not_found' };
+    return { deliveredAt: now(), emailDelivery, messageSkipped: true };
+  }
+  const sender = approvalSenderFor(recipient, actor);
+  const participantIds = [sender.id, recipient.id].filter((id, index, values) => values.indexOf(id) === index).sort();
   let conversation = (db.data.ChatConversation || []).find(item => !item.deleted_at && item.type !== 'announcement' && JSON.stringify([...(item.participantIds || [])].sort()) === JSON.stringify(participantIds));
   if (!conversation) {
-    conversation = { id: newId(), participantIds, createdBy: actor.id, lastMessageAt: now(), created_date: now() };
+    conversation = { id: newId(), participantIds, createdBy: sender.id, lastMessageAt: now(), created_date: now() };
     db.data.ChatConversation.push(conversation);
   }
   const message = {
-    id: newId(), conversationId: conversation.id, senderId: actor.id, body: copy.message,
+    id: newId(), conversationId: conversation.id, senderId: sender.id, body: copy.message,
     attachmentUrl: '', attachmentName: '', attachmentType: '', attachmentBytes: 0,
-    allowForward: false, deliveredAt: now(), readBy: [actor.id], reactions: {},
+    allowForward: false, deliveredAt: now(), readBy: [sender.id], reactions: {},
     systemEvent: 'approval', entity: entityName, entityId: record.id, created_date: now(),
   };
   db.data.ChatMessage.push(message);
@@ -3328,7 +3358,7 @@ const deliverApprovalUpdate = async ({ entityName, record, actor }) => {
     message: copy.message.slice(0, 240), section: 'messages', entity: entityName, entityId: record.id,
     conversationId: conversation.id, priority: 'high', read: false, created_date: now(),
   });
-  await pushToUsers([recipient.id], chatPushPayload(message, actor, conversation.id), conversation.mutedBy || []);
+  await pushToUsers([recipient.id], chatPushPayload(message, sender, conversation.id), conversation.mutedBy || []);
   emitChatEvent(participantIds, 'message.created', { conversationId: conversation.id, message });
   const emailDelivery = email || recipient.email ? await deliverEmail({
     to: email || recipient.email,
@@ -3336,6 +3366,61 @@ const deliverApprovalUpdate = async ({ entityName, record, actor }) => {
     text: `${copy.message}\n\nSign in to Reigns Atelier to view the update and reply to the studio.`,
   }) : { skipped: true, reason: 'email_missing' };
   return { deliveredAt: now(), conversationId: conversation.id, messageId: message.id, emailDelivery };
+};
+
+const submissionCopy = (entityName, record, recipient) => {
+  const definitions = {
+    CommissionRequest: ['commission request', 'Commission request received — Reigns Atelier'],
+    InternshipApplication: ['internship application', 'Internship application received — Reigns Atelier'],
+    PartnerApplication: ['partner application', 'Partner application received — Reigns Atelier'],
+    ArtRequest: ['Studio Art Finder request', 'Studio Art Finder request received — Reigns Atelier'],
+    FilmRequest: ['art film request', 'Art film request received — Reigns Atelier'],
+  };
+  const [item, subject] = definitions[entityName] || ['request', 'Request received — Reigns Atelier'];
+  const name = recipient?.full_name || record.name || record.fullName || 'there';
+  return {
+    subject,
+    message: `Thank you, ${name}. Your ${item} has been received safely and is now awaiting studio review. We will notify you here and by email when its status changes.`,
+  };
+};
+
+const deliverSubmissionUpdate = async ({ entityName, record, requester }) => {
+  const email = String(record.accountEmail || record.email || requester?.email || '').trim().toLowerCase();
+  const recipient = requester || (db.data.User || []).find(item => !item.deleted_at && (item.id === record.userId || (email && String(item.email || '').toLowerCase() === email)));
+  const copy = submissionCopy(entityName, record, recipient);
+  const sender = (db.data.User || []).find(item => !item.deleted_at && item.status === 'active' && staffRoles.has(item.role) && item.id !== recipient?.id);
+  let conversationId = null;
+  let messageId = null;
+  if (recipient && sender) {
+    const participantIds = [sender.id, recipient.id].sort();
+    let conversation = (db.data.ChatConversation || []).find(item => !item.deleted_at && item.type !== 'announcement' && JSON.stringify([...(item.participantIds || [])].sort()) === JSON.stringify(participantIds));
+    if (!conversation) {
+      conversation = { id: newId(), participantIds, createdBy: sender.id, lastMessageAt: now(), created_date: now() };
+      db.data.ChatConversation.push(conversation);
+    }
+    const message = {
+      id: newId(), conversationId: conversation.id, senderId: sender.id, body: copy.message,
+      attachmentUrl: '', attachmentName: '', attachmentType: '', attachmentBytes: 0,
+      allowForward: false, deliveredAt: now(), readBy: [sender.id], reactions: {},
+      systemEvent: 'submission', entity: entityName, entityId: record.id, created_date: now(),
+    };
+    db.data.ChatMessage.push(message);
+    conversation.lastMessageAt = message.created_date;
+    db.data.Notification.push({
+      id: newId(), userId: recipient.id, type: `${entityName}.received`, title: copy.subject,
+      message: copy.message.slice(0, 240), section: 'messages', entity: entityName, entityId: record.id,
+      conversationId: conversation.id, priority: 'normal', read: false, created_date: now(),
+    });
+    await pushToUsers([recipient.id], chatPushPayload(message, sender, conversation.id), conversation.mutedBy || []);
+    emitChatEvent(participantIds, 'message.created', { conversationId: conversation.id, message });
+    conversationId = conversation.id;
+    messageId = message.id;
+  }
+  const emailDelivery = email ? await deliverEmail({
+    to: email, subject: copy.subject,
+    text: `${copy.message}\n\nSign in to Reigns Atelier to view messages from the studio.`,
+  }) : { skipped: true, reason: 'email_missing' };
+  return { deliveredAt: now(), conversationId, messageId, emailDelivery };
 };
 
 app.patch('/api/entities/:name/:id', requireStaff, mutationLimiter, async (req, res) => {

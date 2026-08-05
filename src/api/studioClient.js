@@ -59,6 +59,29 @@ const uploadWithProgress = ({ file, purpose = '', onProgress, signal }) => new P
   xhr.send(body);
 });
 
+const requestLabels = {
+  CommissionRequest: 'commission request',
+  InternshipApplication: 'internship application',
+  PartnerApplication: 'partner application',
+  ArtRequest: 'Studio Art Finder request',
+  FilmRequest: 'art film request',
+};
+
+const emitRequestFeedback = (kind, name, result) => {
+  if (typeof window === 'undefined' || !requestLabels[name]) return;
+  const label = requestLabels[name];
+  const delivery = kind === 'approval' ? result?.approvalDelivery : result?.confirmationDelivery;
+  window.dispatchEvent(new CustomEvent('atelier:request-feedback', { detail: {
+    kind,
+    title: kind === 'approval' ? 'Approval completed' : 'Request received',
+    message: kind === 'approval'
+      ? `The ${label} was approved successfully. The customer update has been prepared for Messages and email.`
+      : `Your ${label} was sent safely. You will receive updates in Messages and by email.`,
+    messageSent: Boolean(delivery?.messageId || delivery?.conversationId),
+    emailSent: Boolean(delivery?.emailDelivery && !delivery.emailDelivery.skipped),
+  } }));
+};
+
 const createEntity = name => ({
   list(sort, limit) {
     const params = new URLSearchParams();
@@ -72,15 +95,19 @@ const createEntity = name => ({
     if (limit) params.set('limit', limit);
     return request(`/api/entities/${name}?${params}`);
   },
-  create(data, options = {}) {
-    return request(`/api/entities/${name}`, {
+  async create(data, options = {}) {
+    const result = await request(`/api/entities/${name}`, {
       method: 'POST',
       body: JSON.stringify(data),
       headers: options.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : undefined,
     });
+    emitRequestFeedback('submission', name, result);
+    return result;
   },
-  update(id, data) {
-    return request(`/api/entities/${name}/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  async update(id, data) {
+    const result = await request(`/api/entities/${name}/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+    if (['approved', 'accepted'].includes(String(data?.status || '').toLowerCase())) emitRequestFeedback('approval', name, result);
+    return result;
   },
   delete(id) {
     return request(`/api/entities/${name}/${id}`, { method: 'DELETE' });
@@ -136,8 +163,10 @@ export const studioClient = {
     testAlert() {
       return request('/api/admin/test-alert', { method: 'POST' });
     },
-    reviewPartnerApplication(id, data) {
-      return request(`/api/admin/partners/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) });
+    async reviewPartnerApplication(id, data) {
+      const result = await request(`/api/admin/partners/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) });
+      if (String(data?.status).toLowerCase() === 'approved') emitRequestFeedback('approval', 'PartnerApplication', result?.application || result);
+      return result;
     },
   },
   messages: {

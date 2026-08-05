@@ -85,3 +85,9 @@ test('home banners require safe images and bounded ordering', () => {
     sortOrder: 3,
   }).sortOrder, 3);
 });
+
+test('admin approval statuses survive partial entity validation', () => {
+  assert.equal(validateEntity('CommissionRequest', { status: 'accepted' }, { partial: true }).status, 'accepted');
+  assert.equal(validateEntity('InternshipApplication', { status: 'accepted' }, { partial: true }).status, 'accepted');
+  assert.equal(validateEntity('PartnerApplication', { status: 'approved' }, { partial: true }).status, 'approved');
+});

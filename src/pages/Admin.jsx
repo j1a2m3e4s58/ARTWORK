@@ -175,6 +175,7 @@ export default function Admin() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [tabLoading, setTabLoading] = useState(false);
   const [tabError, setTabError] = useState('');
+  const [actionNotice, setActionNotice] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [recordLimit, setRecordLimit] = useState(50);
   const [studioOptions, setStudioOptions] = useState(DEFAULT_STUDIO_OPTIONS);
@@ -364,9 +365,26 @@ export default function Admin() {
   };
 
   const handleUpdate = async (entity, id, data, setter) => {
-    const saved = await studioClient.entities[entity].update(id, data);
-    setter(prev => prev.map(i => i.id === id ? saved : i));
-    setEditItem(null); setEditType(null);
+    setTabError('');
+    setActionNotice(null);
+    try {
+      const saved = await studioClient.entities[entity].update(id, data);
+      setter(prev => prev.map(i => i.id === id ? saved : i));
+      setEditItem(null); setEditType(null);
+      if (data.status) {
+        const approved = ['accepted', 'approved'].includes(String(data.status).toLowerCase());
+        setActionNotice({
+          tone: 'success',
+          text: approved
+            ? `${entity === 'CommissionRequest' ? 'Commission' : 'Request'} approved. The customer update was prepared for Messages and email.`
+            : `Status changed to ${String(data.status).replaceAll('_', ' ')}.`,
+        });
+      }
+      return saved;
+    } catch (error) {
+      setActionNotice({ tone: 'error', text: error.message || 'The update could not be completed. Please retry.' });
+      return null;
+    }
   };
 
   const addVideo = async () => {
@@ -510,6 +528,12 @@ export default function Admin() {
             <div className="mb-5 flex flex-col gap-3 rounded-xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-200 sm:flex-row sm:items-center sm:justify-between" role="alert">
               <span>{tabError}</span>
               <button onClick={() => setReloadKey(value => value + 1)} className="min-h-10 rounded-lg border border-red-300/20 px-4 text-xs font-semibold uppercase tracking-wider hover:bg-red-300/10">Try again</button>
+            </div>
+          )}
+          {actionNotice && (
+            <div className={`mb-5 flex items-center justify-between gap-3 border p-4 text-sm ${actionNotice.tone === 'error' ? 'border-red-400/25 bg-red-400/5 text-red-200' : 'border-green-400/25 bg-green-400/5 text-green-200'}`} role={actionNotice.tone === 'error' ? 'alert' : 'status'}>
+              <span>{actionNotice.text}</span>
+              <button type="button" onClick={() => setActionNotice(null)} className="min-h-9 px-3 text-xs uppercase tracking-wider">Close</button>
             </div>
           )}
 
@@ -725,7 +749,6 @@ export default function Admin() {
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className={`font-tight text-xs px-2 py-0.5 uppercase tracking-widest ${STATUS_COLORS[c.status] || 'text-ivory/40 bg-ivory/5'}`}>{c.status}</span>
-                          <div className="w-40"><ResponsiveSelect label="Choose status" value={c.status} onChange={status => handleUpdate('CommissionRequest', c.id, { status }, setCommissions)} options={['pending','reviewing','accepted','in_progress','completed','declined']} className="text-xs" /></div>
                           <button type="button" disabled={c.status === 'accepted'} onClick={() => handleUpdate('CommissionRequest', c.id, { status: 'accepted' }, setCommissions)} className="inline-flex min-h-9 items-center gap-1.5 bg-green-500/15 px-3 text-[10px] uppercase tracking-wider text-green-300 disabled:opacity-45"><Check size={13} /> Approve</button>
                           <button type="button" disabled={c.status === 'declined'} onClick={() => handleUpdate('CommissionRequest', c.id, { status: 'declined' }, setCommissions)} className="inline-flex min-h-9 items-center gap-1.5 border border-red-400/25 px-3 text-[10px] uppercase tracking-wider text-red-300 disabled:opacity-45"><X size={13} /> Decline</button>
                           {confirmDel === c.id ? (
