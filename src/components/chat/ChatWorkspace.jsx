@@ -338,6 +338,9 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
   const disposedRef = useRef(false);
   const discardRef = useRef(false);
   const finalizingRef = useRef(false);
+  const finalizeTimerRef = useRef(null);
+  const finalizePreviewRef = useRef(null);
+  const previewCommittedRef = useRef(false);
   const [phase, setPhase] = useState('starting');
   const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState(() => Array(34).fill(8));
@@ -360,17 +363,29 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
     finalizingRef.current = true;
     setPhase('finalizing');
     setNotice('Preparing your voice-note preview...');
-    // Flush the encoder before stopping. Safari/iOS can otherwise create an
-    // empty or incomplete MP4 when a paused recorder is resumed and stopped
-    // immediately.
+    // Ask for the last encoded chunk, then stop immediately. Delaying stop()
+    // leaves some Android MediaRecorder implementations permanently active.
     try {
       recorder.requestData?.();
     } catch {
       // Other implementations flush automatically when stop() is called.
     }
-    window.setTimeout(() => {
-      if (recorder.state !== 'inactive') recorder.stop();
-    }, 80);
+    try {
+      if (recorder.state === 'paused') recorder.resume();
+      recorder.stop();
+    } catch (stopError) {
+      finalizingRef.current = false;
+      setPhase('error');
+      setNotice(stopError?.message || 'The recording could not be finished. Please retry.');
+      return;
+    }
+    // Certain mobile browsers occasionally omit `stop`. The chunks produced
+    // by the 250 ms timeslice are still valid, so recover the preview instead
+    // of leaving the composer stuck forever.
+    window.clearTimeout(finalizeTimerRef.current);
+    finalizeTimerRef.current = window.setTimeout(() => {
+      if (finalizingRef.current) finalizePreviewRef.current?.();
+    }, 1800);
   };
 
   const discard = () => {
@@ -388,6 +403,7 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
     disposedRef.current = false;
     discardRef.current = false;
     finalizingRef.current = false;
+    previewCommittedRef.current = false;
     const start = async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') throw new Error('Recording is not supported by this browser.');
@@ -400,11 +416,13 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
         }
         streamRef.current = stream;
         const preferred = [
-          'audio/mp4;codecs=mp4a.40.2',
+          // Chromium on Android is most reliable with WebM/Opus. Safari does
+          // not advertise it and naturally falls through to MP4/M4A.
           'audio/webm;codecs=opus',
-          'audio/mp4',
           'audio/webm',
           'audio/ogg;codecs=opus',
+          'audio/mp4;codecs=mp4a.40.2',
+          'audio/mp4',
         ].find((type) => MediaRecorder.isTypeSupported?.(type));
         const recorder = new MediaRecorder(stream, preferred ? { mimeType: preferred } : undefined);
         recorderRef.current = recorder;
@@ -415,13 +433,16 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
           setPhase('error');
           setNotice(event?.error?.message || 'Recording was interrupted. Please discard it and record again.');
         };
-        recorder.onstop = () => {
+        const finalizePreview = () => {
+          if (previewCommittedRef.current || disposedRef.current || discardRef.current) return;
+          previewCommittedRef.current = true;
           finalizingRef.current = false;
+          window.clearTimeout(finalizeTimerRef.current);
           const type = String(recorder.mimeType || preferred || 'audio/webm').split(';')[0].toLowerCase();
           const blob = new Blob(chunksRef.current, { type });
           stopTracks();
-          if (disposedRef.current || discardRef.current) return;
           if (!blob.size) {
+            previewCommittedRef.current = false;
             setPhase('error');
             setNotice('No audio was captured. Check microphone access and record again.');
             return;
@@ -441,6 +462,8 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
           setPhase('preview');
           setNotice('Preview your voice note before sending.');
         };
+        finalizePreviewRef.current = finalizePreview;
+        recorder.onstop = finalizePreview;
         stream.getAudioTracks().forEach((track) => {
           track.onended = () => {
             setNotice('Microphone access ended. Your recorded audio is being prepared.');
@@ -482,6 +505,7 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
     return () => {
       disposed = true;
       disposedRef.current = true;
+      window.clearTimeout(finalizeTimerRef.current);
       const recorder = recorderRef.current;
       recorderRef.current = null;
       if (recorder && recorder.state !== 'inactive') recorder.stop();
