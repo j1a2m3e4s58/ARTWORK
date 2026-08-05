@@ -339,8 +339,8 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
   const discardRef = useRef(false);
   const finalizingRef = useRef(false);
   const finalizeTimerRef = useRef(null);
-  const finalizePreviewRef = useRef(null);
   const previewCommittedRef = useRef(false);
+  const recordingMimeRef = useRef('audio/webm');
   const [phase, setPhase] = useState('starting');
   const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState(() => Array(34).fill(8));
@@ -349,12 +349,66 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
   const [locked, setLocked] = useState(false);
 
   const stopTracks = () => {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+    try {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    } catch {
+      // A mobile browser may already have released the microphone.
+    }
     streamRef.current = null;
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') audioContextRef.current.close().catch(() => {});
+    try {
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        Promise.resolve(audioContextRef.current.close()).catch(() => {});
+      }
+    } catch {
+      // Closing an already interrupted AudioContext can throw synchronously.
+    }
     audioContextRef.current = null;
-    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    try {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    } catch {
+      // The animation frame may already have been discarded with the page.
+    }
     animationRef.current = null;
+  };
+
+  const commitVoicePreview = () => {
+    if (previewCommittedRef.current || disposedRef.current || discardRef.current) return;
+    previewCommittedRef.current = true;
+    finalizingRef.current = false;
+    window.clearTimeout(finalizeTimerRef.current);
+
+    try {
+      const type = String(recordingMimeRef.current || 'audio/webm').split(';')[0].toLowerCase();
+      const usableChunks = chunksRef.current.filter((chunk) => chunk?.size);
+      const blob = new Blob(usableChunks, { type });
+      stopTracks();
+
+      if (!blob.size) throw new Error('No audio was captured. Check microphone access and record again.');
+      if (blob.size > MAX_VOICE_BYTES) throw new Error('This voice note is larger than 25 MB. Please record a shorter note.');
+
+      const extension = type.includes('ogg') ? 'ogg' : type.includes('mp4') ? 'm4a' : 'webm';
+      const name = `voice-message-${Date.now()}.${extension}`;
+      let file;
+      try {
+        file = new File([blob], name, { type, lastModified: Date.now() });
+      } catch {
+        // Older iOS/Android webviews can play a Blob but cannot construct File.
+        file = blob;
+        Object.defineProperty(file, 'name', { configurable: true, value: name });
+      }
+      const url = URL.createObjectURL(blob);
+      setPreview((previous) => {
+        if (previous?.url) URL.revokeObjectURL(previous.url);
+        return { file, url };
+      });
+      setPhase('preview');
+      setNotice('Preview your voice note before sending.');
+    } catch (previewError) {
+      previewCommittedRef.current = false;
+      stopTracks();
+      setPhase('error');
+      setNotice(previewError?.message || 'The voice-note preview could not be prepared. Please record again.');
+    }
   };
 
   const finish = () => {
@@ -383,9 +437,7 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
     // by the 250 ms timeslice are still valid, so recover the preview instead
     // of leaving the composer stuck forever.
     window.clearTimeout(finalizeTimerRef.current);
-    finalizeTimerRef.current = window.setTimeout(() => {
-      if (finalizingRef.current) finalizePreviewRef.current?.();
-    }, 1800);
+    finalizeTimerRef.current = window.setTimeout(commitVoicePreview, 1200);
   };
 
   const discard = () => {
@@ -426,6 +478,7 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
         ].find((type) => MediaRecorder.isTypeSupported?.(type));
         const recorder = new MediaRecorder(stream, preferred ? { mimeType: preferred } : undefined);
         recorderRef.current = recorder;
+        recordingMimeRef.current = recorder.mimeType || preferred || 'audio/webm';
         chunksRef.current = [];
         recorder.ondataavailable = (event) => event.data?.size && chunksRef.current.push(event.data);
         recorder.onerror = (event) => {
@@ -433,37 +486,9 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
           setPhase('error');
           setNotice(event?.error?.message || 'Recording was interrupted. Please discard it and record again.');
         };
-        const finalizePreview = () => {
-          if (previewCommittedRef.current || disposedRef.current || discardRef.current) return;
-          previewCommittedRef.current = true;
-          finalizingRef.current = false;
-          window.clearTimeout(finalizeTimerRef.current);
-          const type = String(recorder.mimeType || preferred || 'audio/webm').split(';')[0].toLowerCase();
-          const blob = new Blob(chunksRef.current, { type });
-          stopTracks();
-          if (!blob.size) {
-            previewCommittedRef.current = false;
-            setPhase('error');
-            setNotice('No audio was captured. Check microphone access and record again.');
-            return;
-          }
-          if (blob.size > MAX_VOICE_BYTES) {
-            setPhase('error');
-            setNotice('This voice note is larger than 25 MB. Please record a shorter note.');
-            return;
-          }
-          const extension = type.includes('ogg') ? 'ogg' : type.includes('mp4') ? 'm4a' : 'webm';
-          const file = new File([blob], `voice-message-${Date.now()}.${extension}`, { type });
-          const url = URL.createObjectURL(file);
-          setPreview((previous) => {
-            if (previous?.url) URL.revokeObjectURL(previous.url);
-            return { file, url };
-          });
-          setPhase('preview');
-          setNotice('Preview your voice note before sending.');
-        };
-        finalizePreviewRef.current = finalizePreview;
-        recorder.onstop = finalizePreview;
+        // Give the final dataavailable event one task to land before building
+        // the preview. The watchdog in finish() covers browsers that omit stop.
+        recorder.onstop = () => window.setTimeout(commitVoicePreview, 80);
         stream.getAudioTracks().forEach((track) => {
           track.onended = () => {
             setNotice('Microphone access ended. Your recorded audio is being prepared.');
