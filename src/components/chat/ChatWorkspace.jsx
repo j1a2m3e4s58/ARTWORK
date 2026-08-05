@@ -140,6 +140,7 @@ function VoiceMessagePlayer({ src, name = 'Voice message' }) {
   const [duration, setDuration] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [listened, setListened] = useState(false);
+  const [playbackError, setPlaybackError] = useState('');
   const bars = [35, 58, 42, 78, 50, 88, 46, 66, 38, 82, 55, 72, 44, 64, 36, 76, 48, 60, 40, 70, 52, 84, 45, 62];
   const progress = duration ? Math.min(100, (current / duration) * 100) : 0;
 
@@ -183,10 +184,12 @@ function VoiceMessagePlayer({ src, name = 'Voice message' }) {
     }
     if (duration && player.currentTime >= duration - 0.05) player.currentTime = 0;
     try {
+      setPlaybackError('');
       await player.play();
       setPlaying(true);
     } catch {
       setPlaying(false);
+      setPlaybackError('This recording could not be played. Record it again and retry.');
     }
   };
 
@@ -243,6 +246,10 @@ function VoiceMessagePlayer({ src, name = 'Voice message' }) {
         }}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
+        onError={() => {
+          setPlaying(false);
+          setPlaybackError('This recording could not be loaded. Record it again and retry.');
+        }}
         onEnded={() => {
           setPlaying(false);
           setListened(true);
@@ -311,6 +318,7 @@ function VoiceMessagePlayer({ src, name = 'Voice message' }) {
       >
         {playbackRate}×
       </button>
+      {playbackError && <span role="alert" className="text-[10px] text-red-300" title={playbackError}>!</span>}
     </div>
   );
 }
@@ -327,6 +335,9 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
   const startedAtRef = useRef(0);
   const elapsedBeforePauseRef = useRef(0);
   const pointerStartRef = useRef(null);
+  const disposedRef = useRef(false);
+  const discardRef = useRef(false);
+  const finalizingRef = useRef(false);
   const [phase, setPhase] = useState('starting');
   const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState(() => Array(34).fill(8));
@@ -345,14 +356,26 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
 
   const finish = () => {
     const recorder = recorderRef.current;
-    if (recorder && recorder.state !== 'inactive') {
-      if (recorder.state === 'paused') recorder.resume();
-      recorder.stop();
+    if (!recorder || recorder.state === 'inactive' || finalizingRef.current) return;
+    finalizingRef.current = true;
+    setPhase('finalizing');
+    setNotice('Preparing your voice-note preview...');
+    // Flush the encoder before stopping. Safari/iOS can otherwise create an
+    // empty or incomplete MP4 when a paused recorder is resumed and stopped
+    // immediately.
+    try {
+      recorder.requestData?.();
+    } catch {
+      // Other implementations flush automatically when stop() is called.
     }
+    window.setTimeout(() => {
+      if (recorder.state !== 'inactive') recorder.stop();
+    }, 80);
   };
 
   const discard = () => {
     const recorder = recorderRef.current;
+    discardRef.current = true;
     recorderRef.current = null;
     if (recorder && recorder.state !== 'inactive') recorder.stop();
     if (preview?.url) URL.revokeObjectURL(preview.url);
@@ -362,6 +385,9 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
 
   useEffect(() => {
     let disposed = false;
+    disposedRef.current = false;
+    discardRef.current = false;
+    finalizingRef.current = false;
     const start = async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') throw new Error('Recording is not supported by this browser.');
@@ -373,17 +399,33 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
           return;
         }
         streamRef.current = stream;
-        const preferred = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus'].find((type) => MediaRecorder.isTypeSupported?.(type));
+        const preferred = [
+          'audio/mp4;codecs=mp4a.40.2',
+          'audio/webm;codecs=opus',
+          'audio/mp4',
+          'audio/webm',
+          'audio/ogg;codecs=opus',
+        ].find((type) => MediaRecorder.isTypeSupported?.(type));
         const recorder = new MediaRecorder(stream, preferred ? { mimeType: preferred } : undefined);
         recorderRef.current = recorder;
         chunksRef.current = [];
         recorder.ondataavailable = (event) => event.data?.size && chunksRef.current.push(event.data);
-        recorder.onerror = () => setNotice('Recording was interrupted. Finish or discard this voice note.');
+        recorder.onerror = (event) => {
+          finalizingRef.current = false;
+          setPhase('error');
+          setNotice(event?.error?.message || 'Recording was interrupted. Please discard it and record again.');
+        };
         recorder.onstop = () => {
-          const type = recorder.mimeType || preferred || 'audio/webm';
+          finalizingRef.current = false;
+          const type = String(recorder.mimeType || preferred || 'audio/webm').split(';')[0].toLowerCase();
           const blob = new Blob(chunksRef.current, { type });
           stopTracks();
-          if (!recorderRef.current || !blob.size) return;
+          if (disposedRef.current || discardRef.current) return;
+          if (!blob.size) {
+            setPhase('error');
+            setNotice('No audio was captured. Check microphone access and record again.');
+            return;
+          }
           if (blob.size > MAX_VOICE_BYTES) {
             setPhase('error');
             setNotice('This voice note is larger than 25 MB. Please record a shorter note.');
@@ -392,7 +434,10 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
           const extension = type.includes('ogg') ? 'ogg' : type.includes('mp4') ? 'm4a' : 'webm';
           const file = new File([blob], `voice-message-${Date.now()}.${extension}`, { type });
           const url = URL.createObjectURL(file);
-          setPreview({ file, url });
+          setPreview((previous) => {
+            if (previous?.url) URL.revokeObjectURL(previous.url);
+            return { file, url };
+          });
           setPhase('preview');
           setNotice('Preview your voice note before sending.');
         };
@@ -436,6 +481,7 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
     start();
     return () => {
       disposed = true;
+      disposedRef.current = true;
       const recorder = recorderRef.current;
       recorderRef.current = null;
       if (recorder && recorder.state !== 'inactive') recorder.stop();
@@ -523,6 +569,7 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
             </div>
             {(phase === 'recording' || phase === 'paused') && <button type="button" onClick={togglePause} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-brass/20 text-brass" aria-label={phase === 'paused' ? 'Resume recording' : 'Pause recording'}>{phase === 'paused' ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}</button>}
             {(phase === 'recording' || phase === 'paused') && <button type="button" onClick={finish} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian" aria-label="Finish recording"><Send size={18} /></button>}
+            {phase === 'finalizing' && <span className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-brass/25 border-t-brass" aria-label="Preparing voice note" />}
           </div>
           <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-ivory/40">
             <span className="min-w-0 flex-1 truncate">{notice}</span>
@@ -1308,7 +1355,10 @@ export default function ChatWorkspace({ adminMode = false }) {
             body: index === 0 ? text.trim() : '',
             attachmentUrl: uploaded.file_url,
             attachmentName: item.file.name,
-            attachmentType: item.file.name.startsWith('voice-message-') ? 'audio/webm' : uploaded.media?.mime || item.mime,
+            // Preserve the format recorded by the device. iPhone/Safari emits
+            // MP4/M4A while Chromium generally emits WebM; forcing WebM makes
+            // valid iPhone recordings fail preview and playback after upload.
+            attachmentType: uploaded.media?.mime || item.mime || item.file.type || 'application/octet-stream',
             attachmentBytes: item.file.size,
             replyToId: index === 0 ? replyingTo?.id || null : null,
             viewOnce,
