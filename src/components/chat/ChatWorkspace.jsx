@@ -132,6 +132,12 @@ const formatAudioTime = (value) => {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 };
 
+const isVoiceAttachment = (attachment = {}) => {
+  const type = String(attachment.type || attachment.mime || attachment.file?.type || '').toLowerCase();
+  const name = String(attachment.name || attachment.file?.name || '');
+  return type.startsWith('audio/') || /^voice-message-.*\.(webm|m4a|mp4|ogg|oga|wav|mp3|aac)$/i.test(name);
+};
+
 function VoiceMessagePlayer({ src, name = 'Voice message' }) {
   const audioRef = useRef(null);
   const animationRef = useRef(null);
@@ -142,7 +148,7 @@ function VoiceMessagePlayer({ src, name = 'Voice message' }) {
   const [listened, setListened] = useState(false);
   const [playbackError, setPlaybackError] = useState('');
   const bars = [35, 58, 42, 78, 50, 88, 46, 66, 38, 82, 55, 72, 44, 64, 36, 76, 48, 60, 40, 70, 52, 84, 45, 62];
-  const progress = duration ? Math.min(100, (current / duration) * 100) : 0;
+  const progress = duration ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
 
   const synchronizeDuration = (player) => {
     const mediaDuration = Number(player?.duration);
@@ -208,7 +214,7 @@ function VoiceMessagePlayer({ src, name = 'Voice message' }) {
   };
 
   return (
-    <div className="flex min-w-0 max-w-full items-center gap-3 rounded-2xl bg-black/25 px-3 py-2 sm:min-w-[14rem]">
+    <div className="flex w-full min-w-0 max-w-full items-center gap-2 rounded-2xl bg-black/35 px-2.5 py-2 sm:w-[23rem]">
       <audio
         ref={audioRef}
         src={src}
@@ -307,13 +313,13 @@ function VoiceMessagePlayer({ src, name = 'Voice message' }) {
           <span>{formatAudioTime(duration)}</span>
         </div>
       </div>
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brass/10" title={name}>
+      <span className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brass/10 sm:flex" title={name}>
         {listened ? <CheckCheck size={15} className="text-cyan-400" /> : <Mic size={15} className="text-brass" />}
       </span>
       <button
         type="button"
         onClick={cyclePlaybackRate}
-        className="min-w-8 shrink-0 rounded-full border border-brass/15 px-1.5 py-1 text-[10px] font-semibold text-brass"
+        className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full border border-brass/20 bg-obsidian/70 px-1.5 text-[10px] font-semibold text-brass"
         aria-label={`Playback speed ${playbackRate} times`}
       >
         {playbackRate}×
@@ -326,7 +332,7 @@ function VoiceMessagePlayer({ src, name = 'Voice message' }) {
 const MAX_VOICE_SECONDS = 5 * 60;
 const MAX_VOICE_BYTES = 25 * 1024 * 1024;
 
-function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
+function VoiceNoteRecorder({ onCancel, onReady, onSend, viewOnce, onViewOnceChange }) {
   const recorderRef = useRef(null);
   const streamRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -604,12 +610,13 @@ function VoiceNoteRecorder({ onCancel, onReady, viewOnce, onViewOnceChange }) {
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={discard} className="flex min-h-10 items-center gap-2 rounded-full border border-red-400/35 px-4 text-xs text-red-300"><Trash2 size={15} /> Delete</button>
             <button type="button" onClick={() => onViewOnceChange(!viewOnce)} className={`flex min-h-10 items-center gap-2 rounded-full border px-4 text-xs ${viewOnce ? 'border-brass bg-brass/10 text-brass' : 'border-brass/20 text-ivory/55'}`}><Eye size={15} /> View once</button>
-            <button type="button" onClick={() => onReady(preview.file, preview.url)} className="ml-auto flex min-h-10 items-center gap-2 rounded-full bg-brass px-5 text-xs font-semibold text-obsidian"><Send size={15} /> Attach to message</button>
+            <button type="button" onClick={() => onReady(preview.file, preview.url)} className="flex min-h-10 items-center gap-2 rounded-full border border-brass/25 px-4 text-xs font-semibold text-brass">Add caption</button>
+            <button type="button" onClick={() => onSend?.(preview.file, preview.url)} className="ml-auto flex min-h-10 items-center gap-2 rounded-full bg-brass px-5 text-xs font-semibold text-obsidian"><Send size={15} /> Send</button>
           </div>
         </div>
       ) : (
         <>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button type="button" onClick={discard} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-500/15 text-red-300" aria-label="Discard voice note"><Trash2 size={19} /></button>
             <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${phase === 'recording' ? 'animate-pulse bg-red-400' : 'bg-brass'}`} />
             <span className="w-11 shrink-0 tabular-nums text-sm text-ivory">{formatAudioTime(elapsed)}</span>
@@ -693,9 +700,9 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
         </p>
       </div>
     );
-  if (type?.startsWith('audio/'))
+  if (isVoiceAttachment(attachment))
     return (
-      <div className="mt-2 w-full min-w-0 max-w-full border border-brass/15 bg-obsidian p-3">
+      <div className="mt-1 w-full min-w-0 max-w-full sm:w-[23rem]">
         <VoiceMessagePlayer src={url} name={name} />
       </div>
     );
@@ -1369,17 +1376,19 @@ export default function ChatWorkspace({ adminMode = false }) {
       setBusy(false);
     }
   };
-  const send = async () => {
-    if ((!text.trim() && !attachments.length) || !activeId) return;
+  const sendOutgoing = async ({ body = text.trim(), items = attachments } = {}) => {
+    const outgoingText = String(body || '').trim();
+    const outgoingAttachments = Array.isArray(items) ? items : [];
+    if ((!outgoingText && !outgoingAttachments.length) || !activeId) return false;
     setBusy(true);
     setUploadFailed(false);
-    setUploadProgress(Object.fromEntries(attachments.map((item) => [item.id, 1])));
+    setUploadProgress(Object.fromEntries(outgoingAttachments.map((item) => [item.id, 1])));
     setError('');
     try {
-      if (!attachments.length) {
+      if (!outgoingAttachments.length) {
         await studioClient.chat.send(activeId, {
           clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-          body: text.trim(),
+          body: outgoingText,
           replyToId: replyingTo?.id || null,
           expiresInSeconds: disappearAfter,
           allowForward: false,
@@ -1387,8 +1396,8 @@ export default function ChatWorkspace({ adminMode = false }) {
       } else {
         uploadAbortRef.current = new AbortController();
         const messages = [];
-        for (let index = 0; index < attachments.length; index += 1) {
-          const item = attachments[index];
+        for (let index = 0; index < outgoingAttachments.length; index += 1) {
+          const item = outgoingAttachments[index];
           const uploaded = await studioClient.integrations.Core.UploadFileProgress({
             file: item.file,
             purpose: 'chat-attachment',
@@ -1401,7 +1410,7 @@ export default function ChatWorkspace({ adminMode = false }) {
           });
           messages.push({
             clientId: crypto.randomUUID?.() || `${Date.now()}-${index}-${Math.random()}`,
-            body: index === 0 ? text.trim() : '',
+            body: index === 0 ? outgoingText : '',
             attachmentUrl: uploaded.file_url,
             attachmentName: item.file.name,
             // Preserve the format recorded by the device. iPhone/Safari emits
@@ -1418,20 +1427,21 @@ export default function ChatWorkspace({ adminMode = false }) {
         await studioClient.chat.sendBatch(activeId, messages);
       }
       setText('');
-      attachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      outgoingAttachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
       setAttachments([]);
       setReplyingTo(null);
       setViewOnce(false);
       setUploadProgress({});
       await loadMessages(activeId, '', { scrollToBottom: true });
       await load();
+      return true;
     } catch (sendError) {
-      if (!attachments.length && (!navigator.onLine || /fetch|network|offline/i.test(String(sendError.message)))) {
+      if (!outgoingAttachments.length && (!navigator.onLine || /fetch|network|offline/i.test(String(sendError.message)))) {
         const queued = {
           conversationId: activeId,
           payload: {
             clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-            body: text.trim(),
+            body: outgoingText,
             replyToId: replyingTo?.id || null,
             allowForward: false,
           },
@@ -1449,15 +1459,18 @@ export default function ChatWorkspace({ adminMode = false }) {
         setText('');
         setReplyingTo(null);
         setError('You are offline. This message is queued and will send automatically when the connection returns.');
-        return;
+        return false;
       }
-      setUploadFailed(Boolean(attachments.length) && sendError.name !== 'AbortError');
+      if (outgoingAttachments.length) setAttachments(outgoingAttachments);
+      setUploadFailed(Boolean(outgoingAttachments.length) && sendError.name !== 'AbortError');
       setError(sendError.name === 'AbortError' ? 'Upload cancelled. Your files are still ready to retry.' : sendError.message);
+      return false;
     } finally {
       setBusy(false);
       uploadAbortRef.current = null;
     }
   };
+  const send = () => sendOutgoing();
   const shareLocation = () => {
     setShowAttachmentMenu(false);
     if (!navigator.geolocation) {
@@ -1715,17 +1728,20 @@ export default function ChatWorkspace({ adminMode = false }) {
     setRecording((value) => !value);
   };
   const cancelRecording = () => setRecording(false);
+  const createRecordedVoiceAttachment = (voiceFile, previewUrl) => ({
+    id: `voice-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    file: voiceFile,
+    mime: voiceFile.type || 'audio/webm',
+    previewUrl,
+  });
   const attachRecordedVoice = (voiceFile, previewUrl) => {
-    setAttachments((current) => [
-      ...current,
-      {
-        id: `voice-${Date.now()}`,
-        file: voiceFile,
-        mime: voiceFile.type || 'audio/webm',
-        previewUrl,
-      },
-    ]);
+    setAttachments((current) => [...current, createRecordedVoiceAttachment(voiceFile, previewUrl)]);
     setRecording(false);
+  };
+  const sendRecordedVoice = async (voiceFile, previewUrl) => {
+    const voiceAttachment = createRecordedVoiceAttachment(voiceFile, previewUrl);
+    setRecording(false);
+    await sendOutgoing({ body: '', items: [voiceAttachment] });
   };
 
   return (
@@ -2357,6 +2373,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                         messageId: message.id,
                       }
                     : null;
+                  const voiceAttachment = isVoiceAttachment(attachment || {});
                   const groupedReactions = Object.values(message.reactions || {}).reduce(
                     (result, emoji) => ({
                       ...result,
@@ -2382,7 +2399,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                         </div>
                       )}
                       <div className={`group flex min-w-0 max-w-full ${mine ? 'justify-end' : 'justify-start'}`}>
-                        <article className={`relative min-w-0 max-w-[90%] border p-3 sm:max-w-[72%] ${mine ? 'border-brass/20 bg-brass/10' : 'border-ivory/10 bg-carbon'}`}>
+                        <article className={`relative min-w-0 ${voiceAttachment ? 'w-fit max-w-[94%] rounded-2xl border px-1.5 py-1 sm:max-w-[25rem]' : 'max-w-[90%] border p-3 sm:max-w-[72%]'} ${mine ? 'border-brass/20 bg-brass/10' : 'border-ivory/10 bg-carbon'}`}>
                           {message.replyPreview && <QuotedMessage message={message} />}
                           {message.deletedForEveryone ? (
                             <div className="flex items-center gap-3">
@@ -2847,6 +2864,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     <VoiceNoteRecorder
                       onCancel={cancelRecording}
                       onReady={attachRecordedVoice}
+                      onSend={sendRecordedVoice}
                       viewOnce={viewOnce}
                       onViewOnceChange={setViewOnce}
                     />
