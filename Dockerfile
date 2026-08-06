@@ -13,6 +13,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY --chown=node:node server ./server
+COPY --chown=node:node src/lib/commissionPricing.js ./src/lib/commissionPricing.js
 EXPOSE 10000
 USER node
 CMD ["node", "server/index.js"]
