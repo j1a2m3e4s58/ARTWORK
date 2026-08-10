@@ -650,7 +650,11 @@ function VoiceNoteRecorder({ onCancel, onReady, onSend, viewOnce, onViewOnceChan
   };
 
   return (
-    <div onPointerDown={handlePointerDown} onPointerUp={handlePointerUp} className="min-w-0 flex-1 rounded-2xl border border-brass/20 bg-obsidian p-3 shadow-xl">
+    <div
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      className={`min-w-0 flex-1 rounded-2xl border border-brass/20 bg-obsidian p-3 shadow-xl ${phase !== 'preview' ? 'md:rounded-none md:border-0 md:bg-[#202221] md:p-0 md:shadow-none' : ''}`}
+    >
       {phase === 'preview' && preview ? (
         <div className="space-y-3">
           <VoiceMessagePlayer src={preview.url} name={preview.file.name} />
@@ -663,22 +667,64 @@ function VoiceNoteRecorder({ onCancel, onReady, onSend, viewOnce, onViewOnceChan
         </div>
       ) : (
         <>
-          <div className="flex items-center gap-2 sm:gap-3">
-            <button type="button" onClick={discard} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-500/15 text-red-300" aria-label="Discard voice note"><Trash2 size={19} /></button>
-            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${phase === 'recording' ? 'animate-pulse bg-red-400' : 'bg-brass'}`} />
-            <span className="w-11 shrink-0 tabular-nums text-sm text-ivory">{formatAudioTime(elapsed)}</span>
-            <div className="flex h-9 min-w-0 flex-1 items-center justify-end gap-[2px] overflow-hidden" aria-label="Live microphone waveform">
-              {levels.map((height, index) => <span key={index} className="w-[3px] shrink-0 rounded-full bg-brass transition-[height] duration-75" style={{ height: `${height}%` }} />)}
+          <div className="md:hidden">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button type="button" onClick={discard} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-500/15 text-red-300" aria-label="Discard voice note"><Trash2 size={19} /></button>
+              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${phase === 'recording' ? 'animate-pulse bg-red-400' : 'bg-brass'}`} />
+              <span className="w-11 shrink-0 tabular-nums text-sm text-ivory">{formatAudioTime(elapsed)}</span>
+              <div className="flex h-9 min-w-0 flex-1 items-center justify-end gap-[2px] overflow-hidden" aria-label="Live microphone waveform">
+                {levels.map((height, index) => <span key={index} className="w-[3px] shrink-0 rounded-full bg-brass transition-[height] duration-75" style={{ height: `${height}%` }} />)}
+              </div>
+              {(phase === 'recording' || phase === 'paused') && <button type="button" onClick={togglePause} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-brass/20 text-brass" aria-label={phase === 'paused' ? 'Resume recording' : 'Pause recording'}>{phase === 'paused' ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}</button>}
+              {(phase === 'recording' || phase === 'paused') && <button type="button" onClick={finish} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian" aria-label="Finish recording"><Send size={18} /></button>}
+              {phase === 'finalizing' && <span className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-brass/25 border-t-brass" aria-label="Preparing voice note" />}
             </div>
-            {(phase === 'recording' || phase === 'paused') && <button type="button" onClick={togglePause} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-brass/20 text-brass" aria-label={phase === 'paused' ? 'Resume recording' : 'Pause recording'}>{phase === 'paused' ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}</button>}
-            {(phase === 'recording' || phase === 'paused') && <button type="button" onClick={finish} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian" aria-label="Finish recording"><Send size={18} /></button>}
-            {phase === 'finalizing' && <span className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-brass/25 border-t-brass" aria-label="Preparing voice note" />}
+            <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-ivory/40">
+              <span className="min-w-0 flex-1 truncate">{notice}</span>
+              {locked && <span className="shrink-0 uppercase tracking-wider text-brass">Locked</span>}
+            </div>
+            <button type="button" onClick={() => onViewOnceChange(!viewOnce)} className={`mt-2 flex min-h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] uppercase tracking-wider ${viewOnce ? 'border-brass bg-brass/10 text-brass' : 'border-brass/15 text-ivory/40'}`}><Eye size={12} /> View once</button>
           </div>
-          <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-ivory/40">
-            <span className="min-w-0 flex-1 truncate">{notice}</span>
-            {locked && <span className="shrink-0 uppercase tracking-wider text-brass">Locked</span>}
+
+          <div className="hidden h-14 min-w-0 items-center gap-4 px-4 md:flex">
+            <button type="button" onClick={discard} className="flex h-10 w-10 shrink-0 items-center justify-center text-ivory/70 transition-colors hover:text-red-300" aria-label="Discard voice note" title="Delete recording">
+              <Trash2 size={20} />
+            </button>
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${phase === 'recording' ? 'animate-pulse bg-red-400' : 'bg-brass'}`} aria-hidden="true" />
+            <span className="w-12 shrink-0 tabular-nums text-base text-ivory">{formatAudioTime(elapsed)}</span>
+            <div className="flex h-8 min-w-0 flex-1 items-center justify-end gap-[2px] overflow-hidden" aria-label="Live microphone waveform">
+              {phase === 'error' ? (
+                <span role="alert" className="w-full truncate text-xs text-red-300">{notice}</span>
+              ) : phase === 'starting' || phase === 'finalizing' ? (
+                <span className="flex w-full items-center justify-center gap-2 text-xs text-ivory/45">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-brass/25 border-t-brass" />
+                  {notice}
+                </span>
+              ) : (
+                levels.map((height, index) => <span key={index} className="w-[3px] shrink-0 rounded-full bg-ivory/45 transition-[height] duration-75" style={{ height: `${height}%` }} />)
+              )}
+            </div>
+            {(phase === 'recording' || phase === 'paused') && (
+              <button type="button" onClick={togglePause} className="flex h-10 w-10 shrink-0 items-center justify-center text-brass transition-colors hover:text-ivory" aria-label={phase === 'paused' ? 'Resume recording' : 'Pause recording'} title={phase === 'paused' ? 'Resume' : 'Pause'}>
+                {phase === 'paused' ? <Play size={20} fill="currentColor" /> : <Pause size={20} fill="currentColor" />}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onViewOnceChange(!viewOnce)}
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border text-xs font-semibold transition-colors ${viewOnce ? 'border-brass bg-brass text-obsidian' : 'border-ivory/35 text-ivory/70 hover:border-brass hover:text-brass'}`}
+              aria-label={viewOnce ? 'Disable view once' : 'Enable view once'}
+              aria-pressed={viewOnce}
+              title="View once"
+            >
+              1
+            </button>
+            {(phase === 'recording' || phase === 'paused') && (
+              <button type="button" onClick={finish} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian transition-transform hover:scale-105" aria-label="Finish recording" title="Finish recording">
+                <Send size={19} fill="currentColor" />
+              </button>
+            )}
           </div>
-          <button type="button" onClick={() => onViewOnceChange(!viewOnce)} className={`mt-2 flex min-h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] uppercase tracking-wider ${viewOnce ? 'border-brass bg-brass/10 text-brass' : 'border-brass/15 text-ivory/40'}`}><Eye size={12} /> View once</button>
         </>
       )}
     </div>
@@ -2768,8 +2814,8 @@ export default function ChatWorkspace({ adminMode = false }) {
                     Retry failed upload
                   </button>
                 )}
-                <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-2">
-                  <div data-chat-popover className="relative">
+                <div className={`grid items-end gap-2 ${recording ? 'grid-cols-[auto_minmax(0,1fr)] md:grid-cols-1' : 'grid-cols-[auto_minmax(0,1fr)_auto]'}`}>
+                  <div data-chat-popover className={`relative ${recording ? 'md:hidden' : ''}`}>
                     <button
                       type="button"
                       disabled={active.blocked || (active.type === 'announcement' && !adminMode)}
