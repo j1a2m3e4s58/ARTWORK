@@ -231,6 +231,35 @@ test('API keeps public reads open while blocking unverified customer mutations',
     });
     assert.equal(starResponse.status, 200);
     assert.ok((await starResponse.json()).starredBy.length, 'A member should be able to star a message privately.');
+    const saveMediaResponse = await fetch(`${baseUrl}/api/chat/messages/${batchMessages[0].id}/save-media`, {
+      method: 'PATCH', headers: securedHeaders, body: JSON.stringify({ saved: true }),
+    });
+    assert.equal(saveMediaResponse.status, 200);
+    assert.ok((await saveMediaResponse.json()).savedMediaBy.includes(chatMessage.senderId));
+    const savedItems = await fetch(`${baseUrl}/api/chat/saved-items`, { headers: { Cookie: adminCookieHeader } }).then(response => response.json());
+    assert.ok(savedItems.starred.some(item => item.id === chatMessage.id));
+    assert.ok(savedItems.media.some(item => item.id === batchMessages[0].id));
+
+    const stickerResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, {
+      method: 'POST', headers: markReadHeaders, body: JSON.stringify({ sticker: '🎨' }),
+    });
+    assert.equal(stickerResponse.status, 201);
+    assert.equal((await stickerResponse.json()).sticker, '🎨');
+    const liveLocationResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, {
+      method: 'POST', headers: securedHeaders,
+      body: JSON.stringify({ body: 'Live location', sharedLocation: { latitude: 5.6037, longitude: -0.187, accuracy: 8, liveForSeconds: 3600 } }),
+    });
+    assert.equal(liveLocationResponse.status, 201);
+    const liveLocation = await liveLocationResponse.json();
+    assert.ok(liveLocation.sharedLocation.liveUntil);
+    assert.equal((await fetch(`${baseUrl}/api/chat/messages/${liveLocation.id}/location`, {
+      method: 'PATCH', headers: markReadHeaders, body: JSON.stringify({ latitude: 5.604, longitude: -0.188, accuracy: 6 }),
+    })).status, 403, 'Only the live-location sender can update coordinates.');
+    const locationUpdateResponse = await fetch(`${baseUrl}/api/chat/messages/${liveLocation.id}/location`, {
+      method: 'PATCH', headers: securedHeaders, body: JSON.stringify({ latitude: 5.604, longitude: -0.188, accuracy: 6 }),
+    });
+    assert.equal(locationUpdateResponse.status, 200);
+    assert.equal((await locationUpdateResponse.json()).sharedLocation.accuracy, 6);
 
     const typingResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/typing`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'X-CSRF-Token': csrf }, body: JSON.stringify({ typing: true }),

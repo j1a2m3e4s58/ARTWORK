@@ -58,7 +58,7 @@ app.use(helmet({
       // Local object URLs power safe, pre-upload previews in chat and forms.
       imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
       mediaSrc: ["'self'", 'blob:', 'https:'],
-      frameSrc: ["'self'", 'blob:', 'https://www.youtube.com', 'https://player.vimeo.com', 'https://challenges.cloudflare.com'],
+      frameSrc: ["'self'", 'blob:', 'https://www.youtube.com', 'https://player.vimeo.com', 'https://www.openstreetmap.org', 'https://challenges.cloudflare.com'],
       connectSrc: ["'self'", 'https://api.cloudinary.com', 'https://challenges.cloudflare.com'],
       styleSrc: ["'self'", "'unsafe-inline'"],
       fontSrc: ["'self'", 'data:'],
@@ -75,7 +75,7 @@ app.use(helmet({
   },
 }));
 app.use((_req, res, next) => {
-  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=()');
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=(self)');
   next();
 });
 const allowedOrigins = (process.env.APP_ORIGIN || 'http://127.0.0.1:43127').split(',').map(origin => origin.trim());
@@ -2246,8 +2246,20 @@ const cleanSharedLocation = value => {
   if (!value || typeof value !== 'object') return null;
   const latitude = Number(value.latitude); const longitude = Number(value.longitude);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
-  return { latitude, longitude, label: String(value.label || '').trim().slice(0, 160) };
+  const accuracy = Number(value.accuracy);
+  const liveForSeconds = Number(value.liveForSeconds || 0);
+  return {
+    latitude,
+    longitude,
+    accuracy: Number.isFinite(accuracy) ? Math.max(0, Math.min(50_000, accuracy)) : null,
+    label: String(value.label || '').trim().slice(0, 160),
+    ...(liveForSeconds >= 60 && liveForSeconds <= 8 * 60 * 60
+      ? { liveUntil: new Date(Date.now() + liveForSeconds * 1000).toISOString(), updatedAt: now() }
+      : {}),
+  };
 };
+const CHAT_STICKERS = new Set(['🎨', '✨', '🔥', '👏', '💯', '🥳', '😍', '🙌', '🫶', '🌟', '✅', '😂']);
+const cleanSticker = value => CHAT_STICKERS.has(String(value || '')) ? String(value) : '';
 const cleanSharedContact = value => {
   if (!value || typeof value !== 'object') return null;
   const name = String(value.name || '').trim().slice(0, 120);
@@ -2269,6 +2281,7 @@ const messageExtensions = (entry, replyTo) => ({
   viewOnce: Boolean(entry?.viewOnce), viewedOnceBy: [],
   sharedLocation: cleanSharedLocation(entry?.sharedLocation),
   sharedContact: cleanSharedContact(entry?.sharedContact),
+  sticker: cleanSticker(entry?.sticker),
   ciphertext: String(entry?.ciphertext || '').slice(0, 50_000),
   encryption: entry?.ciphertext ? { algorithm: String(entry?.encryption?.algorithm || 'X25519-AES-GCM').slice(0, 40), keyId: String(entry?.encryption?.keyId || '').slice(0, 120), version: 1 } : null,
 });
@@ -2322,8 +2335,9 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLi
   const attachmentUrl = String(req.body.attachmentUrl || '').trim().slice(0, 2048);
   const sharedLocation = cleanSharedLocation(req.body.sharedLocation);
   const sharedContact = cleanSharedContact(req.body.sharedContact);
+  const sticker = cleanSticker(req.body.sticker);
   const ciphertext = String(req.body.ciphertext || '').trim();
-  if (!body && !attachmentUrl && !sharedLocation && !sharedContact && !ciphertext) return res.status(400).json({ error: 'Write a message or attach something.' });
+  if (!body && !attachmentUrl && !sharedLocation && !sharedContact && !sticker && !ciphertext) return res.status(400).json({ error: 'Write a message or attach something.' });
   if (attachmentUrl && !/^https?:\/\//i.test(attachmentUrl) && !attachmentUrl.startsWith('/uploads/')) {
     return res.status(400).json({ error: 'The attachment address is not valid.' });
   }
@@ -2338,14 +2352,14 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLi
     attachmentUrl, attachmentName: String(req.body.attachmentName || '').slice(0, 240),
     attachmentType: String(req.body.attachmentType || '').slice(0, 120),
     attachmentBytes: Math.max(0, Number(req.body.attachmentBytes || 0)),
-    ...messageExtensions(req.body, replyTo), sharedLocation, sharedContact,
+    ...messageExtensions(req.body, replyTo), sharedLocation, sharedContact, sticker,
     allowForward: staffRoles.has(req.user.role) ? Boolean(req.body.allowForward) : false,
     deliveredAt: now(), readBy: [req.user.id], reactions: {}, created_date: now(),
   };
   if (riskScore >= 45) db.data.ChatModerationEvent.push({ id: newId(), type: 'spam_score', status: 'review', score: riskScore, userId: req.user.id, messageId: message.id, conversationId: conversation.id, created_date: now() });
   db.data.ChatMessage.push(message);
   conversation.lastMessageAt = message.created_date;
-  conversation.lastMessage = body || (message.ciphertext ? 'Encrypted message' : '') || message.attachmentName || 'Attachment';
+  conversation.lastMessage = body || (message.ciphertext ? 'Encrypted message' : '') || (sticker ? 'Sticker' : '') || (sharedLocation ? (sharedLocation.liveUntil ? 'Live location' : 'Location') : '') || message.attachmentName || 'Attachment';
   const recipientIds = (conversation.participantIds || []).filter(id => id !== req.user.id);
   recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.message', title: `New message from ${req.user.full_name || req.user.email}`, message: conversation.lastMessage.slice(0, 180), section: 'messages', entity: 'ChatConversation', entityId: conversation.id, priority: 'normal', read: false, created_date: now() }));
   await pushToUsers(recipientIds, chatPushPayload(message, req.user, conversation.id), conversation.mutedBy || []);
@@ -2373,7 +2387,7 @@ app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, muta
     const body = String(entry?.body || '').trim().slice(0, 10000);
     const attachmentUrl = String(entry?.attachmentUrl || '').trim().slice(0, 2048);
     const extension = messageExtensions(entry, index === 0 ? replyTo : null);
-    if (!body && !attachmentUrl && !extension.sharedLocation && !extension.sharedContact && !extension.ciphertext) return res.status(400).json({ error: `Message ${index + 1} is empty.` });
+    if (!body && !attachmentUrl && !extension.sharedLocation && !extension.sharedContact && !extension.sticker && !extension.ciphertext) return res.status(400).json({ error: `Message ${index + 1} is empty.` });
     if (attachmentUrl && !/^https?:\/\//i.test(attachmentUrl) && !attachmentUrl.startsWith('/uploads/')) {
       return res.status(400).json({ error: `Attachment ${index + 1} has an invalid address.` });
     }
@@ -2475,6 +2489,62 @@ app.patch('/api/chat/messages/:id/star', requireVerifiedUser, mutationLimiter, a
     : [...new Set([...message.starredBy, req.user.id])];
   message.updated_date = now();
   await save();
+  res.json(message);
+});
+
+app.patch('/api/chat/messages/:id/save-media', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at && item.attachmentUrl);
+  const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+  if (!message || !conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Media message not found.' });
+  message.savedMediaBy ||= [];
+  message.savedMediaBy = req.body.saved === false
+    ? message.savedMediaBy.filter(id => id !== req.user.id)
+    : [...new Set([...message.savedMediaBy, req.user.id])];
+  message.updated_date = now();
+  await save();
+  res.json(message);
+});
+
+app.get('/api/chat/saved-items', requireVerifiedUser, (req, res) => {
+  const decorate = message => {
+    const conversation = db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+    const sender = db.data.User.find(item => item.id === message.senderId);
+    return { ...message, conversationTitle: conversation?.title || '', sender: sender ? chatUser(sender) : null };
+  };
+  const visible = db.data.ChatMessage.filter(message => {
+    if (!chatMessageVisibleTo(message, req.user)) return false;
+    const conversation = db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+    return conversation && chatMember(conversation, req.user);
+  });
+  res.json({
+    starred: visible.filter(message => message.starredBy?.includes(req.user.id)).sort((a, b) => String(b.created_date).localeCompare(String(a.created_date))).map(decorate),
+    media: visible.filter(message => message.attachmentUrl && message.savedMediaBy?.includes(req.user.id)).sort((a, b) => String(b.created_date).localeCompare(String(a.created_date))).map(decorate),
+  });
+});
+
+app.patch('/api/chat/messages/:id/location', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at && item.sharedLocation);
+  const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+  if (!message || !conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Live location not found.' });
+  if (message.senderId !== req.user.id) return res.status(403).json({ error: 'Only the sender can update this live location.' });
+  if (!message.sharedLocation.liveUntil || new Date(message.sharedLocation.liveUntil).getTime() <= Date.now()) return res.status(409).json({ error: 'Live-location sharing has ended.' });
+  if (req.body.stop === true) {
+    message.sharedLocation.liveUntil = now();
+    message.sharedLocation.updatedAt = now();
+  } else {
+    const updated = cleanSharedLocation(req.body);
+    if (!updated) return res.status(400).json({ error: 'A valid latitude and longitude are required.' });
+    message.sharedLocation = {
+      ...message.sharedLocation,
+      latitude: updated.latitude,
+      longitude: updated.longitude,
+      accuracy: updated.accuracy,
+      updatedAt: now(),
+    };
+  }
+  message.updated_date = now();
+  await save();
+  emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageId: message.id });
   res.json(message);
 });
 

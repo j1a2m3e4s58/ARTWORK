@@ -320,3 +320,22 @@
 ) {
   color: rgb(201 169 110 / 0.9);
 }
+
+@keyframes chat-reaction-pop {
+  0% { opacity: 0; transform: scale(0.35) rotate(-12deg); }
+  65% { transform: scale(1.28) rotate(5deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+@keyframes chat-sticker-pop {
+  0% { opacity: 0; transform: translateY(14px) scale(0.55); }
+  70% { transform: translateY(-3px) scale(1.08); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.chat-reaction-pop { animation: chat-reaction-pop 420ms cubic-bezier(.2,.9,.25,1.25) both; }
+.chat-sticker-pop { animation: chat-sticker-pop 520ms cubic-bezier(.2,.9,.25,1.2) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-reaction-pop, .chat-sticker-pop { animation: none; }
+}

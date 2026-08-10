@@ -8,6 +8,7 @@ import {
   Ban,
   Bell,
   BellOff,
+  Bookmark,
   CheckCheck,
   Clapperboard,
   Download,
@@ -69,6 +70,7 @@ import {
 } from '@/lib/chatSecure';
 
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+const STICKERS = ['🎨', '✨', '🔥', '👏', '💯', '🥳', '😍', '🙌', '🫶', '🌟', '✅', '😂'];
 const MAX_FILE_BYTES = 75 * 1024 * 1024;
 const inferMimeType = (file) => {
   // A WebM container can hold either audio or video. Recorded voice notes use
@@ -879,6 +881,34 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
   );
 }
 
+function LocationPreview({ location, mine, onStop }) {
+  const latitude = Number(location?.latitude);
+  const longitude = Number(location?.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  const spread = 0.004;
+  const bbox = [longitude - spread, latitude - spread, longitude + spread, latitude + spread].join(',');
+  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(`${latitude},${longitude}`)}`;
+  const openUrl = `https://www.openstreetmap.org/?mlat=${encodeURIComponent(latitude)}&mlon=${encodeURIComponent(longitude)}#map=16/${encodeURIComponent(latitude)}/${encodeURIComponent(longitude)}`;
+  const live = location.liveUntil && new Date(location.liveUntil).getTime() > Date.now();
+  return (
+    <div className="mt-3 overflow-hidden rounded-xl border border-brass/15 bg-obsidian">
+      <iframe title={live ? 'Live shared location map' : 'Shared location map'} src={mapUrl} loading="lazy" className="h-44 w-full border-0" referrerPolicy="no-referrer" />
+      <div className="flex items-center gap-3 p-3 text-sm">
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${live ? 'bg-green-500/15 text-green-400' : 'bg-brass/10 text-brass'}`}><MapPin size={19} /></span>
+        <span className="min-w-0 flex-1">
+          <b className="block text-ivory">{live ? 'Live location' : 'Shared location'}</b>
+          <small className="block text-ivory/45">{location.accuracy ? `Accurate to about ${Math.round(location.accuracy)} m` : `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`}</small>
+          {live && <small className="block text-green-400/80">Updated {new Date(location.updatedAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>}
+        </span>
+      </div>
+      <div className={`grid border-t border-brass/10 text-xs font-medium text-brass ${live && mine ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <a href={openUrl} target="_blank" rel="noreferrer" className="flex min-h-10 items-center justify-center hover:bg-brass/10">Open full map</a>
+        {live && mine && <button type="button" onClick={onStop} className="border-l border-brass/10 text-red-300 hover:bg-red-500/10">Stop sharing</button>}
+      </div>
+    </div>
+  );
+}
+
 const linkPreviewCache = new Map();
 const firstSecureUrl = body => String(body || '').match(/https?:\/\/[^\s<>{}"']+/i)?.[0]?.replace(/[),.!?]+$/, '') || '';
 
@@ -1147,6 +1177,11 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [rtcConfig, setRtcConfig] = useState({ iceServers: [], turnConfigured: false });
   const [callHistory, setCallHistory] = useState([]);
   const [showCallHistory, setShowCallHistory] = useState(false);
+  const [showSavedBrowser, setShowSavedBrowser] = useState(false);
+  const [savedItems, setSavedItems] = useState({ starred: [], media: [] });
+  const [savedTab, setSavedTab] = useState('starred');
+  const [savedBusy, setSavedBusy] = useState(false);
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [stories, setStories] = useState([]);
   const [activeStory, setActiveStory] = useState(null);
   const [showStoryComposer, setShowStoryComposer] = useState(false);
@@ -1169,6 +1204,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const attachmentsRef = useRef([]);
   const uploadAbortRef = useRef(null);
   const storyUploadAbortRef = useRef(null);
+  const liveLocationWatchesRef = useRef(new Map());
   const photosInputRef = useRef(null);
   const documentsInputRef = useRef(null);
   const audioInputRef = useRef(null);
@@ -1531,6 +1567,11 @@ export default function ChatWorkspace({ adminMode = false }) {
       window.clearTimeout(typingTimerRef.current);
       uploadAbortRef.current?.abort();
       storyUploadAbortRef.current?.abort();
+      liveLocationWatchesRef.current.forEach(({ watchId, timer }) => {
+        navigator.geolocation?.clearWatch(watchId);
+        window.clearTimeout(timer);
+      });
+      liveLocationWatchesRef.current.clear();
       attachmentsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
     };
   }, []);
@@ -1979,33 +2020,73 @@ export default function ChatWorkspace({ adminMode = false }) {
     }
   };
   const send = () => sendOutgoing();
-  const shareLocation = () => {
+  const shareLocation = (live = false) => {
     setShowAttachmentMenu(false);
     if (!navigator.geolocation) {
       setError('Location sharing is not supported by this browser.');
       return;
     }
+    setBusy(true);
+    setError('');
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
-          await studioClient.chat.send(activeId, {
+          const message = await studioClient.chat.send(activeId, {
             clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-            body: 'Shared location',
+            body: live ? 'Live location' : 'Shared location',
             sharedLocation: {
               latitude: position.coords.latitude,
               longitude: position.coords.longitude,
               accuracy: position.coords.accuracy,
+              liveForSeconds: live ? 3600 : 0,
             },
             expiresInSeconds: disappearAfter,
           });
+          if (live) {
+            let lastUpdate = 0;
+            const watchId = navigator.geolocation.watchPosition(async next => {
+              if (Date.now() - lastUpdate < 10_000) return;
+              lastUpdate = Date.now();
+              try {
+                await studioClient.chat.updateLiveLocation(message.id, {
+                  latitude: next.coords.latitude,
+                  longitude: next.coords.longitude,
+                  accuracy: next.coords.accuracy,
+                });
+              } catch {
+                // A later SSE refresh or the one-hour timeout will reconcile state.
+              }
+            }, () => {}, { enableHighAccuracy: true, maximumAge: 5_000, timeout: 20_000 });
+            const timer = window.setTimeout(() => {
+              navigator.geolocation.clearWatch(watchId);
+              liveLocationWatchesRef.current.delete(message.id);
+            }, 60 * 60 * 1000);
+            liveLocationWatchesRef.current.set(message.id, { watchId, timer });
+          }
           await loadMessages(activeId, '', { scrollToBottom: true });
           await load();
         } catch (shareError) {
           setError(shareError.message);
+        } finally {
+          setBusy(false);
         }
       },
-      () => setError('Location permission was not granted.'),
+      () => {
+        setBusy(false);
+        setError('Location permission was not granted. Allow precise location access and try again.');
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 },
     );
+  };
+  const stopLiveLocation = async message => {
+    const activeWatch = liveLocationWatchesRef.current.get(message.id);
+    if (activeWatch) {
+      navigator.geolocation.clearWatch(activeWatch.watchId);
+      window.clearTimeout(activeWatch.timer);
+      liveLocationWatchesRef.current.delete(message.id);
+    }
+    await studioClient.chat.updateLiveLocation(message.id, { stop: true });
+    await loadMessages(activeId);
   };
   const shareContact = async () => {
     setShowAttachmentMenu(false);
@@ -2085,6 +2166,45 @@ export default function ChatWorkspace({ adminMode = false }) {
   const starMessage = async (message) => {
     await studioClient.chat.star(message.id, !(message.starredBy || []).includes(user.id));
     await loadMessages(activeId);
+  };
+  const saveMedia = async message => {
+    await studioClient.chat.saveMedia(message.id, !(message.savedMediaBy || []).includes(user.id));
+    await loadMessages(activeId);
+  };
+  const openSavedBrowser = async () => {
+    setShowSavedBrowser(true);
+    setSavedBusy(true);
+    try {
+      const result = await studioClient.chat.savedItems();
+      const decrypted = await decryptMessageRows([...(result.starred || []), ...(result.media || [])], user.id);
+      const byId = new Map(decrypted.map(item => [item.id, item]));
+      setSavedItems({
+        starred: (result.starred || []).map(item => byId.get(item.id) || item),
+        media: (result.media || []).map(item => byId.get(item.id) || item),
+      });
+    } catch (savedError) {
+      setError(savedError.message);
+    } finally {
+      setSavedBusy(false);
+    }
+  };
+  const sendSticker = async sticker => {
+    if (!activeId || busy) return;
+    setBusy(true);
+    setShowStickerPicker(false);
+    try {
+      await studioClient.chat.send(activeId, {
+        clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+        sticker,
+        expiresInSeconds: disappearAfter,
+      });
+      await loadMessages(activeId, '', { scrollToBottom: true });
+      await load();
+    } catch (stickerError) {
+      setError(stickerError.message);
+    } finally {
+      setBusy(false);
+    }
   };
   const saveEdit = async () => {
     if (!editing?.body?.trim()) return;
@@ -2294,6 +2414,15 @@ export default function ChatWorkspace({ adminMode = false }) {
                     <Users size={15} />
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={openSavedBrowser}
+                  aria-label="Open starred messages and saved media"
+                  title="Starred and saved"
+                  className="flex h-9 w-9 items-center justify-center border border-brass/15 text-brass"
+                >
+                  <Bookmark size={15} />
+                </button>
                 <button
                   type="button"
                   onClick={enablePush}
@@ -3022,6 +3151,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                           ) : (
                             message.body && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm leading-6 text-ivory/75">{message.body}</p>
                           )}
+                          {message.sticker && <div className="chat-sticker-pop py-2 text-center text-7xl" role="img" aria-label="Sticker">{message.sticker}</div>}
                           {message.encryptionError && (
                             <p className="flex items-center gap-2 text-xs italic text-amber-300/80" title={message.encryptionError}>
                               <Lock size={13} /> This encrypted message is unavailable on this device.
@@ -3052,20 +3182,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                               {message.action.label || 'Learn more'}
                             </a>
                           )}
-                          {message.sharedLocation && (
-                            <a
-                              href={`https://www.google.com/maps?q=${encodeURIComponent(`${message.sharedLocation.latitude},${message.sharedLocation.longitude}`)}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-3 flex items-center gap-3 border border-brass/15 bg-obsidian p-3 text-sm text-brass"
-                            >
-                              <MapPin size={20} />
-                              <span>
-                                <b className="block text-ivory">Shared location</b>
-                                <small>Open safely in Maps</small>
-                              </span>
-                            </a>
-                          )}
+                          {message.sharedLocation && <LocationPreview location={message.sharedLocation} mine={mine} onStop={() => stopLiveLocation(message)} />}
                           {message.sharedContact && (
                             <div className="mt-3 overflow-hidden rounded-xl border border-brass/15 bg-obsidian text-sm">
                               <div className="flex items-center gap-3 p-3">
@@ -3174,7 +3291,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                           {Object.keys(groupedReactions).length > 0 && (
                             <div className="absolute -bottom-3 right-2 rounded-full border border-brass/15 bg-carbon px-2 py-0.5 text-xs shadow-lg">
                               {Object.entries(groupedReactions).map(([emoji, count]) => (
-                                <span key={emoji} className="mr-1">
+                                <span key={`${emoji}-${count}`} className="chat-reaction-pop mr-1 inline-block">
                                   {emoji}
                                   {count > 1 ? count : ''}
                                 </span>
@@ -3379,11 +3496,25 @@ export default function ChatWorkspace({ adminMode = false }) {
                             <small className="text-ivory/35">Search and send with GIPHY</small>
                           </span>
                         </button>
-                        <button type="button" onClick={shareLocation} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10">
+                        <button type="button" onClick={() => { setShowAttachmentMenu(false); setShowStickerPicker(true); }} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10">
+                          <span className="text-xl">✨</span>
+                          <span>
+                            <b className="block font-medium">Stickers</b>
+                            <small className="text-ivory/35">Send a large animated sticker</small>
+                          </span>
+                        </button>
+                        <button type="button" onClick={() => shareLocation(false)} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10">
                           <MapPin size={17} className="text-green-400" />
                           <span>
-                            <b className="block font-medium">Location</b>
-                            <small className="text-ivory/35">Share your current position</small>
+                            <b className="block font-medium">Current location</b>
+                            <small className="text-ivory/35">Share one accurate map pin</small>
+                          </span>
+                        </button>
+                        <button type="button" onClick={() => shareLocation(true)} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10">
+                          <MapPin size={17} className="animate-pulse text-emerald-300" />
+                          <span>
+                            <b className="block font-medium">Live location</b>
+                            <small className="text-ivory/35">Update your position for one hour</small>
                           </span>
                         </button>
                         <button type="button" onClick={shareContact} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10">
@@ -3537,6 +3668,34 @@ export default function ChatWorkspace({ adminMode = false }) {
           )}
         </section>
       </div>
+      {showStickerPicker && createPortal(
+        <div className="fixed inset-0 z-[225] flex items-end justify-center bg-black/80 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label="Choose a sticker" onMouseDown={event => { if (event.target === event.currentTarget) setShowStickerPicker(false); }}>
+          <section className="w-full max-w-md rounded-t-3xl border border-brass/20 bg-carbon p-4 shadow-2xl sm:rounded-2xl">
+            <header className="mb-3 flex items-center justify-between"><div><p className="text-[10px] uppercase tracking-widest text-brass">Stickers</p><h3 className="font-display text-2xl text-ivory">Choose a reaction</h3></div><button type="button" onClick={() => setShowStickerPicker(false)} className="flex h-10 w-10 items-center justify-center"><X size={18} /></button></header>
+            <div className="grid grid-cols-4 gap-2">{STICKERS.map(sticker => <button type="button" key={sticker} disabled={busy} onClick={() => sendSticker(sticker)} className="chat-sticker-pop flex aspect-square items-center justify-center rounded-2xl bg-obsidian text-5xl transition-colors hover:bg-brass/10 disabled:opacity-40">{sticker}</button>)}</div>
+          </section>
+        </div>, document.body,
+      )}
+      {showSavedBrowser && createPortal(
+        <div className="fixed inset-0 z-[225] flex items-center justify-center bg-black/85 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="saved-browser-title">
+          <section className="flex max-h-[88dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-brass/20 bg-carbon shadow-2xl">
+            <header className="flex items-center justify-between border-b border-brass/15 p-4"><div><p className="text-[10px] uppercase tracking-widest text-brass">Private to your account</p><h3 id="saved-browser-title" className="font-display text-2xl text-ivory">Starred and saved</h3></div><button type="button" onClick={() => setShowSavedBrowser(false)} className="flex h-10 w-10 items-center justify-center"><X size={18} /></button></header>
+            <div className="grid grid-cols-2 border-b border-brass/15 text-xs font-medium"><button type="button" onClick={() => setSavedTab('starred')} className={`min-h-11 ${savedTab === 'starred' ? 'bg-brass text-obsidian' : 'text-brass'}`}>Starred messages ({savedItems.starred.length})</button><button type="button" onClick={() => setSavedTab('media')} className={`min-h-11 ${savedTab === 'media' ? 'bg-brass text-obsidian' : 'text-brass'}`}>Saved media ({savedItems.media.length})</button></div>
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+              {savedBusy && <div className="flex min-h-40 items-center justify-center"><Loader2 className="animate-spin text-brass" /></div>}
+              {!savedBusy && !(savedItems[savedTab] || []).length && <p className="py-14 text-center text-sm text-ivory/40">Nothing saved here yet.</p>}
+              {!savedBusy && (savedItems[savedTab] || []).map(item => {
+                const attachment = item.attachmentUrl ? {
+                  url: studioClient.chat.attachmentUrl(item.id), previewUrl: studioClient.chat.attachmentUrl(item.id), downloadUrl: studioClient.chat.attachmentUrl(item.id, true),
+                  name: item.decryptedAttachment?.name || item.attachmentName, type: item.decryptedAttachment?.type || item.attachmentType,
+                  bytes: item.decryptedAttachment?.bytes || item.attachmentBytes, encryptedMetadata: item.decryptedAttachment || null, messageId: item.id,
+                } : null;
+                return <article key={item.id} className="rounded-xl border border-brass/15 bg-obsidian p-3"><div className="mb-2 flex items-center justify-between gap-3 text-[10px] text-ivory/40"><span className="truncate">{item.sender?.name || 'Account'}{item.conversationTitle ? ` · ${item.conversationTitle}` : ''}</span><span>{new Date(item.created_date).toLocaleDateString()}</span></div>{item.sticker && <div className="text-5xl">{item.sticker}</div>}{item.body && <p className="whitespace-pre-wrap text-sm text-ivory/75">{item.body}</p>}<AttachmentPreview attachment={attachment} onOpen={selected => { setShowSavedBrowser(false); setPreview(selected); }} /><button type="button" onClick={() => { setActiveId(item.conversationId); setMobileConversationOpen(true); setShowSavedBrowser(false); }} className="mt-3 text-xs font-medium text-brass">Open conversation</button></article>;
+              })}
+            </div>
+          </section>
+        </div>, document.body,
+      )}
       {reactionPickerId &&
         reactionPickerPosition &&
         createPortal(
@@ -3595,6 +3754,19 @@ export default function ChatWorkspace({ adminMode = false }) {
                 <Star size={14} className={message.starredBy?.includes(user.id) ? 'fill-brass text-brass' : ''} />
                 {message.starredBy?.includes(user.id) ? 'Unstar message' : 'Star message'}
               </button>
+              {message.attachmentUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    saveMedia(message);
+                    closeMenu();
+                  }}
+                  className="flex min-h-11 w-full items-center gap-2 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"
+                >
+                  <Bookmark size={14} className={message.savedMediaBy?.includes(user.id) ? 'fill-brass text-brass' : ''} />
+                  {message.savedMediaBy?.includes(user.id) ? 'Remove from saved media' : 'Save media'}
+                </button>
+              )}
               {!message.ciphertext && (message.allowForward || ['admin', 'editor', 'support'].includes(user.role)) && (
                 <button
                   type="button"
