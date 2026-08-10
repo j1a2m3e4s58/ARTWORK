@@ -1688,6 +1688,7 @@ const conversationHasAdministrator = conversation => (conversation.participantId
 // conversations that include a current administrator.
 const chatMember = (conversation, user) => Boolean(user && (
   conversation.type === 'announcement'
+  || (conversation.type === 'group' && conversation.participantIds?.includes(user.id))
   || (conversation.participantIds?.includes(user.id)
     && (staffRoles.has(user.role) || conversationHasAdministrator(conversation)))
 ));
@@ -1902,7 +1903,7 @@ const conversationView = (item, viewer) => {
   return {
     ...item,
     lastMessageAt: latest?.created_date || item.created_date,
-    lastMessage: latest ? (latest.body || latest.attachmentName || 'Attachment') : 'Conversation started',
+    lastMessage: latest ? (latest.body || (latest.ciphertext ? 'Encrypted message' : '') || latest.attachmentName || 'Attachment') : 'Conversation started',
     participants: (item.participantIds || []).map(id => db.data.User.find(user => user.id === id)).filter(Boolean).map(chatUser),
     unread: db.data.ChatMessage.filter(message => message.conversationId === item.id && message.senderId !== viewer.id && !(message.readBy || []).includes(viewer.id) && chatMessageVisibleTo(message, viewer)).length,
     muted: Boolean(item.mutedBy?.includes(viewer.id)),
@@ -1969,6 +1970,12 @@ app.get('/api/chat/directory', requireVerifiedUser, (req, res) => {
   res.json(people.map(chatUser));
 });
 
+app.get('/api/chat/group-directory', requireVerifiedUser, (req, res) => {
+  const people = db.data.User.filter(item => !item.deleted_at && item.status === 'active' && item.id !== req.user.id
+    && (item.chatDiscoverable !== false || staffRoles.has(req.user.role)));
+  res.json(people.map(chatUser));
+});
+
 app.post('/api/chat/presence', requireVerifiedUser, async (req, res) => {
   const previous = new Date(req.user.lastSeenAt || 0).getTime();
   if (Date.now() - previous > 45_000) {
@@ -2013,7 +2020,7 @@ app.post('/api/chat/conversations', requireVerifiedUser, mutationLimiter, async 
   if (!staffRoles.has(req.user.role) && recipient.role !== 'admin') return res.status(403).json({ error: 'Customer conversations can be started with a studio administrator only.' });
   if (recipient.chatDiscoverable === false && !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'That person is not accepting new conversations.' });
   const ids = [req.user.id, recipient.id].sort();
-  let conversation = db.data.ChatConversation.find(item => !item.deleted_at && item.type !== 'announcement' && JSON.stringify([...(item.participantIds || [])].sort()) === JSON.stringify(ids));
+  let conversation = db.data.ChatConversation.find(item => !item.deleted_at && !['announcement', 'group'].includes(item.type) && JSON.stringify([...(item.participantIds || [])].sort()) === JSON.stringify(ids));
   if (!conversation) {
     conversation = { id: newId(), participantIds: ids, createdBy: req.user.id, lastMessageAt: now(), created_date: now() };
     db.data.ChatConversation.push(conversation);
@@ -2023,10 +2030,10 @@ app.post('/api/chat/conversations', requireVerifiedUser, mutationLimiter, async 
 });
 
 app.post('/api/chat/groups', requireVerifiedUser, mutationLimiter, async (req, res) => {
-  if (!staffRoles.has(req.user.role)) return res.status(403).json({ error: 'Only studio staff can create group conversations.' });
   const title = String(req.body.title || '').trim().slice(0, 100);
-  const requested = Array.isArray(req.body.participantIds) ? req.body.participantIds.slice(0, 255).map(String) : [];
-  const participantIds = [...new Set([req.user.id, ...requested])].filter(id => db.data.User.some(user => user.id === id && user.status === 'active' && !user.deleted_at));
+  const requested = Array.isArray(req.body.participantIds) ? req.body.participantIds.slice(0, 63).map(String) : [];
+  const participantIds = [...new Set([req.user.id, ...requested])].filter(id => db.data.User.some(user => user.id === id && user.status === 'active' && !user.deleted_at
+    && (id === req.user.id || user.chatDiscoverable !== false || staffRoles.has(req.user.role))));
   if (!title) return res.status(400).json({ error: 'Name the group.' });
   if (participantIds.length < 2) return res.status(400).json({ error: 'Choose at least one other member.' });
   const conversation = {
@@ -2044,22 +2051,48 @@ app.patch('/api/chat/groups/:id', requireVerifiedUser, mutationLimiter, async (r
   const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && item.type === 'group' && !item.deleted_at);
   if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Group not found.' });
   const myRole = conversation.roles?.[req.user.id];
+  if (req.body.action === 'leave') {
+    if (myRole === 'owner') return res.status(400).json({ error: 'Transfer ownership before leaving this group.' });
+    conversation.participantIds = conversation.participantIds.filter(id => id !== req.user.id);
+    delete conversation.roles[req.user.id];
+    conversation.updated_date = now(); await save();
+    emitChatEvent(conversation.participantIds, 'conversation', { conversationId: conversation.id });
+    return res.json({ success: true, left: true });
+  }
   if (!['owner', 'admin'].includes(myRole) && !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'Only group administrators can make this change.' });
   if (typeof req.body.title === 'string') conversation.title = String(req.body.title).trim().slice(0, 100) || conversation.title;
   if (Array.isArray(req.body.participantIds)) {
-    const ids = [...new Set([conversation.createdBy, ...req.body.participantIds.map(String)])].filter(id => db.data.User.some(user => user.id === id && user.status === 'active' && !user.deleted_at));
+    const ids = [...new Set([conversation.createdBy, ...req.body.participantIds.slice(0, 63).map(String)])].filter(id => db.data.User.some(user => user.id === id && user.status === 'active' && !user.deleted_at
+      && (conversation.participantIds.includes(id) || user.chatDiscoverable !== false || staffRoles.has(req.user.role))));
     conversation.participantIds = ids;
     conversation.roles = Object.fromEntries(ids.map(id => [id, conversation.roles?.[id] || (id === conversation.createdBy ? 'owner' : 'member')]));
   }
-  if (req.body.userId && ['admin', 'member'].includes(req.body.role) && conversation.participantIds.includes(String(req.body.userId))) conversation.roles[String(req.body.userId)] = req.body.role;
+  if (req.body.userId && ['admin', 'member'].includes(req.body.role) && conversation.participantIds.includes(String(req.body.userId))) {
+    const targetId = String(req.body.userId);
+    if (conversation.roles[targetId] === 'owner') return res.status(400).json({ error: 'The group owner role cannot be changed.' });
+    conversation.roles[targetId] = req.body.role;
+  }
   conversation.updated_date = now(); await save();
   emitChatEvent(conversation.participantIds, 'conversation', { conversationId: conversation.id });
   res.json(conversationView(conversation, req.user));
 });
 
-app.get('/api/chat/stories', requireVerifiedUser, (_req, res) => {
+app.get('/api/chat/stories', requireVerifiedUser, async (req, res) => {
+  let changed = false;
+  db.data.ChatStory.filter(item => !item.deleted_at && new Date(item.expiresAt).getTime() <= Date.now()).forEach(item => { item.deleted_at = now(); changed = true; });
+  if (changed) await save();
   const active = db.data.ChatStory.filter(item => !item.deleted_at && new Date(item.expiresAt).getTime() > Date.now());
-  res.json(active.map(item => ({ ...item, author: chatUser(db.data.User.find(user => user.id === item.userId) || { id: '', email: 'removed@account', role: 'customer' }) })));
+  res.json(active.map(item => {
+    const canSeeViews = item.userId === req.user.id || staffRoles.has(req.user.role);
+    return {
+      ...item,
+      views: canSeeViews ? item.views : undefined,
+      viewCount: item.views?.length || 0,
+      viewed: item.views?.some(view => view.userId === req.user.id) || false,
+      mine: item.userId === req.user.id,
+      author: chatUser(db.data.User.find(user => user.id === item.userId) || { id: '', email: 'removed@account', role: 'customer' }),
+    };
+  }));
 });
 
 app.post('/api/chat/stories', requireVerifiedUser, mutationLimiter, async (req, res) => {
@@ -2618,7 +2651,10 @@ app.post('/api/chat/calls/:id/signal', requireVerifiedUser, mutationLimiter, asy
 const privateAddress = address => {
   const value = String(address || '').toLowerCase();
   if (!isIP(value)) return true;
-  if (value.includes(':')) return value === '::1' || value.startsWith('fc') || value.startsWith('fd') || value.startsWith('fe80:') || value.startsWith('::ffff:127.');
+  if (value.includes(':')) {
+    if (value.startsWith('::ffff:') && value.split(':').at(-1)?.includes('.')) return privateAddress(value.split(':').at(-1));
+    return value === '::' || value === '::1' || value.startsWith('fc') || value.startsWith('fd') || value.startsWith('fe80:') || value.startsWith('::ffff:127.');
+  }
   const [a, b] = value.split('.').map(Number);
   return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 };
@@ -2640,21 +2676,57 @@ const htmlMeta = (html, names) => {
   }
   return '';
 };
+const limitedResponseText = async (response, maximumBytes = 500_000) => {
+  const declared = Number(response.headers.get('content-length') || 0);
+  if (declared > maximumBytes) throw new Error('That page is too large to preview safely.');
+  if (!response.body?.getReader) return (await response.text()).slice(0, maximumBytes);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maximumBytes) {
+      await reader.cancel();
+      throw new Error('That page is too large to preview safely.');
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+};
 
 app.post('/api/chat/link-preview', requireVerifiedUser, mutationLimiter, async (req, res) => {
   try {
     const target = await safePreviewTarget(req.body.url);
     const response = await fetch(target, { redirect: 'error', signal: AbortSignal.timeout(6000), headers: { 'user-agent': 'ReignsAtelier-LinkPreview/1.0', accept: 'text/html' } });
     if (!response.ok || !String(response.headers.get('content-type') || '').includes('text/html')) throw new Error('That page does not provide a safe HTML preview.');
-    const html = (await response.text()).slice(0, 500_000);
+    const html = await limitedResponseText(response);
     const title = htmlMeta(html, ['og:title', 'twitter:title']) || html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim().slice(0, 240) || target.hostname;
     const image = htmlMeta(html, ['og:image', 'twitter:image']);
     let imageUrl = '';
-    try { if (image) { const candidate = new URL(image, target); if (['http:', 'https:'].includes(candidate.protocol)) imageUrl = candidate.toString(); } } catch { /* omit unsafe images */ }
+    try { if (image) { const candidate = await safePreviewTarget(new URL(image, target)); imageUrl = candidate.toString(); } } catch { /* omit unsafe or private-network images */ }
     res.json({ url: target.toString(), hostname: target.hostname, title, description: htmlMeta(html, ['og:description', 'description', 'twitter:description']), imageUrl });
   } catch (error) {
     res.status(400).json({ error: error.message || 'This link could not be previewed safely.' });
   }
+});
+
+const escapeVcard = value => String(value || '').replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/([,;])/g, '\\$1');
+app.get('/api/chat/messages/:id/contact.vcf', requireVerifiedUser, (req, res) => {
+  const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at && item.sharedContact);
+  const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+  if (!message || !conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Contact card not found.' });
+  const contact = message.sharedContact;
+  const lines = ['BEGIN:VCARD', 'VERSION:3.0', `FN:${escapeVcard(contact.name)}`];
+  if (contact.phone) lines.push(`TEL;TYPE=CELL:${escapeVcard(contact.phone)}`);
+  if (contact.email) lines.push(`EMAIL:${escapeVcard(contact.email)}`);
+  lines.push('END:VCARD');
+  const filename = String(contact.name || 'contact').replace(/[^a-z0-9 _-]/gi, '').trim().slice(0, 80) || 'contact';
+  res.setHeader('Content-Type', 'text/vcard; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}.vcf"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.send(`${lines.join('\r\n')}\r\n`);
 });
 
 app.get('/api/chat/capabilities', requireVerifiedUser, (_req, res) => {

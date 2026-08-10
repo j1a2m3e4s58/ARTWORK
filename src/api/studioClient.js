@@ -210,6 +210,7 @@ export const studioClient = {
   chat: {
     conversations: () => request('/api/chat/conversations'),
     directory: () => request('/api/chat/directory'),
+    groupDirectory: () => request('/api/chat/group-directory'),
     start: userId => request('/api/chat/conversations', { method: 'POST', body: JSON.stringify({ userId }) }),
     messages: (id, { query = '', before = '', limit = 60 } = {}) => {
       const params = new URLSearchParams();
@@ -223,6 +224,7 @@ export const studioClient = {
     send: (id, data) => request(`/api/chat/conversations/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify(data) }),
     sendBatch: (id, messages) => request(`/api/chat/conversations/${encodeURIComponent(id)}/messages/batch`, { method: 'POST', body: JSON.stringify({ messages }) }),
     attachmentUrl: (messageId, download = false) => `/api/chat/messages/${encodeURIComponent(messageId)}/attachment${download ? '?download=1' : ''}`,
+    contactCardUrl: messageId => `/api/chat/messages/${encodeURIComponent(messageId)}/contact.vcf`,
     markRead: id => request(`/api/chat/conversations/${encodeURIComponent(id)}/read`, { method: 'POST' }),
     setForwarding: (messageId, allowed) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/forwarding`, { method: 'PATCH', body: JSON.stringify({ allowed }) }),
     forward: (messageId, conversationId) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/forward`, { method: 'POST', body: JSON.stringify({ conversationId }) }),

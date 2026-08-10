@@ -304,6 +304,50 @@ test('API keeps public reads open while blocking unverified customer mutations',
     assert.ok(synced.conversations.some(item => item.id === conversation.id));
     assert.ok(synced.messages.some(item => item.conversationId === conversation.id));
 
+    const groupDirectoryResponse = await fetch(`${baseUrl}/api/chat/group-directory`, { headers: { Cookie: cookieHeader } });
+    assert.equal(groupDirectoryResponse.status, 200);
+    const groupDirectory = await groupDirectoryResponse.json();
+    assert.ok(groupDirectory.some(item => item.id === adminUserId));
+    const customerGroupResponse = await fetch(`${baseUrl}/api/chat/groups`, {
+      method: 'POST', headers: markReadHeaders,
+      body: JSON.stringify({ title: 'Collector Circle', participantIds: [adminUserId] }),
+    });
+    assert.equal(customerGroupResponse.status, 201, 'Verified customers should be able to create groups.');
+    const customerGroup = await customerGroupResponse.json();
+    assert.equal(customerGroup.roles[collectorDirectoryEntry.id], 'owner');
+    assert.equal(customerGroup.roles[adminUserId], 'member');
+    const promoteResponse = await fetch(`${baseUrl}/api/chat/groups/${customerGroup.id}`, {
+      method: 'PATCH', headers: markReadHeaders, body: JSON.stringify({ userId: adminUserId, role: 'admin' }),
+    });
+    assert.equal(promoteResponse.status, 200);
+    assert.equal((await promoteResponse.json()).roles[adminUserId], 'admin');
+
+    const storyResponse = await fetch(`${baseUrl}/api/chat/stories`, {
+      method: 'POST', headers: markReadHeaders, body: JSON.stringify({ body: 'A 24-hour studio status.' }),
+    });
+    assert.equal(storyResponse.status, 201);
+    const story = await storyResponse.json();
+    const storyLifetime = new Date(story.expiresAt).getTime() - new Date(story.created_date).getTime();
+    assert.ok(storyLifetime > 23.9 * 60 * 60 * 1000 && storyLifetime <= 24.1 * 60 * 60 * 1000);
+    const storyList = await fetch(`${baseUrl}/api/chat/stories`, { headers: { Cookie: adminCookieHeader } }).then(response => response.json());
+    assert.ok(storyList.some(item => item.id === story.id));
+    assert.equal((await fetch(`${baseUrl}/api/chat/stories/${story.id}/view`, { method: 'POST', headers: securedHeaders })).status, 200);
+
+    const contactMessageResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, {
+      method: 'POST', headers: securedHeaders,
+      body: JSON.stringify({ sharedContact: { name: 'Studio Concierge', phone: '+233 20 000 0000', email: 'concierge@example.test' } }),
+    });
+    assert.equal(contactMessageResponse.status, 201);
+    const contactMessage = await contactMessageResponse.json();
+    const contactCardResponse = await fetch(`${baseUrl}/api/chat/messages/${contactMessage.id}/contact.vcf`, { headers: { Cookie: cookieHeader } });
+    assert.equal(contactCardResponse.status, 200);
+    assert.match(await contactCardResponse.text(), /BEGIN:VCARD[\s\S]*Studio Concierge[\s\S]*END:VCARD/);
+
+    const privatePreviewResponse = await fetch(`${baseUrl}/api/chat/link-preview`, {
+      method: 'POST', headers: securedHeaders, body: JSON.stringify({ url: 'http://127.0.0.1/private' }),
+    });
+    assert.equal(privatePreviewResponse.status, 400, 'Link previews must reject private-network targets.');
+
     const deleteResponse = await fetch(`${baseUrl}/api/chat/messages/${chatMessage.id}?mode=everyone`, { method: 'DELETE', headers: securedHeaders });
     assert.equal(deleteResponse.status, 200);
     const adminMessagesAfterDelete = await (await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, { headers: { Cookie: adminCookieHeader } })).json();

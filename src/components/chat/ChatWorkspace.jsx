@@ -33,6 +33,7 @@ import {
   RotateCcw,
   Contact,
   Eye,
+  ExternalLink,
   Flag,
   Mail,
   MapPin,
@@ -838,6 +839,39 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
   );
 }
 
+const linkPreviewCache = new Map();
+const firstSecureUrl = body => String(body || '').match(/https?:\/\/[^\s<>{}"']+/i)?.[0]?.replace(/[),.!?]+$/, '') || '';
+
+function SecureLinkPreview({ body }) {
+  const url = firstSecureUrl(body);
+  const [preview, setPreview] = useState(() => linkPreviewCache.get(url) || null);
+  useEffect(() => {
+    let active = true;
+    if (!url || linkPreviewCache.has(url)) {
+      setPreview(linkPreviewCache.get(url) || null);
+      return () => { active = false; };
+    }
+    studioClient.chat.linkPreview(url).then(result => {
+      linkPreviewCache.set(url, result);
+      if (active) setPreview(result);
+    }).catch(() => {
+      linkPreviewCache.set(url, null);
+    });
+    return () => { active = false; };
+  }, [url]);
+  if (!url || !preview) return null;
+  return (
+    <a href={preview.url} target="_blank" rel="noreferrer nofollow" className="mt-2 block max-w-md overflow-hidden rounded-xl border border-brass/15 bg-obsidian transition-colors hover:border-brass/35">
+      {preview.imageUrl && <img src={preview.imageUrl} alt="" className="max-h-44 w-full object-cover" loading="lazy" referrerPolicy="no-referrer" />}
+      <span className="block p-3">
+        <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-brass"><ExternalLink size={11} /> {preview.hostname}</span>
+        <b className="mt-1 block line-clamp-2 text-sm text-ivory">{preview.title}</b>
+        {preview.description && <small className="mt-1 block line-clamp-2 text-ivory/45">{preview.description}</small>}
+      </span>
+    </a>
+  );
+}
+
 function PreviewOverlay({ attachment, onClose }) {
   if (!attachment) return null;
   const isPdf = attachment.type?.includes('pdf');
@@ -1073,6 +1107,18 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [rtcConfig, setRtcConfig] = useState({ iceServers: [], turnConfigured: false });
   const [callHistory, setCallHistory] = useState([]);
   const [showCallHistory, setShowCallHistory] = useState(false);
+  const [stories, setStories] = useState([]);
+  const [activeStory, setActiveStory] = useState(null);
+  const [showStoryComposer, setShowStoryComposer] = useState(false);
+  const [storyBody, setStoryBody] = useState('');
+  const [storyFile, setStoryFile] = useState(null);
+  const [storyBusy, setStoryBusy] = useState(false);
+  const [showGroupBuilder, setShowGroupBuilder] = useState(false);
+  const [showGroupSettings, setShowGroupSettings] = useState(false);
+  const [groupDirectory, setGroupDirectory] = useState([]);
+  const [groupTitle, setGroupTitle] = useState('');
+  const [selectedGroupMembers, setSelectedGroupMembers] = useState([]);
+  const [groupBusy, setGroupBusy] = useState(false);
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
@@ -1269,6 +1315,10 @@ export default function ChatWorkspace({ adminMode = false }) {
       }),
     );
   };
+  const loadStories = async () => {
+    const rows = await studioClient.chat.stories();
+    setStories(rows.sort((a, b) => String(a.created_date).localeCompare(String(b.created_date))));
+  };
 
   useEffect(() => {
     let activeEffect = true;
@@ -1364,6 +1414,8 @@ export default function ChatWorkspace({ adminMode = false }) {
       if (payload.conversationId === activeIdRef.current) loadMessages(payload.conversationId, '', { mergeLatest: true }).catch(() => setConnectionState('offline'));
     };
     ['message', 'read', 'typing', 'conversation'].forEach((name) => stream.addEventListener(name, refresh));
+    const refreshStories = () => loadStories().catch(() => {});
+    stream.addEventListener('story', refreshStories);
     const receiveCall = (event) => {
       const payload = JSON.parse(event.data || '{}');
       studioClient.chat.calls().then(setCallHistory).catch(() => {});
@@ -1387,8 +1439,14 @@ export default function ChatWorkspace({ adminMode = false }) {
     return () => {
       stream.removeEventListener('call', receiveCall);
       stream.removeEventListener('call-signal', receiveCallSignal);
+      stream.removeEventListener('story', refreshStories);
       stream.close();
     };
+  }, []);
+  useEffect(() => {
+    loadStories().catch(() => {});
+    const timer = window.setInterval(() => loadStories().catch(() => {}), 60_000);
+    return () => window.clearInterval(timer);
   }, []);
   useEffect(() => {
     activeIdRef.current = activeId;
@@ -1431,6 +1489,123 @@ export default function ChatWorkspace({ adminMode = false }) {
 
   const active = conversations.find((conversation) => conversation.id === activeId);
   const other = active?.participants?.find((person) => person.id !== user.id);
+  const myGroupRole = active?.roles?.[user.id] || '';
+  const canManageActiveGroup = active?.type === 'group' && (['owner', 'admin'].includes(myGroupRole) || ['admin', 'editor', 'support'].includes(user.role));
+  const openGroupBuilder = async () => {
+    setError('');
+    try {
+      setGroupDirectory(await studioClient.chat.groupDirectory());
+      setShowGroupBuilder(true);
+    } catch (groupError) {
+      setError(groupError.message);
+    }
+  };
+  const createGroup = async (event) => {
+    event.preventDefault();
+    if (!groupTitle.trim() || !selectedGroupMembers.length) return;
+    setGroupBusy(true);
+    setError('');
+    try {
+      const created = await studioClient.chat.createGroup({ title: groupTitle.trim(), participantIds: selectedGroupMembers });
+      setGroupTitle('');
+      setSelectedGroupMembers([]);
+      setShowGroupBuilder(false);
+      await load();
+      setActiveId(created.id);
+      setMobileConversationOpen(true);
+    } catch (groupError) {
+      setError(groupError.message);
+    } finally {
+      setGroupBusy(false);
+    }
+  };
+  const updateGroupMember = async (personId, change) => {
+    if (!active || !canManageActiveGroup) return;
+    setGroupBusy(true);
+    try {
+      if (change === 'remove') {
+        await studioClient.chat.updateGroup(active.id, { participantIds: active.participantIds.filter(id => id !== personId) });
+      } else {
+        await studioClient.chat.updateGroup(active.id, { userId: personId, role: change });
+      }
+      await load();
+    } catch (groupError) {
+      setError(groupError.message);
+    } finally {
+      setGroupBusy(false);
+    }
+  };
+  const openGroupSettings = async () => {
+    setShowGroupSettings(true);
+    studioClient.chat.groupDirectory().then(setGroupDirectory).catch(() => {});
+  };
+  const addGroupMember = async personId => {
+    if (!active || !canManageActiveGroup) return;
+    setGroupBusy(true);
+    try {
+      await studioClient.chat.updateGroup(active.id, { participantIds: [...active.participantIds, personId] });
+      await load();
+    } catch (groupError) {
+      setError(groupError.message);
+    } finally {
+      setGroupBusy(false);
+    }
+  };
+  const renameGroup = async () => {
+    if (!active || !canManageActiveGroup) return;
+    const title = window.prompt('Group name', active.title || '');
+    if (!title?.trim()) return;
+    await studioClient.chat.updateGroup(active.id, { title: title.trim() });
+    await load();
+  };
+  const leaveGroup = async () => {
+    if (!active || active.type !== 'group') return;
+    try {
+      await studioClient.chat.updateGroup(active.id, { action: 'leave' });
+      setShowGroupSettings(false);
+      setActiveId('');
+      setMobileConversationOpen(false);
+      await load();
+    } catch (groupError) {
+      setError(groupError.message);
+    }
+  };
+  const createStory = async (event) => {
+    event.preventDefault();
+    if (!storyBody.trim() && !storyFile) return;
+    setStoryBusy(true);
+    setError('');
+    try {
+      let mediaUrl = '';
+      let mediaType = '';
+      if (storyFile) {
+        const uploaded = await studioClient.integrations.Core.UploadFile({ file: storyFile, purpose: 'chat-story' });
+        mediaUrl = uploaded.file_url;
+        mediaType = uploaded.media?.mime || storyFile.type;
+      }
+      await studioClient.chat.createStory({ body: storyBody.trim(), mediaUrl, mediaType });
+      setStoryBody('');
+      setStoryFile(null);
+      setShowStoryComposer(false);
+      await loadStories();
+    } catch (storyError) {
+      setError(storyError.message);
+    } finally {
+      setStoryBusy(false);
+    }
+  };
+  const openStory = async story => {
+    setActiveStory(story);
+    if (!story.viewed && !story.mine) {
+      studioClient.chat.viewStory(story.id).then(loadStories).catch(() => {});
+    }
+  };
+  const removeActiveStory = async () => {
+    if (!activeStory?.mine) return;
+    await studioClient.chat.removeStory(activeStory.id);
+    setActiveStory(null);
+    await loadStories();
+  };
   const matchingConversations = useMemo(
     () =>
       conversations.filter((conversation) => {
@@ -1742,11 +1917,12 @@ export default function ChatWorkspace({ adminMode = false }) {
     const name = window.prompt('Contact name');
     if (!name) return;
     const phone = window.prompt('Phone number (include country code)');
-    if (!phone) return;
+    const email = window.prompt('Email address (optional)') || '';
+    if (!phone && !email) return;
     try {
       await studioClient.chat.send(activeId, {
         clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-        sharedContact: { name, phone },
+        sharedContact: { name, phone, email },
         expiresInSeconds: disappearAfter,
       });
       await loadMessages(activeId, '', { scrollToBottom: true });
@@ -2014,6 +2190,15 @@ export default function ChatWorkspace({ adminMode = false }) {
               <div className="flex items-center gap-1">
                 <button
                   type="button"
+                  onClick={openGroupBuilder}
+                  aria-label="Create a group"
+                  title="Create a group"
+                  className="flex h-9 w-9 items-center justify-center border border-brass/15 text-brass"
+                >
+                  <Users size={15} />
+                </button>
+                <button
+                  type="button"
                   onClick={enablePush}
                   aria-label={pushState === 'enabled' ? 'Disable push alerts' : 'Enable push alerts'}
                   title={pushState === 'enabled' ? 'Disable push alerts' : 'Enable push alerts'}
@@ -2038,6 +2223,22 @@ export default function ChatWorkspace({ adminMode = false }) {
             {isIos && !isInstalledIos && (
               <p className="mt-2 text-[10px] leading-4 text-brass/70">iPhone alerts: Share → Add to Home Screen, then open the installed app and tap the bell.</p>
             )}
+            <div className="mt-3 flex gap-3 overflow-x-auto pb-1" aria-label="24-hour status updates">
+              <button type="button" onClick={() => setShowStoryComposer(true)} className="flex w-14 shrink-0 flex-col items-center gap-1 text-[10px] text-ivory/50">
+                <span className="flex h-11 w-11 items-center justify-center rounded-full border border-dashed border-brass/50 bg-brass/5 text-brass"><Plus size={17} /></span>
+                My status
+              </button>
+              {stories.map(story => (
+                <button type="button" key={story.id} onClick={() => openStory(story)} className="flex w-14 shrink-0 flex-col items-center gap-1 text-[10px] text-ivory/50">
+                  <span className={`flex h-11 w-11 overflow-hidden rounded-full border-2 p-0.5 ${story.viewed ? 'border-ivory/20' : 'border-green-400'}`}>
+                    <span className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-brass/10 text-xs text-brass">
+                      {story.mediaUrl && story.mediaType?.startsWith('image/') ? <img src={story.mediaUrl} alt="" className="h-full w-full object-cover" /> : initials(story.author?.name)}
+                    </span>
+                  </span>
+                  <span className="w-full truncate">{story.mine ? 'You' : story.author?.name}</span>
+                </button>
+              ))}
+            </div>
             <label className="mt-4 flex h-11 items-center gap-2 border border-brass/15 bg-obsidian px-3 text-ivory/55">
               <Search size={15} />
               <input
@@ -2316,7 +2517,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                       ) : person?.avatarUrl ? (
                         <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" />
                       ) : (
-                        <span className="m-auto">{initials(person?.name)}</span>
+                          <span className="m-auto">{initials(conversation.type === 'group' ? conversation.title : person?.name)}</span>
                       )}
                     </span>
                     {person?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}
@@ -2385,7 +2586,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     ) : other?.avatarUrl ? (
                       <img src={other.avatarUrl} alt="" className="h-full w-full object-cover" />
                     ) : (
-                      <span className="m-auto">{initials(other?.name)}</span>
+                      <span className="m-auto">{initials(active.type === 'group' ? active.title : other?.name)}</span>
                     )}
                   </span>
                   {other?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}
@@ -2463,6 +2664,11 @@ export default function ChatWorkspace({ adminMode = false }) {
                   </button>
                   {showConversationMenu && (
                     <div data-chat-popover className="absolute right-0 top-11 z-30 w-52 border border-brass/20 bg-carbon p-1 shadow-2xl">
+                      {active.type === 'group' && (
+                        <button type="button" onClick={() => { setShowConversationMenu(false); openGroupSettings(); }} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
+                          <Users size={15} /> Group members
+                        </button>
+                      )}
                       {active.type !== 'announcement' && (
                         <>
                           <button type="button" onClick={() => { setShowConversationMenu(false); beginCall('voice'); }} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
@@ -2723,6 +2929,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                               <Lock size={13} /> This encrypted message is unavailable on this device.
                             </p>
                           )}
+                          {!message.deletedForEveryone && message.body && <SecureLinkPreview body={message.body} />}
                           {message.richMedia && (
                             <a
                               href={message.richMedia.url || '#'}
@@ -2762,16 +2969,22 @@ export default function ChatWorkspace({ adminMode = false }) {
                             </a>
                           )}
                           {message.sharedContact && (
-                            <a
-                              href={`tel:${String(message.sharedContact.phone || '').replace(/[^+\d]/g, '')}`}
-                              className="mt-3 flex items-center gap-3 border border-brass/15 bg-obsidian p-3 text-sm text-brass"
-                            >
-                              <Contact size={20} />
-                              <span>
-                                <b className="block text-ivory">{message.sharedContact.name}</b>
-                                <small>{message.sharedContact.phone}</small>
-                              </span>
-                            </a>
+                            <div className="mt-3 overflow-hidden rounded-xl border border-brass/15 bg-obsidian text-sm">
+                              <div className="flex items-center gap-3 p-3">
+                                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass/10 text-brass"><Contact size={20} /></span>
+                                <span className="min-w-0 flex-1">
+                                  <b className="block truncate text-ivory">{message.sharedContact.name}</b>
+                                  {message.sharedContact.phone && <small className="block truncate text-ivory/45">{message.sharedContact.phone}</small>}
+                                  {message.sharedContact.email && <small className="block truncate text-ivory/45">{message.sharedContact.email}</small>}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 border-t border-brass/10 text-xs font-medium text-brass">
+                                <a href={message.sharedContact.phone ? `tel:${String(message.sharedContact.phone).replace(/[^+\d]/g, '')}` : `mailto:${message.sharedContact.email}`} className="flex min-h-10 items-center justify-center border-r border-brass/10 hover:bg-brass/10">
+                                  {message.sharedContact.phone ? 'Call' : 'Email'}
+                                </a>
+                                <a href={studioClient.chat.contactCardUrl(message.id)} download className="flex min-h-10 items-center justify-center hover:bg-brass/10">Save contact</a>
+                              </div>
+                            </div>
                           )}
                           {attachment && message.viewOnce && !mine && message.viewedOnceBy?.includes(user.id) ? (
                             <div className="mt-3 flex items-center gap-2 border border-brass/15 p-3 text-xs text-ivory/40">
@@ -3427,6 +3640,78 @@ export default function ChatWorkspace({ adminMode = false }) {
                 {busy ? 'Sending…' : 'Send selected items'}
               </button>
             </footer>
+          </section>
+        </div>
+      )}
+      {showGroupBuilder && (
+        <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="create-group-title">
+          <form onSubmit={createGroup} className="flex max-h-[85dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-brass/20 bg-carbon shadow-2xl">
+            <header className="flex items-center justify-between border-b border-brass/15 p-4">
+              <div><h3 id="create-group-title" className="font-display text-2xl text-ivory">New group</h3><p className="text-xs text-ivory/40">You will be the group owner.</p></div>
+              <button type="button" onClick={() => setShowGroupBuilder(false)} className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/5" aria-label="Close"><X size={18} /></button>
+            </header>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <label className="text-xs uppercase tracking-wider text-brass">Group name<input autoFocus value={groupTitle} onChange={event => setGroupTitle(event.target.value)} maxLength={100} className="mt-2 h-11 w-full border border-brass/15 bg-obsidian px-3 text-sm normal-case tracking-normal text-ivory outline-none" placeholder="Group name" /></label>
+              <p className="mb-2 mt-5 text-xs uppercase tracking-wider text-brass">Choose members</p>
+              <div className="space-y-1">
+                {groupDirectory.map(person => {
+                  const selected = selectedGroupMembers.includes(person.id);
+                  return <button type="button" key={person.id} onClick={() => setSelectedGroupMembers(current => selected ? current.filter(id => id !== person.id) : [...current, person.id])} className={`flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-left ${selected ? 'bg-brass/15' : 'hover:bg-white/[0.03]'}`}>
+                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brass/10 text-xs text-brass">{initials(person.name)}</span>
+                    <span className="min-w-0 flex-1"><b className="block truncate text-sm text-ivory">{person.name}</b><small className="capitalize text-ivory/35">{person.role}</small></span>
+                    {selected && <CheckCheck size={17} className="text-brass" />}
+                  </button>;
+                })}
+              </div>
+            </div>
+            <footer className="flex items-center justify-between border-t border-brass/15 p-4"><span className="text-xs text-ivory/40">{selectedGroupMembers.length} selected</span><button disabled={groupBusy || !groupTitle.trim() || !selectedGroupMembers.length} className="min-h-11 rounded-full bg-brass px-6 text-xs font-semibold text-obsidian disabled:opacity-40">{groupBusy ? 'Creating…' : 'Create group'}</button></footer>
+          </form>
+        </div>
+      )}
+      {showGroupSettings && active?.type === 'group' && (
+        <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="group-settings-title">
+          <section className="flex max-h-[85dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-brass/20 bg-carbon shadow-2xl">
+            <header className="flex items-center justify-between border-b border-brass/15 p-4">
+              <div><h3 id="group-settings-title" className="font-display text-2xl text-ivory">{active.title}</h3><p className="text-xs capitalize text-ivory/40">Your role: {myGroupRole}</p></div>
+              <button type="button" onClick={() => setShowGroupSettings(false)} className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/5" aria-label="Close"><X size={18} /></button>
+            </header>
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              {canManageActiveGroup && <button type="button" onClick={renameGroup} className="mb-3 min-h-9 border border-brass/20 px-3 text-xs text-brass">Rename group</button>}
+              {active.participants.map(person => {
+                const role = active.roles?.[person.id] || 'member';
+                const protectedOwner = role === 'owner';
+                return <div key={person.id} className="flex min-h-14 items-center gap-3 border-b border-brass/10 px-2">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brass/10 text-xs text-brass">{initials(person.name)}</span>
+                  <span className="min-w-0 flex-1"><b className="block truncate text-sm text-ivory">{person.name}{person.id === user.id ? ' (you)' : ''}</b><small className="capitalize text-ivory/40">{role}</small></span>
+                  {canManageActiveGroup && !protectedOwner && person.id !== user.id && <div className="flex gap-1"><button disabled={groupBusy} type="button" onClick={() => updateGroupMember(person.id, role === 'admin' ? 'member' : 'admin')} className="min-h-8 px-2 text-[10px] uppercase text-brass">{role === 'admin' ? 'Remove admin' : 'Make admin'}</button><button disabled={groupBusy} type="button" onClick={() => updateGroupMember(person.id, 'remove')} className="min-h-8 px-2 text-[10px] uppercase text-red-300">Remove</button></div>}
+                </div>;
+              })}
+              {canManageActiveGroup && groupDirectory.filter(person => !active.participantIds.includes(person.id)).length > 0 && <><p className="mt-5 px-2 text-xs uppercase tracking-wider text-brass">Add people</p>{groupDirectory.filter(person => !active.participantIds.includes(person.id)).map(person => <button disabled={groupBusy} type="button" key={person.id} onClick={() => addGroupMember(person.id)} className="flex min-h-12 w-full items-center gap-3 px-2 text-left hover:bg-brass/10"><Plus size={15} className="text-brass" /><span className="text-sm text-ivory/70">{person.name}</span></button>)}</>}
+            </div>
+            {myGroupRole !== 'owner' && <footer className="border-t border-brass/15 p-4"><button type="button" onClick={leaveGroup} className="min-h-10 text-sm text-red-300">Leave group</button></footer>}
+          </section>
+        </div>
+      )}
+      {showStoryComposer && (
+        <div className="fixed inset-0 z-[190] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="new-story-title">
+          <form onSubmit={createStory} className="w-full max-w-md overflow-hidden rounded-2xl border border-brass/20 bg-carbon shadow-2xl">
+            <header className="flex items-center justify-between border-b border-brass/15 p-4"><div><h3 id="new-story-title" className="font-display text-2xl text-ivory">New status</h3><p className="text-xs text-ivory/40">Automatically disappears after 24 hours.</p></div><button type="button" onClick={() => setShowStoryComposer(false)} className="flex h-10 w-10 items-center justify-center" aria-label="Close"><X size={18} /></button></header>
+            <div className="space-y-4 p-4">
+              <textarea value={storyBody} onChange={event => setStoryBody(event.target.value)} maxLength={1200} rows={5} placeholder="Share an update…" className="w-full resize-none rounded-xl border border-brass/15 bg-obsidian p-3 text-sm text-ivory outline-none" />
+              <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-brass/30 text-xs text-brass"><Image size={16} />{storyFile ? storyFile.name : 'Add photo or video'}<input type="file" accept="image/*,video/*" className="hidden" onChange={event => setStoryFile(event.target.files?.[0] || null)} /></label>
+            </div>
+            <footer className="flex justify-end border-t border-brass/15 p-4"><button disabled={storyBusy || (!storyBody.trim() && !storyFile)} className="min-h-11 rounded-full bg-brass px-6 text-xs font-semibold text-obsidian disabled:opacity-40">{storyBusy ? 'Sharing…' : 'Share status'}</button></footer>
+          </form>
+        </div>
+      )}
+      {activeStory && (
+        <div className="fixed inset-0 z-[195] flex items-center justify-center bg-black/95 p-4" role="dialog" aria-modal="true" aria-label="Status viewer">
+          <section className="relative flex h-[min(44rem,94dvh)] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-obsidian shadow-2xl">
+            <div className="absolute left-4 right-4 top-3 z-10 h-1 overflow-hidden rounded-full bg-white/20"><span className="block h-full w-full origin-left animate-[pulse_2s_ease-in-out_infinite] bg-white/80" /></div>
+            <header className="absolute left-0 right-0 top-0 z-10 flex items-center gap-3 bg-gradient-to-b from-black/80 to-transparent p-5 pt-7"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-brass/20 text-xs text-brass">{initials(activeStory.author?.name)}</span><span className="min-w-0 flex-1"><b className="block truncate text-sm text-white">{activeStory.mine ? 'Your status' : activeStory.author?.name}</b><small className="text-white/60">{new Date(activeStory.created_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></span>{activeStory.mine && <button type="button" onClick={removeActiveStory} className="flex h-10 w-10 items-center justify-center text-red-300" aria-label="Delete status"><Trash2 size={18} /></button>}<button type="button" onClick={() => setActiveStory(null)} className="flex h-10 w-10 items-center justify-center text-white" aria-label="Close"><X size={20} /></button></header>
+            <div className="flex min-h-0 flex-1 items-center justify-center bg-black pt-16">{activeStory.mediaUrl ? activeStory.mediaType?.startsWith('video/') ? <video src={activeStory.mediaUrl} controls autoPlay playsInline className="max-h-full w-full object-contain" /> : <img src={activeStory.mediaUrl} alt="Status" className="max-h-full w-full object-contain" /> : <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-brass/30 to-black p-10 text-center font-display text-3xl text-ivory">{activeStory.body}</div>}</div>
+            {activeStory.mediaUrl && activeStory.body && <p className="absolute bottom-5 left-5 right-5 rounded-xl bg-black/60 p-3 text-center text-sm text-white">{activeStory.body}</p>}
+            {activeStory.mine && <p className="absolute bottom-2 left-4 text-[10px] text-white/60">{activeStory.viewCount || 0} view{activeStory.viewCount === 1 ? '' : 's'}</p>}
           </section>
         </div>
       )}
