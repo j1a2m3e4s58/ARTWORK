@@ -55,8 +55,22 @@ import { useAuth } from '@/lib/AuthContext';
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const MAX_FILE_BYTES = 75 * 1024 * 1024;
 const inferMimeType = (file) => {
+  // A WebM container can hold either audio or video. Recorded voice notes use
+  // an explicit filename prefix so they remain audio even when an upload
+  // provider later describes the container as video/webm.
+  const fileName = String(file?.name || '');
+  if (/^voice-message-/i.test(fileName)) {
+    if (file?.type?.startsWith('audio/')) return file.type;
+    const voiceExtension = fileName.split('.').pop()?.toLowerCase();
+    if (['m4a', 'mp4'].includes(voiceExtension)) return 'audio/mp4';
+    if (['ogg', 'oga'].includes(voiceExtension)) return 'audio/ogg';
+    if (voiceExtension === 'wav') return 'audio/wav';
+    if (voiceExtension === 'mp3') return 'audio/mpeg';
+    if (voiceExtension === 'aac') return 'audio/aac';
+    return 'audio/webm';
+  }
   if (file?.type) return file.type;
-  const extension = String(file?.name || '')
+  const extension = fileName
     .split('.')
     .pop()
     ?.toLowerCase();
@@ -710,6 +724,15 @@ function QuotedMessage({ message }) {
 function AttachmentPreview({ attachment, compact = false, onOpen }) {
   if (!attachment?.url) return null;
   const { url, name, type, bytes } = attachment;
+  // Check voice notes before generic WebM video. Some media hosts identify an
+  // audio-only WebM container as video/webm, while the voice-message filename
+  // remains the reliable signal for recordings made in chat.
+  if (isVoiceAttachment(attachment))
+    return (
+      <div className="mt-1 w-full min-w-0 max-w-full sm:w-[23rem]">
+        <VoiceMessagePlayer src={url} name={name} />
+      </div>
+    );
   if (type?.startsWith('image/'))
     return (
       <button type="button" onClick={() => onOpen?.(attachment)} className="mt-2 block overflow-hidden border border-brass/15 bg-obsidian text-left">
@@ -731,12 +754,6 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
           </span>
           <span>{formatBytes(bytes)}</span>
         </p>
-      </div>
-    );
-  if (isVoiceAttachment(attachment))
-    return (
-      <div className="mt-1 w-full min-w-0 max-w-full sm:w-[23rem]">
-        <VoiceMessagePlayer src={url} name={name} />
       </div>
     );
   const { Icon, label, color } = fileVisual(type, name);
@@ -1449,7 +1466,9 @@ export default function ChatWorkspace({ adminMode = false }) {
             // Preserve the format recorded by the device. iPhone/Safari emits
             // MP4/M4A while Chromium generally emits WebM; forcing WebM makes
             // valid iPhone recordings fail preview and playback after upload.
-            attachmentType: uploaded.media?.mime || item.mime || item.file.type || 'application/octet-stream',
+            attachmentType: isVoiceAttachment({ name: item.file.name, type: item.mime || item.file.type })
+              ? item.mime || item.file.type || 'audio/webm'
+              : uploaded.media?.mime || item.mime || item.file.type || 'application/octet-stream',
             attachmentBytes: item.file.size,
             replyToId: index === 0 ? replyingTo?.id || null : null,
             viewOnce,
@@ -2540,7 +2559,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                           ) : (
                             <AttachmentPreview attachment={attachment} onOpen={setPreview} />
                           )}
-                          {attachment?.type?.startsWith('audio/') && (
+                          {voiceAttachment && (
                             <button
                               type="button"
                               disabled={transcribingId === message.id}
