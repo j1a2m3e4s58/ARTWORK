@@ -2029,7 +2029,7 @@ app.post('/api/chat/conversations', requireVerifiedUser, mutationLimiter, async 
   res.status(201).json(conversation);
 });
 
-app.post('/api/chat/groups', requireVerifiedUser, mutationLimiter, async (req, res) => {
+app.post('/api/chat/groups', requireAdmin, mutationLimiter, async (req, res) => {
   const title = String(req.body.title || '').trim().slice(0, 100);
   const requested = Array.isArray(req.body.participantIds) ? req.body.participantIds.slice(0, 63).map(String) : [];
   const participantIds = [...new Set([req.user.id, ...requested])].filter(id => db.data.User.some(user => user.id === id && user.status === 'active' && !user.deleted_at
@@ -3843,8 +3843,9 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
   const uploadPurpose = String(req.body?.purpose || '');
   const isPublicApplicationUpload = uploadPurpose === 'internship-letter';
   const isChatAttachment = uploadPurpose === 'chat-attachment';
+  const isChatStory = uploadPurpose === 'chat-story';
   const isProfileAvatar = uploadPurpose === 'profile-avatar';
-  if (staffRoles.has(req.user.role) && !isPublicApplicationUpload && !isChatAttachment && !isProfileAvatar && !hasAdminAccess(req, req.user)) {
+  if (staffRoles.has(req.user.role) && !isPublicApplicationUpload && !isChatAttachment && !isChatStory && !isProfileAvatar && !hasAdminAccess(req, req.user)) {
     return res.status(403).json({ error: 'Re-enter your password to unlock Studio Control.', code: 'admin_unlock_required' });
   }
   if (!req.file) return res.status(400).json({ error: 'Choose a supported image, video, or PDF file.' });
@@ -3902,9 +3903,9 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     resourceType: stored.resourceType,
     scanStatus: encryptedChatAttachment ? 'client-encrypted' : scanStatus,
     userId: req.user.id,
-    purpose: isPublicApplicationUpload ? 'internship-letter' : isChatAttachment ? 'chat-attachment' : isProfileAvatar ? 'profile-avatar' : staffRoles.has(req.user.role) ? 'content-library' : 'customer-reference',
+    purpose: isPublicApplicationUpload ? 'internship-letter' : isChatAttachment ? 'chat-attachment' : isChatStory ? 'chat-story' : isProfileAvatar ? 'profile-avatar' : staffRoles.has(req.user.role) ? 'content-library' : 'customer-reference',
     altText: '',
-    sourceName: isPublicApplicationUpload ? 'Internship applicant upload' : isChatAttachment ? 'Private chat attachment' : isProfileAvatar ? 'Profile photo' : staffRoles.has(req.user.role) ? 'Studio upload' : 'Customer upload',
+    sourceName: isPublicApplicationUpload ? 'Internship applicant upload' : isChatAttachment ? 'Private chat attachment' : isChatStory ? '24-hour status' : isProfileAvatar ? 'Profile photo' : staffRoles.has(req.user.role) ? 'Studio upload' : 'Customer upload',
     contentStatus: staffRoles.has(req.user.role) && !isPublicApplicationUpload && !isChatAttachment && !isProfileAvatar ? 'original' : 'customer-reference',
     // Keep a private database copy of modest-sized chat documents. Some cloud
     // accounts restrict PDF/raw delivery even after accepting the upload; the

@@ -1152,6 +1152,9 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [showStoryComposer, setShowStoryComposer] = useState(false);
   const [storyBody, setStoryBody] = useState('');
   const [storyFile, setStoryFile] = useState(null);
+  const [storyPreviewUrl, setStoryPreviewUrl] = useState('');
+  const [storyUploadProgress, setStoryUploadProgress] = useState(0);
+  const [storyUploadStage, setStoryUploadStage] = useState('');
   const [storyBusy, setStoryBusy] = useState(false);
   const [showGroupBuilder, setShowGroupBuilder] = useState(false);
   const [showGroupSettings, setShowGroupSettings] = useState(false);
@@ -1165,6 +1168,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const messagesPaneRef = useRef(null);
   const attachmentsRef = useRef([]);
   const uploadAbortRef = useRef(null);
+  const storyUploadAbortRef = useRef(null);
   const photosInputRef = useRef(null);
   const documentsInputRef = useRef(null);
   const audioInputRef = useRef(null);
@@ -1192,6 +1196,9 @@ export default function ChatWorkspace({ adminMode = false }) {
       description: 'Select one or several studio films to share in this conversation.',
     },
   }[resourceKind];
+  useEffect(() => () => {
+    if (storyPreviewUrl) URL.revokeObjectURL(storyPreviewUrl);
+  }, [storyPreviewUrl]);
   const setText = (value) =>
     setDrafts((current) => ({
       ...current,
@@ -1523,6 +1530,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     return () => {
       window.clearTimeout(typingTimerRef.current);
       uploadAbortRef.current?.abort();
+      storyUploadAbortRef.current?.abort();
       attachmentsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
     };
   }, []);
@@ -1531,7 +1539,9 @@ export default function ChatWorkspace({ adminMode = false }) {
   const other = active?.participants?.find((person) => person.id !== user.id);
   const myGroupRole = active?.roles?.[user.id] || '';
   const canManageActiveGroup = active?.type === 'group' && (['owner', 'admin'].includes(myGroupRole) || ['admin', 'editor', 'support'].includes(user.role));
+  const canCreateGroups = user?.role === 'admin';
   const openGroupBuilder = async () => {
+    if (!canCreateGroups) return;
     setError('');
     try {
       setGroupDirectory(await studioClient.chat.groupDirectory());
@@ -1542,7 +1552,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   };
   const createGroup = async (event) => {
     event.preventDefault();
-    if (!groupTitle.trim() || !selectedGroupMembers.length) return;
+    if (!canCreateGroups || !groupTitle.trim() || !selectedGroupMembers.length) return;
     setGroupBusy(true);
     setError('');
     try {
@@ -1614,25 +1624,60 @@ export default function ChatWorkspace({ adminMode = false }) {
     event.preventDefault();
     if (!storyBody.trim() && !storyFile) return;
     setStoryBusy(true);
+    setStoryUploadProgress(storyFile ? 1 : 100);
+    setStoryUploadStage(storyFile ? 'uploading' : 'publishing');
     setError('');
     try {
       let mediaUrl = '';
       let mediaType = '';
       if (storyFile) {
-        const uploaded = await studioClient.integrations.Core.UploadFile({ file: storyFile, purpose: 'chat-story' });
+        storyUploadAbortRef.current = new AbortController();
+        const uploaded = await studioClient.integrations.Core.UploadFileProgress({
+          file: storyFile,
+          purpose: 'chat-story',
+          signal: storyUploadAbortRef.current.signal,
+          onProgress: setStoryUploadProgress,
+        });
         mediaUrl = uploaded.file_url;
         mediaType = uploaded.media?.mime || storyFile.type;
       }
+      setStoryUploadProgress(100);
+      setStoryUploadStage('publishing');
       await studioClient.chat.createStory({ body: storyBody.trim(), mediaUrl, mediaType });
       setStoryBody('');
       setStoryFile(null);
+      setStoryPreviewUrl('');
       setShowStoryComposer(false);
       await loadStories();
     } catch (storyError) {
-      setError(storyError.message);
+      setError(storyError.name === 'AbortError' ? 'Status upload cancelled.' : storyError.message);
     } finally {
       setStoryBusy(false);
+      setStoryUploadProgress(0);
+      setStoryUploadStage('');
+      storyUploadAbortRef.current = null;
     }
+  };
+  const selectStoryFile = event => {
+    const file = event.target.files?.[0] || null;
+    event.target.value = '';
+    if (!file) return;
+    if (!/^(image|video)\//.test(file.type)) {
+      setError('Choose a photo or video for your status.');
+      return;
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      setError(`Status media must be smaller than ${formatBytes(MAX_FILE_BYTES)}.`);
+      return;
+    }
+    setError('');
+    setStoryFile(file);
+    setStoryPreviewUrl(URL.createObjectURL(file));
+  };
+  const clearStoryFile = () => {
+    setStoryFile(null);
+    setStoryPreviewUrl('');
+    setStoryUploadProgress(0);
   };
   const openStory = async story => {
     setActiveStory(story);
@@ -2238,15 +2283,17 @@ export default function ChatWorkspace({ adminMode = false }) {
                 <h2 className="truncate font-display text-2xl text-ivory">{adminMode ? 'Studio conversations' : 'Messages'}</h2>
               </div>
               <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={openGroupBuilder}
-                  aria-label="Create a group"
-                  title="Create a group"
-                  className="flex h-9 w-9 items-center justify-center border border-brass/15 text-brass"
-                >
-                  <Users size={15} />
-                </button>
+                {canCreateGroups && (
+                  <button
+                    type="button"
+                    onClick={openGroupBuilder}
+                    aria-label="Create a group"
+                    title="Create a group"
+                    className="flex h-9 w-9 items-center justify-center border border-brass/15 text-brass"
+                  >
+                    <Users size={15} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={enablePush}
@@ -3694,7 +3741,7 @@ export default function ChatWorkspace({ adminMode = false }) {
           </section>
         </div>
       )}
-      {showGroupBuilder && (
+      {showGroupBuilder && canCreateGroups && (
         <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="create-group-title">
           <form onSubmit={createGroup} className="flex max-h-[85dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-brass/20 bg-carbon shadow-2xl">
             <header className="flex items-center justify-between border-b border-brass/15 p-4">
@@ -3746,12 +3793,27 @@ export default function ChatWorkspace({ adminMode = false }) {
       {showStoryComposer && (
         <div className="fixed inset-0 z-[190] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="new-story-title">
           <form onSubmit={createStory} className="w-full max-w-md overflow-hidden rounded-2xl border border-brass/20 bg-carbon shadow-2xl">
-            <header className="flex items-center justify-between border-b border-brass/15 p-4"><div><h3 id="new-story-title" className="font-display text-2xl text-ivory">New status</h3><p className="text-xs text-ivory/40">Automatically disappears after 24 hours.</p></div><button type="button" onClick={() => setShowStoryComposer(false)} className="flex h-10 w-10 items-center justify-center" aria-label="Close"><X size={18} /></button></header>
+            <header className="flex items-center justify-between border-b border-brass/15 p-4"><div><h3 id="new-story-title" className="font-display text-2xl text-ivory">New status</h3><p className="text-xs text-ivory/40">Automatically disappears after 24 hours.</p></div><button type="button" disabled={storyBusy} onClick={() => { clearStoryFile(); setShowStoryComposer(false); }} className="flex h-10 w-10 items-center justify-center disabled:opacity-30" aria-label="Close"><X size={18} /></button></header>
             <div className="space-y-4 p-4">
               <textarea value={storyBody} onChange={event => setStoryBody(event.target.value)} maxLength={1200} rows={5} placeholder="Share an update…" className="w-full resize-none rounded-xl border border-brass/15 bg-obsidian p-3 text-sm text-ivory outline-none" />
-              <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-brass/30 text-xs text-brass"><Image size={16} />{storyFile ? storyFile.name : 'Add photo or video'}<input type="file" accept="image/*,video/*" className="hidden" onChange={event => setStoryFile(event.target.files?.[0] || null)} /></label>
+              {storyPreviewUrl && (
+                <div className="relative overflow-hidden rounded-xl border border-brass/20 bg-black">
+                  {storyFile?.type.startsWith('video/')
+                    ? <video src={storyPreviewUrl} controls playsInline className="max-h-64 w-full object-contain" />
+                    : <img src={storyPreviewUrl} alt="Status preview" className="max-h-64 w-full object-contain" />}
+                  {!storyBusy && <button type="button" onClick={clearStoryFile} aria-label="Remove status media" className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-black/80 text-white"><X size={16} /></button>}
+                  <p className="truncate border-t border-white/10 px-3 py-2 text-xs text-white/60">{storyFile?.name}</p>
+                </div>
+              )}
+              <label className={`flex min-h-11 items-center justify-center gap-2 rounded-xl border border-dashed border-brass/30 text-xs text-brass ${storyBusy ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}><Image size={16} />{storyFile ? 'Change photo or video' : 'Add photo or video'}<input disabled={storyBusy} type="file" accept="image/*,video/*" className="hidden" onChange={selectStoryFile} /></label>
+              {storyBusy && (
+                <div aria-live="polite">
+                  <div className="mb-1 flex items-center justify-between text-[11px] text-ivory/55"><span>{storyUploadStage === 'publishing' ? 'Publishing status…' : 'Uploading media…'}</span><b className="text-brass">{storyUploadProgress}%</b></div>
+                  <div className="h-2 overflow-hidden rounded-full bg-white/10"><span className="block h-full rounded-full bg-brass transition-[width] duration-200" style={{ width: `${storyUploadProgress}%` }} /></div>
+                </div>
+              )}
             </div>
-            <footer className="flex justify-end border-t border-brass/15 p-4"><button disabled={storyBusy || (!storyBody.trim() && !storyFile)} className="min-h-11 rounded-full bg-brass px-6 text-xs font-semibold text-obsidian disabled:opacity-40">{storyBusy ? 'Sharing…' : 'Share status'}</button></footer>
+            <footer className="flex justify-end border-t border-brass/15 p-4"><button disabled={storyBusy || (!storyBody.trim() && !storyFile)} className="flex min-h-11 min-w-36 items-center justify-center gap-2 rounded-full bg-brass px-6 text-xs font-semibold text-obsidian disabled:opacity-40">{storyBusy && <Loader2 size={15} className="animate-spin" />}{storyBusy ? storyUploadStage === 'publishing' ? 'Publishing…' : `Uploading ${storyUploadProgress}%` : 'Share status'}</button></footer>
           </form>
         </div>
       )}

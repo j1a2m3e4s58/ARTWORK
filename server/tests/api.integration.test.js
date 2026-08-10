@@ -327,18 +327,32 @@ test('API keeps public reads open while blocking unverified customer mutations',
       method: 'POST', headers: markReadHeaders,
       body: JSON.stringify({ title: 'Collector Circle', participantIds: [adminUserId] }),
     });
-    assert.equal(customerGroupResponse.status, 201, 'Verified customers should be able to create groups.');
-    const customerGroup = await customerGroupResponse.json();
-    assert.equal(customerGroup.roles[collectorDirectoryEntry.id], 'owner');
-    assert.equal(customerGroup.roles[adminUserId], 'member');
-    const promoteResponse = await fetch(`${baseUrl}/api/chat/groups/${customerGroup.id}`, {
-      method: 'PATCH', headers: markReadHeaders, body: JSON.stringify({ userId: adminUserId, role: 'admin' }),
+    assert.equal(customerGroupResponse.status, 403, 'Customers must not be able to create groups through the API.');
+    const adminGroupResponse = await fetch(`${baseUrl}/api/chat/groups`, {
+      method: 'POST', headers: securedHeaders,
+      body: JSON.stringify({ title: 'Collector Circle', participantIds: [collectorDirectoryEntry.id] }),
+    });
+    assert.equal(adminGroupResponse.status, 201, 'Administrators should be able to create groups.');
+    const adminGroup = await adminGroupResponse.json();
+    assert.equal(adminGroup.roles[adminUserId], 'owner');
+    assert.equal(adminGroup.roles[collectorDirectoryEntry.id], 'member');
+    const promoteResponse = await fetch(`${baseUrl}/api/chat/groups/${adminGroup.id}`, {
+      method: 'PATCH', headers: securedHeaders, body: JSON.stringify({ userId: collectorDirectoryEntry.id, role: 'admin' }),
     });
     assert.equal(promoteResponse.status, 200);
-    assert.equal((await promoteResponse.json()).roles[adminUserId], 'admin');
+    assert.equal((await promoteResponse.json()).roles[collectorDirectoryEntry.id], 'admin');
 
+    const storyMediaUpload = new FormData();
+    storyMediaUpload.append('purpose', 'chat-story');
+    storyMediaUpload.append('file', new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')], { type: 'image/png' }), 'status.png');
+    const storyMediaResponse = await fetch(`${baseUrl}/api/upload`, {
+      method: 'POST', headers: { Cookie: cookieHeader, 'X-CSRF-Token': csrf }, body: storyMediaUpload,
+    });
+    assert.equal(storyMediaResponse.status, 201, 'Verified customers should be able to upload status media.');
+    const storyMedia = await storyMediaResponse.json();
+    assert.equal(storyMedia.media.purpose, 'chat-story');
     const storyResponse = await fetch(`${baseUrl}/api/chat/stories`, {
-      method: 'POST', headers: markReadHeaders, body: JSON.stringify({ body: 'A 24-hour studio status.' }),
+      method: 'POST', headers: markReadHeaders, body: JSON.stringify({ body: 'A 24-hour studio status.', mediaUrl: storyMedia.file_url, mediaType: storyMedia.media.mime }),
     });
     assert.equal(storyResponse.status, 201);
     const story = await storyResponse.json();
