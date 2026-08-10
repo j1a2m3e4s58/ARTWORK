@@ -8,10 +8,12 @@ Do not advertise the system as independently audited end-to-end encryption until
 
 Run `npm run chat:configure-local` once to generate VAPID credentials into the ignored local `.env` file without printing secret values. Copy those three `VAPID_*` values into the production service's secret environment settings; do not commit `.env`.
 
-For reliable production calls, configure `TURN_URLS` and either:
+For reliable production calls with self-hosted coturn or a conventional provider, configure `TURN_URLS` and either:
 
 - `TURN_SHARED_SECRET` for one-hour coturn-compatible credentials; or
 - `TURN_USERNAME` and `TURN_CREDENTIAL` for provider-issued static credentials.
+
+For Cloudflare Realtime TURN, configure `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_API_TOKEN` instead of the `TURN_*` values. The backend keeps these long-term secrets private, requests a separate 24-hour ICE credential for each signed-in user, caches it for 23 hours, and returns only the short-lived ICE configuration to the browser.
 
 `STUN_URLS` alone permits direct WebRTC connections but will fail on some carrier networks, symmetric NATs, and restrictive firewalls. `/api/chat/rtc-config` reports whether TURN is active without exposing the shared secret.
 

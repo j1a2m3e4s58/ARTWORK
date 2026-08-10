@@ -2574,7 +2574,35 @@ const callView = (call, viewerId) => {
     peer: peer ? chatUser(peer) : null,
   };
 };
-const rtcConfiguration = userId => {
+const cloudflareTurnCache = new Map();
+const rtcConfiguration = async userId => {
+  if (process.env.CLOUDFLARE_TURN_KEY_ID && process.env.CLOUDFLARE_TURN_API_TOKEN) {
+    const cached = cloudflareTurnCache.get(userId);
+    if (cached?.expiresAt > Date.now()) return cached.configuration;
+    const response = await fetch(
+      `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(process.env.CLOUDFLARE_TURN_KEY_ID)}/credentials/generate-ice-servers`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.CLOUDFLARE_TURN_API_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ttl: 86_400,
+          customIdentifier: createHmac('sha256', process.env.JWT_SECRET).update(userId).digest('hex').slice(0, 32),
+        }),
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    if (!response.ok) throw new Error(`Cloudflare TURN credential service returned HTTP ${response.status}.`);
+    const payload = await response.json();
+    if (!Array.isArray(payload.iceServers) || !payload.iceServers.some(server => server.username && server.credential)) {
+      throw new Error('Cloudflare TURN credential service returned an invalid ICE configuration.');
+    }
+    const configuration = { iceServers: payload.iceServers, turnConfigured: true, credentialExpiresIn: 86_400, provider: 'cloudflare' };
+    cloudflareTurnCache.set(userId, { configuration, expiresAt: Date.now() + 82_800_000 });
+    return configuration;
+  }
   const stunUrls = String(process.env.STUN_URLS || 'stun:stun.l.google.com:19302').split(',').map(value => value.trim()).filter(Boolean);
   const turnUrls = String(process.env.TURN_URLS || '').split(',').map(value => value.trim()).filter(Boolean);
   const iceServers = stunUrls.length ? [{ urls: stunUrls }] : [];
@@ -2590,9 +2618,14 @@ const rtcConfiguration = userId => {
   return { iceServers, turnConfigured: turnUrls.length > 0 && iceServers.length > 1, credentialExpiresIn: process.env.TURN_SHARED_SECRET ? 3600 : null };
 };
 
-app.get('/api/chat/rtc-config', requireVerifiedUser, (_req, res) => {
+app.get('/api/chat/rtc-config', requireVerifiedUser, async (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.json(rtcConfiguration(_req.user.id));
+  try {
+    res.json(await rtcConfiguration(_req.user.id));
+  } catch (error) {
+    reportOperationalError('turn_credentials_failed', error, { userId: _req.user.id });
+    res.status(503).json({ error: 'Secure call relay credentials are temporarily unavailable.' });
+  }
 });
 
 app.get('/api/chat/calls', requireVerifiedUser, async (req, res) => {
@@ -2741,7 +2774,10 @@ app.get('/api/chat/capabilities', requireVerifiedUser, (_req, res) => {
     offlineRecovery: true,
     voiceCalls: true,
     videoCalls: true,
-    turnConfigured: Boolean(process.env.TURN_URLS && (process.env.TURN_SHARED_SECRET || (process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL))),
+    turnConfigured: Boolean(
+      (process.env.CLOUDFLARE_TURN_KEY_ID && process.env.CLOUDFLARE_TURN_API_TOKEN)
+      || (process.env.TURN_URLS && (process.env.TURN_SHARED_SECRET || (process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL))),
+    ),
     incomingCallNotifications: pushConfigured,
     stories: true,
     groups: true,

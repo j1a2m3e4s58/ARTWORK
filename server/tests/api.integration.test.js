@@ -55,6 +55,8 @@ test('API keeps public reads open while blocking unverified customer mutations',
       VAPID_PUBLIC_KEY: '',
       VAPID_PRIVATE_KEY: '',
       VAPID_SUBJECT: '',
+      CLOUDFLARE_TURN_KEY_ID: '',
+      CLOUDFLARE_TURN_API_TOKEN: '',
     },
     stdio: 'ignore',
   });

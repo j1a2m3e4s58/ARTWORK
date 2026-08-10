@@ -10,7 +10,7 @@ const required = [
 ];
 if (production) required.push(
   'PAYSTACK_PUBLIC_KEY', 'PAYSTACK_SECRET_KEY', 'PAYSTACK_WEBHOOK_SECRET',
-  'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT', 'TURN_URLS',
+  'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT',
 );
 const missing = required.filter(name => !process.env[name]);
 const findings = [];
@@ -20,8 +20,10 @@ if (process.env.STORAGE_PROVIDER !== 'cloudinary') findings.push({ check: 'stora
 if (production && (!process.env.PAYSTACK_SECRET_KEY?.startsWith('sk_live_') || !process.env.PAYSTACK_PUBLIC_KEY?.startsWith('pk_live_'))) {
   findings.push({ check: 'payments', ok: false, detail: 'Production review requires Paystack live keys.' });
 }
-if (production && !process.env.TURN_SHARED_SECRET && !(process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL)) {
-  findings.push({ check: 'turn-auth', ok: false, detail: 'Configure TURN_SHARED_SECRET or both TURN_USERNAME and TURN_CREDENTIAL.' });
+const cloudflareTurnConfigured = process.env.CLOUDFLARE_TURN_KEY_ID && process.env.CLOUDFLARE_TURN_API_TOKEN;
+const standardTurnConfigured = process.env.TURN_URLS && (process.env.TURN_SHARED_SECRET || (process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL));
+if (production && !cloudflareTurnConfigured && !standardTurnConfigured) {
+  findings.push({ check: 'turn-auth', ok: false, detail: 'Configure both Cloudflare TURN values, or TURN_URLS with a supported credential method.' });
 }
 
 if (process.env.STAGING_URL) {
