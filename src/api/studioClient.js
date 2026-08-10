@@ -212,15 +212,21 @@ export const studioClient = {
     directory: () => request('/api/chat/directory'),
     groupDirectory: () => request('/api/chat/group-directory'),
     start: userId => request('/api/chat/conversations', { method: 'POST', body: JSON.stringify({ userId }) }),
-    messages: (id, { query = '', before = '', limit = 60 } = {}) => {
+    messages: (id, { query = '', before = '', limit = 60, senderId = '', attachmentType = '', from = '', to = '' } = {}) => {
       const params = new URLSearchParams();
       if (query) params.set('q', query);
-      else {
+      if (senderId) params.set('senderId', senderId);
+      if (attachmentType) params.set('attachmentType', attachmentType);
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+      if (!query && !senderId && !attachmentType && !from && !to) {
         params.set('limit', String(limit));
         if (before) params.set('before', before);
       }
       return request(`/api/chat/conversations/${encodeURIComponent(id)}/messages?${params}`);
     },
+    resources: id => request(`/api/chat/conversations/${encodeURIComponent(id)}/resources`),
+    exportConversation: id => request(`/api/chat/conversations/${encodeURIComponent(id)}/export`),
     send: (id, data) => request(`/api/chat/conversations/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify(data) }),
     sendBatch: (id, messages) => request(`/api/chat/conversations/${encodeURIComponent(id)}/messages/batch`, { method: 'POST', body: JSON.stringify({ messages }) }),
     attachmentUrl: (messageId, download = false) => `/api/chat/messages/${encodeURIComponent(messageId)}/attachment${download ? '?download=1' : ''}`,

@@ -72,6 +72,16 @@ import {
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const STICKERS = ['🎨', '✨', '🔥', '👏', '💯', '🥳', '😍', '🙌', '🫶', '🌟', '✅', '😂'];
 const MAX_FILE_BYTES = 75 * 1024 * 1024;
+const urlsInMessage = value => [...new Set(String(value || '').match(/https?:\/\/[^\s<>()]+/gi) || [])];
+const messageAttachmentType = message => String(message?.decryptedAttachment?.type || message?.attachmentType || '').toLowerCase();
+const messageMatchesAttachmentFilter = (message, filter) => {
+  if (!filter || filter === 'any') return true;
+  const type = messageAttachmentType(message);
+  if (filter === 'media') return /^(image|video|audio)\//.test(type);
+  if (filter === 'document') return Boolean(message.attachmentUrl) && !/^(image|video|audio)\//.test(type);
+  if (filter === 'link') return urlsInMessage(message.body).length > 0;
+  return true;
+};
 const inferMimeType = (file) => {
   // A WebM container can hold either audio or video. Recorded voice notes use
   // an explicit filename prefix so they remain audio even when an upload
@@ -1125,6 +1135,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [replyingTo, setReplyingTo] = useState(null);
   const [query, setQuery] = useState('');
   const [messageQuery, setMessageQuery] = useState('');
+  const [messageSearchFilters, setMessageSearchFilters] = useState({ senderId: '', attachmentType: '', from: '', to: '' });
   const [searchingMessages, setSearchingMessages] = useState(false);
   const [searchBusy, setSearchBusy] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -1181,6 +1192,11 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [savedItems, setSavedItems] = useState({ starred: [], media: [] });
   const [savedTab, setSavedTab] = useState('starred');
   const [savedBusy, setSavedBusy] = useState(false);
+  const [showChatBrowser, setShowChatBrowser] = useState(false);
+  const [chatBrowserTab, setChatBrowserTab] = useState('media');
+  const [chatResources, setChatResources] = useState([]);
+  const [chatBrowserBusy, setChatBrowserBusy] = useState(false);
+  const [securityNotice, setSecurityNotice] = useState('');
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [stories, setStories] = useState([]);
   const [activeStory, setActiveStory] = useState(null);
@@ -1368,7 +1384,12 @@ export default function ChatWorkspace({ adminMode = false }) {
     const shouldFollowLatest = options.scrollToBottom || distanceFromBottom < 120;
     let response;
     try {
-      response = await studioClient.chat.messages(id, { query: search, before: options.before || '', limit: 60 });
+      response = await studioClient.chat.messages(id, {
+        query: search,
+        before: options.before || '',
+        limit: 60,
+        ...(options.filters || {}),
+      });
     } catch (loadError) {
       const cached = !search ? await readCachedMessages(user.id, id).catch(() => null) : null;
       if (!cached?.length) throw loadError;
@@ -1376,8 +1397,13 @@ export default function ChatWorkspace({ adminMode = false }) {
       setConnectionState('offline');
     }
     const encryptedRows = Array.isArray(response) ? response : response.items || [];
-    const rows = await decryptMessageRows(encryptedRows, user.id);
-    if (!search) cacheMessages(user.id, id, encryptedRows).catch(() => {});
+    let rows = await decryptMessageRows(encryptedRows, user.id);
+    if (search) {
+      const normalized = search.toLowerCase();
+      rows = rows.filter(message => `${message.body || ''} ${message.decryptedAttachment?.name || message.attachmentName || ''}`.toLowerCase().includes(normalized));
+    }
+    if (options.filters?.attachmentType) rows = rows.filter(message => messageMatchesAttachmentFilter(message, options.filters.attachmentType));
+    if (!search && !options.filters) cacheMessages(user.id, id, encryptedRows).catch(() => {});
     setNextCursor(Array.isArray(response) ? null : response.nextCursor || null);
     setMessages((current) =>
       options.mergeLatest
@@ -1908,6 +1934,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     setUploadFailed(false);
     setUploadProgress(Object.fromEntries(outgoingAttachments.map((item) => [item.id, 1])));
     setError('');
+    let usedVoiceCompatibility = false;
     try {
       if (!outgoingAttachments.length) {
         const shouldEncrypt = active?.type !== 'announcement';
@@ -1935,14 +1962,23 @@ export default function ChatWorkspace({ adminMode = false }) {
           const originalFile = item.file.type === originalType
             ? item.file
             : new File([item.file], item.file.name, { type: originalType, lastModified: item.file.lastModified });
-          const encrypted = shouldEncrypt
-            ? await encryptChatAttachment(studioClient, {
+          let encrypted = null;
+          let deliverySecurity = shouldEncrypt ? 'end-to-end-encrypted' : 'standard';
+          try {
+            encrypted = shouldEncrypt
+              ? await encryptChatAttachment(studioClient, {
                 file: originalFile,
                 body: index === 0 ? outgoingText : '',
                 participantIds: active?.participantIds || [],
                 userId: user.id,
               })
-            : null;
+              : null;
+          } catch (encryptionError) {
+            const recipientHasNoDevice = /not enabled encrypted messaging|no verified recipient devices/i.test(String(encryptionError.message || ''));
+            if (!isVoiceAttachment({ name: originalFile.name, type: originalType }) || !recipientHasNoDevice) throw encryptionError;
+            deliverySecurity = 'account-protected';
+            usedVoiceCompatibility = true;
+          }
           const uploadFile = encrypted?.file || originalFile;
           const uploaded = await studioClient.integrations.Core.UploadFileProgress({
             file: uploadFile,
@@ -1959,9 +1995,11 @@ export default function ChatWorkspace({ adminMode = false }) {
             body: shouldEncrypt ? '' : index === 0 ? outgoingText : '',
             ciphertext: encrypted?.ciphertext || '',
             encryption: encrypted ? { algorithm: 'ECDH-P256+AES-256-GCM', version: 1, attachment: 'AES-256-GCM' } : null,
+            deliverySecurity,
             attachmentUrl: uploaded.file_url,
-            // Original filenames, MIME types and file keys stay inside the
-            // per-device encrypted envelope. The server only receives opaque bytes.
+            // Encrypted files keep their metadata inside the device envelope.
+            // A voice-only compatibility fallback keeps the original metadata
+            // and is explicitly marked as account-protected, never as E2EE.
             attachmentName: encrypted ? 'encrypted-attachment.bin' : item.file.name,
             attachmentType: encrypted ? 'application/vnd.reigns.encrypted' : uploaded.media?.mime || originalType,
             attachmentBytes: uploadFile.size,
@@ -1972,6 +2010,7 @@ export default function ChatWorkspace({ adminMode = false }) {
           });
         }
         await studioClient.chat.sendBatch(activeId, messages);
+        if (usedVoiceCompatibility) setSecurityNotice('Voice note sent with protected account delivery because the recipient has no encrypted device yet. It is not labelled end-to-end encrypted.');
       }
       setText('');
       outgoingAttachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
@@ -2255,11 +2294,53 @@ export default function ChatWorkspace({ adminMode = false }) {
     event?.preventDefault();
     setSearchBusy(true);
     try {
-      await loadMessages(activeId, messageQuery, { scrollToTop: true });
+      await loadMessages(activeId, messageQuery, { scrollToTop: true, filters: messageSearchFilters });
     } catch (searchError) {
       setError(searchError.message);
     } finally {
       setSearchBusy(false);
+    }
+  };
+  const openChatBrowser = async (tab = 'media') => {
+    if (!activeId) return;
+    setShowConversationMenu(false);
+    setChatBrowserTab(tab);
+    setShowChatBrowser(true);
+    setChatBrowserBusy(true);
+    setError('');
+    try {
+      setChatResources(await decryptMessageRows(await studioClient.chat.resources(activeId), user.id));
+    } catch (browserError) {
+      setError(browserError.message);
+      setShowChatBrowser(false);
+    } finally {
+      setChatBrowserBusy(false);
+    }
+  };
+  const exportConversation = async () => {
+    if (!activeId) return;
+    setShowConversationMenu(false);
+    setBusy(true);
+    setError('');
+    try {
+      const payload = await studioClient.chat.exportConversation(activeId);
+      payload.messages = await decryptMessageRows(payload.messages || [], user.id);
+      payload.messages = payload.messages.map(({ ciphertext, encryption, decryptedAttachment, ...message }) => ({
+        ...message,
+        attachment: decryptedAttachment || (message.attachmentUrl ? { name: message.attachmentName, type: message.attachmentType, bytes: message.attachmentBytes } : null),
+        encryptionStatus: ciphertext ? (message.encryptionError ? 'unavailable-on-this-device' : 'decrypted-for-export') : (message.deliverySecurity || 'standard'),
+      }));
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `reigns-chat-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (exportError) {
+      setError(exportError.message);
+    } finally {
+      setBusy(false);
     }
   };
   const loadOlderMessages = async () => {
@@ -2908,6 +2989,15 @@ export default function ChatWorkspace({ adminMode = false }) {
                           </button>
                         </>
                       )}
+                      <button type="button" onClick={() => openChatBrowser('media')} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
+                        <Images size={15} /> Media, links and documents
+                      </button>
+                      <button type="button" onClick={exportConversation} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
+                        <Download size={15} /> Export this chat
+                      </button>
+                      <Link to="/account#security" onClick={() => setShowConversationMenu(false)} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
+                        <Lock size={15} /> Devices and account data
+                      </Link>
                       <button
                         type="button"
                         onClick={() => updateConversation({ muted: !active.muted })}
@@ -2976,8 +3066,8 @@ export default function ChatWorkspace({ adminMode = false }) {
                 </div>
               </header>
               {searchingMessages && (
-                <form onSubmit={runMessageSearch} className="flex gap-2 border-b border-brass/15 bg-carbon p-3">
-                  <label className="flex min-w-0 flex-1 items-center gap-2 border border-brass/15 bg-obsidian px-3">
+                <form onSubmit={runMessageSearch} className="grid gap-2 border-b border-brass/15 bg-carbon p-3 sm:grid-cols-2 lg:grid-cols-[minmax(12rem,1fr)_10rem_9rem_9rem_9rem_auto_auto]">
+                  <label className="flex min-w-0 items-center gap-2 border border-brass/15 bg-obsidian px-3">
                     <Search size={14} className="text-brass" />
                     <input
                       autoFocus
@@ -2987,6 +3077,15 @@ export default function ChatWorkspace({ adminMode = false }) {
                       className="h-10 min-w-0 flex-1 bg-transparent text-sm text-ivory outline-none"
                     />
                   </label>
+                  <select value={messageSearchFilters.senderId} onChange={event => setMessageSearchFilters(value => ({ ...value, senderId: event.target.value }))} className="h-10 border border-brass/15 bg-obsidian px-2 text-xs text-ivory outline-none">
+                    <option value="">Any sender</option>
+                    {(active.participants || []).map(person => <option key={person.id} value={person.id}>{person.name || person.full_name || person.email}</option>)}
+                  </select>
+                  <select value={messageSearchFilters.attachmentType} onChange={event => setMessageSearchFilters(value => ({ ...value, attachmentType: event.target.value }))} className="h-10 border border-brass/15 bg-obsidian px-2 text-xs text-ivory outline-none">
+                    <option value="">Any type</option><option value="media">Photo, video or audio</option><option value="document">Document</option><option value="link">Link</option>
+                  </select>
+                  <input type="date" aria-label="From date" value={messageSearchFilters.from} onChange={event => setMessageSearchFilters(value => ({ ...value, from: event.target.value }))} className="h-10 border border-brass/15 bg-obsidian px-2 text-xs text-ivory [color-scheme:dark]" />
+                  <input type="date" aria-label="To date" value={messageSearchFilters.to} onChange={event => setMessageSearchFilters(value => ({ ...value, to: event.target.value }))} className="h-10 border border-brass/15 bg-obsidian px-2 text-xs text-ivory [color-scheme:dark]" />
                   <button disabled={searchBusy} className="h-10 border border-brass/20 px-3 text-xs text-brass disabled:opacity-40">
                     {searchBusy ? 'Searching…' : 'Search'}
                   </button>
@@ -2994,6 +3093,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     type="button"
                     onClick={() => {
                       setMessageQuery('');
+                      setMessageSearchFilters({ senderId: '', attachmentType: '', from: '', to: '' });
                       setSearchingMessages(false);
                       loadMessages(activeId, '', { scrollToBottom: true });
                     }}
@@ -3007,6 +3107,11 @@ export default function ChatWorkspace({ adminMode = false }) {
                 <p role="alert" className="border-b border-red-400/20 bg-red-400/5 p-3 text-xs text-red-300">
                   {error}
                 </p>
+              )}
+              {securityNotice && (
+                <div className="flex items-center justify-between gap-3 border-b border-amber-400/20 bg-amber-400/5 p-3 text-xs text-amber-100">
+                  <span>{securityNotice}</span><button type="button" onClick={() => setSecurityNotice('')} className="shrink-0 text-amber-200"><X size={14} /></button>
+                </div>
               )}
               {active.blocked && (
                 <p className="border-b border-amber-400/20 bg-amber-400/5 p-3 text-center text-xs text-amber-200">
@@ -3231,6 +3336,9 @@ export default function ChatWorkspace({ adminMode = false }) {
                             >
                               {transcribingId === message.id ? 'Requesting transcription…' : 'Transcribe voice note'}
                             </button>
+                          )}
+                          {voiceAttachment && message.deliverySecurity === 'account-protected' && (
+                            <p className="mt-1 flex items-center gap-1 text-[9px] uppercase tracking-wider text-amber-200/70" title="The recipient has not linked an encrypted messaging device."><Lock size={10} /> Protected delivery · not end-to-end encrypted</p>
                           )}
                           {message.transcription?.text && <p className="mt-2 border-l-2 border-brass/30 px-3 text-xs leading-5 text-ivory/55">{message.transcription.text}</p>}
                           {message.expiresAt && (
@@ -3673,6 +3781,36 @@ export default function ChatWorkspace({ adminMode = false }) {
           <section className="w-full max-w-md rounded-t-3xl border border-brass/20 bg-carbon p-4 shadow-2xl sm:rounded-2xl">
             <header className="mb-3 flex items-center justify-between"><div><p className="text-[10px] uppercase tracking-widest text-brass">Stickers</p><h3 className="font-display text-2xl text-ivory">Choose a reaction</h3></div><button type="button" onClick={() => setShowStickerPicker(false)} className="flex h-10 w-10 items-center justify-center"><X size={18} /></button></header>
             <div className="grid grid-cols-4 gap-2">{STICKERS.map(sticker => <button type="button" key={sticker} disabled={busy} onClick={() => sendSticker(sticker)} className="chat-sticker-pop flex aspect-square items-center justify-center rounded-2xl bg-obsidian text-5xl transition-colors hover:bg-brass/10 disabled:opacity-40">{sticker}</button>)}</div>
+          </section>
+        </div>, document.body,
+      )}
+      {showChatBrowser && createPortal(
+        <div className="fixed inset-0 z-[225] flex items-center justify-center bg-black/85 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="chat-browser-title" onMouseDown={event => { if (event.target === event.currentTarget) setShowChatBrowser(false); }}>
+          <section className="flex max-h-[88dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-brass/20 bg-carbon shadow-2xl">
+            <header className="flex items-center justify-between border-b border-brass/15 p-4"><div><p className="text-[10px] uppercase tracking-widest text-brass">This conversation only</p><h3 id="chat-browser-title" className="font-display text-2xl text-ivory">Media, links and documents</h3></div><button type="button" onClick={() => setShowChatBrowser(false)} className="flex h-10 w-10 items-center justify-center"><X size={18} /></button></header>
+            <div className="grid grid-cols-3 border-b border-brass/15 text-xs font-medium">
+              {['media', 'links', 'documents'].map(tab => <button type="button" key={tab} onClick={() => setChatBrowserTab(tab)} className={`min-h-11 capitalize ${chatBrowserTab === tab ? 'bg-brass text-obsidian' : 'text-brass'}`}>{tab}</button>)}
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              {chatBrowserBusy && <div className="flex min-h-40 items-center justify-center"><Loader2 className="animate-spin text-brass" /></div>}
+              {!chatBrowserBusy && (() => {
+                const filtered = chatResources.filter(message => {
+                  const type = messageAttachmentType(message);
+                  if (chatBrowserTab === 'media') return message.attachmentUrl && /^(image|video|audio)\//.test(type);
+                  if (chatBrowserTab === 'documents') return message.attachmentUrl && !/^(image|video|audio)\//.test(type);
+                  return urlsInMessage(message.body).length > 0;
+                });
+                if (!filtered.length) return <p className="py-14 text-center text-sm text-ivory/40">No {chatBrowserTab} found in this conversation.</p>;
+                return <div className={chatBrowserTab === 'media' ? 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3' : 'space-y-3'}>{filtered.map(message => {
+                  const attachment = message.attachmentUrl ? {
+                    url: studioClient.chat.attachmentUrl(message.id), previewUrl: studioClient.chat.attachmentUrl(message.id), downloadUrl: studioClient.chat.attachmentUrl(message.id, true),
+                    name: message.decryptedAttachment?.name || message.attachmentName, type: message.decryptedAttachment?.type || message.attachmentType,
+                    bytes: message.decryptedAttachment?.bytes || message.attachmentBytes, encryptedMetadata: message.decryptedAttachment || null, messageId: message.id,
+                  } : null;
+                  return <article key={message.id} className="rounded-xl border border-brass/15 bg-obsidian p-3"><div className="mb-2 flex items-center justify-between gap-2 text-[10px] text-ivory/40"><span className="truncate">{message.sender?.name || 'Participant'}</span><span>{new Date(message.created_date).toLocaleDateString()}</span></div>{chatBrowserTab === 'links' ? <div className="space-y-2">{urlsInMessage(message.body).map(url => <a key={url} href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 break-all text-sm text-brass hover:underline"><ExternalLink size={13} className="shrink-0" />{url}</a>)}</div> : <AttachmentPreview attachment={attachment} onOpen={setPreview} />}</article>;
+                })}</div>;
+              })()}
+            </div>
           </section>
         </div>, document.body,
       )}

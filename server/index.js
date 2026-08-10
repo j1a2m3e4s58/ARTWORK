@@ -2284,6 +2284,9 @@ const messageExtensions = (entry, replyTo) => ({
   sticker: cleanSticker(entry?.sticker),
   ciphertext: String(entry?.ciphertext || '').slice(0, 50_000),
   encryption: entry?.ciphertext ? { algorithm: String(entry?.encryption?.algorithm || 'X25519-AES-GCM').slice(0, 40), keyId: String(entry?.encryption?.keyId || '').slice(0, 120), version: 1 } : null,
+  deliverySecurity: entry?.ciphertext
+    ? 'end-to-end-encrypted'
+    : (entry?.deliverySecurity === 'account-protected' && String(entry?.attachmentType || '').startsWith('audio/') ? 'account-protected' : 'standard'),
 });
 const chatPushPayload = (message, sender, conversationId, batchCount = 1) => {
   const type = String(message?.attachmentType || '').toLowerCase();
@@ -2309,16 +2312,65 @@ app.get('/api/chat/conversations/:id/messages', requireVerifiedUser, (req, res) 
   const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
   if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
   const query = String(req.query.q || '').trim().toLowerCase();
+  const senderId = String(req.query.senderId || '').trim();
+  const attachmentType = String(req.query.attachmentType || '').trim().toLowerCase();
+  const from = req.query.from ? new Date(String(req.query.from)).getTime() : Number.NaN;
+  const to = req.query.to ? new Date(String(req.query.to)).getTime() : Number.NaN;
+  if (senderId && !conversation.participantIds?.includes(senderId)) return res.status(400).json({ error: 'Choose a sender from this conversation.' });
   const allRows = db.data.ChatMessage
-    .filter(item => item.conversationId === conversation.id && chatMessageVisibleTo(item, req.user)
-      && (!query || `${item.body || ''} ${item.attachmentName || ''}`.toLowerCase().includes(query)))
+    .filter(item => {
+      if (item.conversationId !== conversation.id || !chatMessageVisibleTo(item, req.user)) return false;
+      const created = new Date(item.created_date).getTime();
+      if (senderId && item.senderId !== senderId) return false;
+      if (Number.isFinite(from) && created < from) return false;
+      if (Number.isFinite(to) && created > to + 86_399_999) return false;
+      const plainType = String(item.attachmentType || '').toLowerCase();
+      const encryptedCandidate = Boolean(item.ciphertext);
+      if (attachmentType && attachmentType !== 'any' && !encryptedCandidate) {
+        if (attachmentType === 'media' && !/^(image|video|audio)\//.test(plainType)) return false;
+        if (attachmentType === 'document' && (!plainType || /^(image|video|audio)\//.test(plainType))) return false;
+        if (attachmentType === 'link' && !(item.body || '').match(/https?:\/\/[^\s]+/i)) return false;
+      }
+      return !query || encryptedCandidate || `${item.body || ''} ${item.attachmentName || ''}`.toLowerCase().includes(query);
+    })
     .sort((a, b) => String(`${a.created_date}|${a.id}`).localeCompare(String(`${b.created_date}|${b.id}`)));
   const requestedLimit = Math.min(100, Math.max(1, Number(req.query.limit || 0)));
-  if (!req.query.limit || query) return res.json(allRows);
+  if (!req.query.limit || query || senderId || attachmentType || req.query.from || req.query.to) return res.json(allRows.slice(-500));
   const before = String(req.query.before || '');
   const eligible = before ? allRows.filter(item => `${item.created_date}|${item.id}` < before) : allRows;
   const items = eligible.slice(-requestedLimit);
   res.json({ items, nextCursor: eligible.length > items.length && items[0] ? `${items[0].created_date}|${items[0].id}` : null });
+});
+
+app.get('/api/chat/conversations/:id/resources', requireVerifiedUser, (req, res) => {
+  const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
+  const rows = db.data.ChatMessage
+    .filter(item => item.conversationId === conversation.id && chatMessageVisibleTo(item, req.user)
+      && (item.attachmentUrl || item.body || item.ciphertext))
+    .sort((a, b) => String(b.created_date).localeCompare(String(a.created_date)))
+    .slice(0, 500)
+    .map(item => {
+      const sender = db.data.User.find(user => user.id === item.senderId);
+      return { ...item, sender: sender ? chatUser(sender) : null };
+    });
+  res.json(rows);
+});
+
+app.get('/api/chat/conversations/:id/export', requireVerifiedUser, (req, res) => {
+  const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
+  const participants = (conversation.participantIds || []).map(id => db.data.User.find(item => item.id === id)).filter(Boolean).map(chatUser);
+  const messages = db.data.ChatMessage
+    .filter(item => item.conversationId === conversation.id && chatMessageVisibleTo(item, req.user))
+    .sort((a, b) => String(a.created_date).localeCompare(String(b.created_date)))
+    .map(({ starredBy, savedMediaBy, viewedOnceBy, ...item }) => ({
+      ...item,
+      starred: starredBy?.includes(req.user.id) || false,
+      savedMedia: savedMediaBy?.includes(req.user.id) || false,
+      viewedOnce: viewedOnceBy?.includes(req.user.id) || false,
+    }));
+  res.json({ exportedAt: now(), conversation: { id: conversation.id, title: conversation.title || '', type: conversation.type }, participants, messages });
 });
 
 app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLimiter, async (req, res) => {
@@ -4154,12 +4206,13 @@ app.delete('/api/account', requireUser, mutationLimiter, async (req, res) => {
 
 app.get('/api/account/export', requireUser, (req, res) => {
   const owned = name => db.data[name].filter(item => item.userId === req.user.id && !item.deleted_at);
+  const conversationIds = new Set(db.data.ChatConversation.filter(item => item.participantIds?.includes(req.user.id) && !item.deleted_at).map(item => item.id));
   res.json({
     exportedAt: now(), profile: hiddenUserFields(req.user),
     messages: owned('Message'), commissions: owned('CommissionRequest'),
     orders: owned('Order'), notifications: owned('Notification'),
     conversations: db.data.ChatConversation.filter(item => item.participantIds?.includes(req.user.id) && !item.deleted_at),
-    chatMessages: db.data.ChatMessage.filter(item => item.senderId === req.user.id && !item.deleted_at),
+    chatMessages: db.data.ChatMessage.filter(item => conversationIds.has(item.conversationId) && chatMessageVisibleTo(item, req.user)),
     stories: owned('ChatStory'), devices: owned('ChatDevice').map(({ ipHash, ...item }) => item),
   });
 });

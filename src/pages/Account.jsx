@@ -352,7 +352,7 @@ export default function Account() {
                 <button className="mt-4 flex items-center gap-2 bg-brass px-4 py-2 text-sm text-obsidian"><Save size={15} /> Save profile</button>
               </form>
 
-              <form onSubmit={changePassword} className="border border-brass/10 bg-carbon p-5">
+              <form id="security" onSubmit={changePassword} className="scroll-mt-28 border border-brass/10 bg-carbon p-5">
                 <h2 className="font-display text-2xl">Security</h2>
                 <input type="password" autoComplete="current-password" placeholder="Current password" value={passwords.currentPassword}
                   onChange={event => setPasswords({ ...passwords, currentPassword: event.target.value })} className="mt-4 w-full border border-brass/15 bg-obsidian px-3 py-2 text-sm" required />

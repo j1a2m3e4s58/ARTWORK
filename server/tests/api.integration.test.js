@@ -276,6 +276,23 @@ test('API keeps public reads open while blocking unverified customer mutations',
     const searchResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages?q=upgraded`, { headers: { Cookie: adminCookieHeader } });
     assert.equal(searchResponse.status, 200);
     assert.equal((await searchResponse.json()).length, 1);
+    const filteredSearchResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages?senderId=${encodeURIComponent(chatMessage.senderId)}&attachmentType=media`, { headers: { Cookie: adminCookieHeader } });
+    assert.equal(filteredSearchResponse.status, 200);
+    assert.ok((await filteredSearchResponse.json()).some(item => item.id === batchMessages[0].id), 'Structured chat search should filter by sender and attachment type.');
+    const resourcesResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/resources`, { headers: { Cookie: cookieHeader } });
+    assert.equal(resourcesResponse.status, 200);
+    assert.ok((await resourcesResponse.json()).some(item => item.id === batchMessages[0].id), 'Conversation members should be able to browse chat attachments.');
+    const chatExportResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/export`, { headers: { Cookie: cookieHeader } });
+    assert.equal(chatExportResponse.status, 200);
+    assert.ok((await chatExportResponse.json()).messages.some(item => item.id === chatMessage.id), 'A member chat export should contain the messages visible to that member.');
+    const accountExportResponse = await fetch(`${baseUrl}/api/account/export`, { headers: { Cookie: cookieHeader } });
+    assert.equal(accountExportResponse.status, 200);
+    assert.ok((await accountExportResponse.json()).chatMessages.some(item => item.id === chatMessage.id), 'Account data export should include received messages in joined conversations.');
+    const compatibleVoiceResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, {
+      method: 'POST', headers: securedHeaders, body: JSON.stringify({ attachmentUrl: 'https://res.cloudinary.com/example/video/upload/voice-note.webm', attachmentName: 'voice-note.webm', attachmentType: 'audio/webm', deliverySecurity: 'account-protected' }),
+    });
+    assert.equal(compatibleVoiceResponse.status, 201);
+    assert.equal((await compatibleVoiceResponse.json()).deliverySecurity, 'account-protected', 'Voice notes may use the explicit non-E2EE compatibility delivery mode.');
 
     const muteResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/settings`, {
       method: 'PATCH', headers: securedHeaders, body: JSON.stringify({ muted: true, archived: true, blocked: true, favourite: true, pinned: true }),
