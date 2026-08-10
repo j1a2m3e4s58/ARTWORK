@@ -260,6 +260,50 @@ test('API keeps public reads open while blocking unverified customer mutations',
     assert.equal(capabilitiesResponse.status, 200);
     assert.equal((await capabilitiesResponse.json()).realtime, 'server-sent-events');
 
+    for (const deviceId of ['admin-browser-one', 'admin-browser-two']) {
+      const keyResponse = await fetch(`${baseUrl}/api/chat/keys`, {
+        method: 'PUT', headers: securedHeaders,
+        body: JSON.stringify({ deviceId, identityKey: `identity-${deviceId}`, signedPreKey: `prekey-${deviceId}`, signature: `signature-${deviceId}` }),
+      });
+      assert.equal(keyResponse.status, 200);
+    }
+    const keyBundleResponse = await fetch(`${baseUrl}/api/chat/keys/${encodeURIComponent(collectorDirectoryEntry.id)}`, { headers: { Cookie: adminCookieHeader } });
+    assert.equal(keyBundleResponse.status, 404, 'A user without a linked encryption device should not expose a bundle.');
+    const adminUserId = conversation.participantIds.find(id => id !== collectorDirectoryEntry.id);
+    const ownKeyBundleResponse = await fetch(`${baseUrl}/api/chat/keys/${encodeURIComponent(adminUserId)}`, { headers: { Cookie: adminCookieHeader } });
+    assert.equal(ownKeyBundleResponse.status, 200);
+    assert.equal((await ownKeyBundleResponse.json()).devices.length, 2, 'Every linked device should retain an independent encryption bundle.');
+
+    const rtcResponse = await fetch(`${baseUrl}/api/chat/rtc-config`, { headers: { Cookie: adminCookieHeader } });
+    assert.equal(rtcResponse.status, 200);
+    const rtc = await rtcResponse.json();
+    assert.ok(Array.isArray(rtc.iceServers));
+    assert.equal(rtc.turnConfigured, false);
+
+    const callResponse = await fetch(`${baseUrl}/api/chat/calls`, {
+      method: 'POST', headers: securedHeaders, body: JSON.stringify({ conversationId: conversation.id, kind: 'voice' }),
+    });
+    assert.equal(callResponse.status, 201);
+    const call = await callResponse.json();
+    assert.equal(call.status, 'ringing');
+    const customerCallList = await fetch(`${baseUrl}/api/chat/calls`, { headers: { Cookie: cookieHeader } }).then(response => response.json());
+    assert.equal(customerCallList[0].direction, 'incoming');
+    const acceptedCallResponse = await fetch(`${baseUrl}/api/chat/calls/${call.id}`, {
+      method: 'PATCH', headers: markReadHeaders, body: JSON.stringify({ action: 'accepted' }),
+    });
+    assert.equal(acceptedCallResponse.status, 200);
+    const signalResponse = await fetch(`${baseUrl}/api/chat/calls/${call.id}/signal`, {
+      method: 'POST', headers: securedHeaders, body: JSON.stringify({ signal: { type: 'candidate', candidate: { candidate: 'test' } } }),
+    });
+    assert.equal(signalResponse.status, 200);
+    assert.equal((await fetch(`${baseUrl}/api/chat/calls/${call.id}`, { method: 'PATCH', headers: securedHeaders, body: JSON.stringify({ action: 'ended' }) })).status, 200);
+
+    const syncResponse = await fetch(`${baseUrl}/api/chat/sync?since=1970-01-01T00:00:00.000Z`, { headers: { Cookie: cookieHeader } });
+    assert.equal(syncResponse.status, 200);
+    const synced = await syncResponse.json();
+    assert.ok(synced.conversations.some(item => item.id === conversation.id));
+    assert.ok(synced.messages.some(item => item.conversationId === conversation.id));
+
     const deleteResponse = await fetch(`${baseUrl}/api/chat/messages/${chatMessage.id}?mode=everyone`, { method: 'DELETE', headers: securedHeaders });
     assert.equal(deleteResponse.status, 200);
     const adminMessagesAfterDelete = await (await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, { headers: { Cookie: adminCookieHeader } })).json();

@@ -19,6 +19,7 @@ import {
   Image,
   Images,
   Loader2,
+  Lock,
   Pause,
   Play,
   Megaphone,
@@ -51,6 +52,18 @@ import {
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
+import CallOverlay from '@/components/chat/CallOverlay';
+import {
+  cacheConversations,
+  cacheMessages,
+  decryptMessageRows,
+  encryptChatText,
+  publishDeviceKeys,
+  readCachedConversations,
+  readCachedMessages,
+  readSyncCursor,
+  writeSyncCursor,
+} from '@/lib/chatSecure';
 
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const MAX_FILE_BYTES = 75 * 1024 * 1024;
@@ -1054,6 +1067,12 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [transcribingId, setTranscribingId] = useState('');
   const [error, setError] = useState('');
   const [connectionState, setConnectionState] = useState('connecting');
+  const [encryptionState, setEncryptionState] = useState('starting');
+  const [currentCall, setCurrentCall] = useState(null);
+  const [callSignals, setCallSignals] = useState([]);
+  const [rtcConfig, setRtcConfig] = useState({ iceServers: [], turnConfigured: false });
+  const [callHistory, setCallHistory] = useState([]);
+  const [showCallHistory, setShowCallHistory] = useState(false);
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
@@ -1124,7 +1143,16 @@ export default function ChatWorkspace({ adminMode = false }) {
       const remaining = [];
       for (const item of pending) {
         try {
-          await studioClient.chat.send(item.conversationId, item.payload);
+          let payload = item.payload;
+          if (item.encryptBody) {
+            const ciphertext = await encryptChatText(studioClient, {
+              body: item.payload.body,
+              participantIds: item.participantIds,
+              userId: user.id,
+            });
+            payload = { ...item.payload, body: '', ciphertext, encryption: { algorithm: 'ECDH-P256+AES-256-GCM', version: 1 } };
+          }
+          await studioClient.chat.send(item.conversationId, payload);
         } catch {
           remaining.push(item);
         }
@@ -1181,17 +1209,23 @@ export default function ChatWorkspace({ adminMode = false }) {
   }, []);
 
   const load = async () => {
-    const [conversationRows, people] = await Promise.all([studioClient.chat.conversations(), studioClient.chat.directory()]);
+    let conversationRows;
+    let people;
+    try {
+      [conversationRows, people] = await Promise.all([studioClient.chat.conversations(), studioClient.chat.directory()]);
+    } catch (loadError) {
+      const cached = await readCachedConversations(user.id).catch(() => null);
+      if (cached?.length) setConversations(cached);
+      throw loadError;
+    }
     const currentProfiles = new Map(people.map((person) => [person.id, person]));
     const hydratedConversations = conversationRows.map((conversation) => ({
       ...conversation,
-      participants: (conversation.participants || []).map((person) => ({
-        ...person,
-        ...(currentProfiles.get(person.id) || {}),
-      })),
+      participants: (conversation.participants || []).map((person) => ({ ...person, ...(currentProfiles.get(person.id) || {}) })),
     }));
     setConversations(hydratedConversations);
     setDirectory(people);
+    cacheConversations(user.id, hydratedConversations).catch(() => {});
     if (!initializedSelectionRef.current && hydratedConversations[0]) {
       initializedSelectionRef.current = true;
       const requestedId = new URLSearchParams(window.location.search).get('conversation');
@@ -1203,12 +1237,18 @@ export default function ChatWorkspace({ adminMode = false }) {
     const pane = messagesPaneRef.current;
     const distanceFromBottom = pane ? pane.scrollHeight - pane.scrollTop - pane.clientHeight : Number.POSITIVE_INFINITY;
     const shouldFollowLatest = options.scrollToBottom || distanceFromBottom < 120;
-    const response = await studioClient.chat.messages(id, {
-      query: search,
-      before: options.before || '',
-      limit: 60,
-    });
-    const rows = Array.isArray(response) ? response : response.items || [];
+    let response;
+    try {
+      response = await studioClient.chat.messages(id, { query: search, before: options.before || '', limit: 60 });
+    } catch (loadError) {
+      const cached = !search ? await readCachedMessages(user.id, id).catch(() => null) : null;
+      if (!cached?.length) throw loadError;
+      response = { items: cached, nextCursor: null };
+      setConnectionState('offline');
+    }
+    const encryptedRows = Array.isArray(response) ? response : response.items || [];
+    const rows = await decryptMessageRows(encryptedRows, user.id);
+    if (!search) cacheMessages(user.id, id, encryptedRows).catch(() => {});
     setNextCursor(Array.isArray(response) ? null : response.nextCursor || null);
     setMessages((current) =>
       options.mergeLatest
@@ -1229,6 +1269,70 @@ export default function ChatWorkspace({ adminMode = false }) {
       }),
     );
   };
+
+  useEffect(() => {
+    let activeEffect = true;
+    const initializeSecureChat = async () => {
+      try {
+        await publishDeviceKeys(studioClient, user.id);
+        if (activeEffect) setEncryptionState('ready');
+      } catch {
+        if (activeEffect) setEncryptionState('unavailable');
+      }
+    };
+    const synchronize = async () => {
+      if (!navigator.onLine) return;
+      try {
+        const cursor = await readSyncCursor(user.id).catch(() => '');
+        const synced = await studioClient.chat.sync(cursor || '');
+        if (synced.conversations?.length) {
+          const cached = await readCachedConversations(user.id).catch(() => []) || [];
+          const merged = [...new Map([...cached, ...synced.conversations].map(item => [item.id, item])).values()];
+          await cacheConversations(user.id, merged);
+        }
+        const grouped = (synced.messages || []).reduce((result, message) => {
+          (result[message.conversationId] ||= []).push(message);
+          return result;
+        }, {});
+        await Promise.all(Object.entries(grouped).map(async ([conversationId, incoming]) => {
+          const cached = await readCachedMessages(user.id, conversationId).catch(() => []) || [];
+          const merged = [...new Map([...cached, ...incoming].map(item => [item.id, item])).values()]
+            .sort((a, b) => String(a.created_date).localeCompare(String(b.created_date)));
+          await cacheMessages(user.id, conversationId, merged);
+        }));
+        await writeSyncCursor(user.id, synced.cursor);
+      } catch {
+        // The normal conversation loader continues using the last durable cache.
+      }
+    };
+    const initializeCalls = async () => {
+      try {
+        const [config, calls] = await Promise.all([studioClient.chat.rtcConfig(), studioClient.chat.calls()]);
+        if (!activeEffect) return;
+        setRtcConfig(config);
+        setCallHistory(calls);
+        const requestedCallId = new URLSearchParams(window.location.search).get('call');
+        const pending = calls.find(item => item.id === requestedCallId && ['ringing', 'accepted'].includes(item.status))
+          || calls.find(item => ['ringing', 'accepted'].includes(item.status));
+        if (pending) {
+          setCurrentCall(pending);
+          setCallSignals(pending.pendingSignals || []);
+          setActiveId(pending.conversationId);
+          setMobileConversationOpen(true);
+        }
+      } catch {
+        // Calls remain unavailable until the service reconnects.
+      }
+    };
+    initializeSecureChat();
+    synchronize();
+    initializeCalls();
+    window.addEventListener('online', synchronize);
+    return () => {
+      activeEffect = false;
+      window.removeEventListener('online', synchronize);
+    };
+  }, [user.id]);
 
   useEffect(() => {
     load()
@@ -1260,8 +1364,31 @@ export default function ChatWorkspace({ adminMode = false }) {
       if (payload.conversationId === activeIdRef.current) loadMessages(payload.conversationId, '', { mergeLatest: true }).catch(() => setConnectionState('offline'));
     };
     ['message', 'read', 'typing', 'conversation'].forEach((name) => stream.addEventListener(name, refresh));
+    const receiveCall = (event) => {
+      const payload = JSON.parse(event.data || '{}');
+      studioClient.chat.calls().then(setCallHistory).catch(() => {});
+      if (payload.action === 'ringing') {
+        studioClient.chat.rtcConfig().then(setRtcConfig).catch(() => {});
+        setCurrentCall({ ...payload, status: 'ringing', peer: payload.from || payload.peer || null });
+        setCallSignals([]);
+        setActiveId(payload.conversationId);
+        setMobileConversationOpen(true);
+      } else {
+        setCurrentCall(current => current?.id === payload.callId ? { ...current, status: payload.action } : current);
+      }
+    };
+    const receiveCallSignal = (event) => {
+      const payload = JSON.parse(event.data || '{}');
+      if (payload.signal) setCallSignals(current => [...current, payload.signal].slice(-100));
+    };
+    stream.addEventListener('call', receiveCall);
+    stream.addEventListener('call-signal', receiveCallSignal);
     stream.onerror = () => setConnectionState('reconnecting');
-    return () => stream.close();
+    return () => {
+      stream.removeEventListener('call', receiveCall);
+      stream.removeEventListener('call-signal', receiveCallSignal);
+      stream.close();
+    };
   }, []);
   useEffect(() => {
     activeIdRef.current = activeId;
@@ -1482,9 +1609,15 @@ export default function ChatWorkspace({ adminMode = false }) {
     setError('');
     try {
       if (!outgoingAttachments.length) {
+        const shouldEncrypt = active?.type !== 'announcement';
+        const ciphertext = shouldEncrypt
+          ? await encryptChatText(studioClient, { body: outgoingText, participantIds: active?.participantIds || [], userId: user.id })
+          : '';
         await studioClient.chat.send(activeId, {
           clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-          body: outgoingText,
+          body: shouldEncrypt ? '' : outgoingText,
+          ciphertext,
+          encryption: ciphertext ? { algorithm: 'ECDH-P256+AES-256-GCM', version: 1 } : null,
           replyToId: replyingTo?.id || null,
           expiresInSeconds: disappearAfter,
           allowForward: false,
@@ -1504,9 +1637,14 @@ export default function ChatWorkspace({ adminMode = false }) {
                 [item.id]: progress,
               })),
           });
+          const encryptedCaption = index === 0 && outgoingText && active?.type !== 'announcement'
+            ? await encryptChatText(studioClient, { body: outgoingText, participantIds: active?.participantIds || [], userId: user.id })
+            : '';
           messages.push({
             clientId: crypto.randomUUID?.() || `${Date.now()}-${index}-${Math.random()}`,
-            body: index === 0 ? outgoingText : '',
+            body: encryptedCaption ? '' : index === 0 ? outgoingText : '',
+            ciphertext: encryptedCaption,
+            encryption: encryptedCaption ? { algorithm: 'ECDH-P256+AES-256-GCM', version: 1 } : null,
             attachmentUrl: uploaded.file_url,
             attachmentName: item.file.name,
             // Preserve the format recorded by the device. iPhone/Safari emits
@@ -1537,6 +1675,8 @@ export default function ChatWorkspace({ adminMode = false }) {
       if (!outgoingAttachments.length && (!navigator.onLine || /fetch|network|offline/i.test(String(sendError.message)))) {
         const queued = {
           conversationId: activeId,
+          encryptBody: active?.type !== 'announcement',
+          participantIds: active?.participantIds || [],
           payload: {
             clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
             body: outgoingText,
@@ -1629,11 +1769,24 @@ export default function ChatWorkspace({ adminMode = false }) {
   };
   const beginCall = async (kind) => {
     try {
-      await studioClient.chat.startCall(activeId, kind);
-      setError(`${kind === 'video' ? 'Video' : 'Voice'} call invitation sent. Calls require camera/microphone permission and a configured TURN server for reliable connections.`);
+      const config = await studioClient.chat.rtcConfig();
+      const call = await studioClient.chat.startCall({ conversationId: activeId, kind });
+      setRtcConfig(config);
+      setCallSignals([]);
+      setCurrentCall({ ...call, peer: other || call.peer });
+      if (!config.turnConfigured) setError('The call is starting with direct WebRTC connectivity. Configure TURN for reliable production calls.');
     } catch (callError) {
       setError(callError.message);
     }
+  };
+  const acceptCall = async callId => {
+    const updated = await studioClient.chat.updateCall(callId, { action: 'accepted' });
+    setCurrentCall(current => current?.id === callId ? { ...current, ...updated, peer: current.peer || updated.peer } : current);
+  };
+  const closeCall = () => {
+    setCurrentCall(null);
+    setCallSignals([]);
+    studioClient.chat.calls().then(setCallHistory).catch(() => {});
   };
   const setForwarding = async (message) => {
     await studioClient.chat.setForwarding(message.id, !message.allowForward);
@@ -2254,7 +2407,25 @@ export default function ChatWorkspace({ adminMode = false }) {
                   </span>
                 )}
                 {active.type !== 'announcement' && (
+                  <span
+                    className={`hidden items-center gap-1 text-[10px] uppercase tracking-wider md:flex ${encryptionState === 'ready' ? 'text-green-400' : 'text-amber-300'}`}
+                    title={encryptionState === 'ready' ? 'Text messages are end-to-end encrypted on linked devices' : 'Encrypted messaging is unavailable on this browser'}
+                  >
+                    <Lock size={12} />
+                    {encryptionState === 'ready' ? 'Encrypted' : 'Encryption setup'}
+                  </span>
+                )}
+                {active.type !== 'announcement' && (
                   <>
+                    <button
+                      type="button"
+                      onClick={() => setShowCallHistory(true)}
+                      className="hidden h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass sm:flex"
+                      aria-label="Open call history"
+                      title="Call history"
+                    >
+                      <Timer size={18} />
+                    </button>
                     <button
                       type="button"
                       onClick={() => beginCall('voice')}
@@ -2292,6 +2463,19 @@ export default function ChatWorkspace({ adminMode = false }) {
                   </button>
                   {showConversationMenu && (
                     <div data-chat-popover className="absolute right-0 top-11 z-30 w-52 border border-brass/20 bg-carbon p-1 shadow-2xl">
+                      {active.type !== 'announcement' && (
+                        <>
+                          <button type="button" onClick={() => { setShowConversationMenu(false); beginCall('voice'); }} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
+                            <Phone size={15} /> Voice call
+                          </button>
+                          <button type="button" onClick={() => { setShowConversationMenu(false); beginCall('video'); }} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
+                            <Video size={15} /> Video call
+                          </button>
+                          <button type="button" onClick={() => { setShowConversationMenu(false); setShowCallHistory(true); }} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
+                            <Timer size={15} /> Call history
+                          </button>
+                        </>
+                      )}
                       <button
                         type="button"
                         onClick={() => updateConversation({ muted: !active.muted })}
@@ -2533,6 +2717,11 @@ export default function ChatWorkspace({ adminMode = false }) {
                             </div>
                           ) : (
                             message.body && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm leading-6 text-ivory/75">{message.body}</p>
+                          )}
+                          {message.encryptionError && (
+                            <p className="flex items-center gap-2 text-xs italic text-amber-300/80" title={message.encryptionError}>
+                              <Lock size={13} /> This encrypted message is unavailable on this device.
+                            </p>
                           )}
                           {message.richMedia && (
                             <a
@@ -3071,7 +3260,7 @@ export default function ChatWorkspace({ adminMode = false }) {
           };
           return createPortal(
             <div data-chat-popover style={messageMenuPosition} className="fixed z-[220] overflow-y-auto border border-brass/20 bg-carbon p-1 shadow-2xl">
-              {mine && message.body && (
+              {mine && message.body && !message.ciphertext && (
                 <button
                   type="button"
                   onClick={() => {
@@ -3095,7 +3284,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                 <Star size={14} className={message.starredBy?.includes(user.id) ? 'fill-brass text-brass' : ''} />
                 {message.starredBy?.includes(user.id) ? 'Unstar message' : 'Star message'}
               </button>
-              {(message.allowForward || ['admin', 'editor', 'support'].includes(user.role)) && (
+              {!message.ciphertext && (message.allowForward || ['admin', 'editor', 'support'].includes(user.role)) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -3240,6 +3429,44 @@ export default function ChatWorkspace({ adminMode = false }) {
             </footer>
           </section>
         </div>
+      )}
+      {showCallHistory && (
+        <div className="fixed inset-0 z-[170] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="call-history-title">
+          <section className="max-h-[80dvh] w-full max-w-lg overflow-hidden rounded-2xl border border-brass/20 bg-carbon shadow-2xl">
+            <header className="flex items-center justify-between border-b border-brass/15 p-4">
+              <div>
+                <h3 id="call-history-title" className="font-display text-2xl text-ivory">Call history</h3>
+                <p className="text-xs text-ivory/40">Incoming, outgoing, and missed calls across your devices</p>
+              </div>
+              <button type="button" onClick={() => setShowCallHistory(false)} className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/5" aria-label="Close call history"><X size={18} /></button>
+            </header>
+            <div className="max-h-[60dvh] overflow-y-auto p-2">
+              {!callHistory.length && <p className="p-6 text-center text-sm text-ivory/40">No calls yet.</p>}
+              {callHistory.map(call => (
+                <div key={call.id} className="flex min-h-16 items-center gap-3 border-b border-brass/10 px-3 py-2">
+                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${call.status === 'missed' ? 'bg-red-500/10 text-red-300' : 'bg-brass/10 text-brass'}`}>
+                    {call.kind === 'video' ? <Video size={18} /> : <Phone size={17} />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <b className="block truncate text-sm text-ivory">{call.peer?.name || 'Studio contact'}</b>
+                    <small className={call.status === 'missed' ? 'text-red-300' : 'text-ivory/40'}>{call.direction === 'incoming' ? 'Incoming' : 'Outgoing'} · {call.status}</small>
+                  </span>
+                  <time className="shrink-0 text-[10px] text-ivory/35">{new Date(call.created_date).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</time>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
+      {currentCall && (
+        <CallOverlay
+          call={currentCall}
+          currentUserId={user.id}
+          rtcConfig={rtcConfig}
+          signals={callSignals}
+          onAccept={acceptCall}
+          onClose={closeCall}
+        />
       )}
       {forwardingMessage && (
         <div

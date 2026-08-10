@@ -75,7 +75,7 @@ app.use(helmet({
   },
 }));
 app.use((_req, res, next) => {
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=()');
   next();
 });
 const allowedOrigins = (process.env.APP_ORIGIN || 'http://127.0.0.1:43127').split(',').map(origin => origin.trim());
@@ -1742,7 +1742,7 @@ const latestVisibleChatMessage = (conversationId, viewer = null) => db.data.Chat
 const refreshConversationSummary = conversation => {
   const latest = latestVisibleChatMessage(conversation.id);
   conversation.lastMessageAt = latest?.created_date || conversation.created_date;
-  conversation.lastMessage = latest ? (latest.body || latest.attachmentName || 'Attachment') : 'Conversation started';
+  conversation.lastMessage = latest ? (latest.body || (latest.ciphertext ? 'Encrypted message' : '') || latest.attachmentName || 'Attachment') : 'Conversation started';
 };
 const unreadNotificationCount = userId => db.data.Notification.filter(item => (
   item.userId === userId && !item.read && !item.deleted_at
@@ -2245,7 +2245,7 @@ const chatPushPayload = (message, sender, conversationId, batchCount = 1) => {
     : type.startsWith('video/') ? '🎥 Video'
       : type.startsWith('audio/') ? '🎙️ Voice message'
         : message?.attachmentName ? `📎 ${message.attachmentName}` : '';
-  const body = String(message?.body || (batchCount > 1 ? `${batchCount} new attachments` : attachmentLabel) || 'New message').slice(0, 180);
+  const body = String(message?.body || (message?.ciphertext ? 'Encrypted message' : '') || (batchCount > 1 ? `${batchCount} new attachments` : attachmentLabel) || 'New message').slice(0, 180);
   const url = `/messages?conversation=${conversationId}`;
   return {
     title: `New message from ${sender.full_name || 'Reigns Atelier'}`,
@@ -2312,7 +2312,7 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLi
   if (riskScore >= 45) db.data.ChatModerationEvent.push({ id: newId(), type: 'spam_score', status: 'review', score: riskScore, userId: req.user.id, messageId: message.id, conversationId: conversation.id, created_date: now() });
   db.data.ChatMessage.push(message);
   conversation.lastMessageAt = message.created_date;
-  conversation.lastMessage = body || message.attachmentName || 'Attachment';
+  conversation.lastMessage = body || (message.ciphertext ? 'Encrypted message' : '') || message.attachmentName || 'Attachment';
   const recipientIds = (conversation.participantIds || []).filter(id => id !== req.user.id);
   recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.message', title: `New message from ${req.user.full_name || req.user.email}`, message: conversation.lastMessage.slice(0, 180), section: 'messages', entity: 'ChatConversation', entityId: conversation.id, priority: 'normal', read: false, created_date: now() }));
   await pushToUsers(recipientIds, chatPushPayload(message, req.user, conversation.id), conversation.mutedBy || []);
@@ -2360,7 +2360,7 @@ app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, muta
   db.data.ChatMessage.push(...fresh);
   const last = fresh.at(-1);
   conversation.lastMessageAt = last.created_date;
-  conversation.lastMessage = last.body || last.attachmentName || (fresh.length > 1 ? `${fresh.length} attachments` : 'Attachment');
+  conversation.lastMessage = last.body || (last.ciphertext ? 'Encrypted message' : '') || last.attachmentName || (fresh.length > 1 ? `${fresh.length} attachments` : 'Attachment');
   const recipientIds = (conversation.participantIds || []).filter(id => id !== req.user.id);
   recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.message', title: `New message from ${req.user.full_name || req.user.email}`, message: conversation.lastMessage.slice(0, 180), section: 'messages', entity: 'ChatConversation', entityId: conversation.id, priority: 'normal', read: false, created_date: now() }));
   await pushToUsers(recipientIds, chatPushPayload(last, req.user, conversation.id, fresh.length), conversation.mutedBy || []);
@@ -2492,14 +2492,15 @@ app.patch('/api/chat/saved-collections/:id', requireVerifiedUser, mutationLimite
 });
 
 app.put('/api/chat/keys', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const deviceId = String(req.body.deviceId || '').trim().slice(0, 160);
   const identityKey = String(req.body.identityKey || '').trim().slice(0, 4096);
   const signedPreKey = String(req.body.signedPreKey || '').trim().slice(0, 4096);
   const signature = String(req.body.signature || '').trim().slice(0, 4096);
-  if (!identityKey || !signedPreKey || !signature) return res.status(400).json({ error: 'Identity key, signed pre-key, and signature are required.' });
-  let bundle = db.data.ChatKeyBundle.find(item => item.userId === req.user.id && !item.deleted_at);
+  if (!deviceId || !identityKey || !signedPreKey || !signature) return res.status(400).json({ error: 'Device ID, identity key, signed pre-key, and signature are required.' });
+  let bundle = db.data.ChatKeyBundle.find(item => item.userId === req.user.id && item.deviceId === deviceId && !item.deleted_at);
   const oneTimePreKeys = Array.isArray(req.body.oneTimePreKeys) ? req.body.oneTimePreKeys.slice(0, 100).map(value => String(value).slice(0, 4096)) : [];
-  if (!bundle) { bundle = { id: newId(), userId: req.user.id, created_date: now() }; db.data.ChatKeyBundle.push(bundle); }
-  Object.assign(bundle, { identityKey, signedPreKey, signature, oneTimePreKeys, updated_date: now() });
+  if (!bundle) { bundle = { id: newId(), userId: req.user.id, deviceId, created_date: now() }; db.data.ChatKeyBundle.push(bundle); }
+  Object.assign(bundle, { identityKey, signedPreKey, signature, algorithm: 'ECDSA-P256+ECDH-P256+AES-GCM', oneTimePreKeys, lastSeenAt: now(), updated_date: now() });
   await save(); res.json({ success: true, keyId: bundle.id, oneTimePreKeyCount: oneTimePreKeys.length });
 });
 
@@ -2507,21 +2508,85 @@ app.get('/api/chat/keys/:userId', requireVerifiedUser, async (req, res) => {
   const userId = String(req.params.userId);
   const sharesConversation = db.data.ChatConversation.some(item => !item.deleted_at && item.participantIds?.includes(req.user.id) && item.participantIds?.includes(userId));
   if (!sharesConversation) return res.status(403).json({ error: 'Start a conversation before requesting encryption keys.' });
-  const bundle = db.data.ChatKeyBundle.find(item => item.userId === userId && !item.deleted_at);
-  if (!bundle) return res.status(404).json({ error: 'This device has not enabled encrypted messaging.' });
-  const oneTimePreKey = bundle.oneTimePreKeys?.shift() || null;
-  if (oneTimePreKey) await save();
-  res.json({ keyId: bundle.id, identityKey: bundle.identityKey, signedPreKey: bundle.signedPreKey, signature: bundle.signature, oneTimePreKey });
+  const bundles = db.data.ChatKeyBundle.filter(item => item.userId === userId && !item.deleted_at);
+  if (!bundles.length) return res.status(404).json({ error: 'This user has not enabled encrypted messaging on a device.' });
+  res.json({
+    userId,
+    devices: bundles.map(bundle => ({
+      keyId: bundle.id, deviceId: bundle.deviceId || bundle.id, identityKey: bundle.identityKey,
+      signedPreKey: bundle.signedPreKey, signature: bundle.signature, algorithm: bundle.algorithm || 'legacy',
+      updatedAt: bundle.updated_date || bundle.created_date,
+    })),
+  });
+});
+
+const CALL_RING_TIMEOUT_MS = 45_000;
+const closeExpiredCalls = async () => {
+  const expired = db.data.ChatCall.filter(call => !call.deleted_at && call.status === 'ringing' && Date.now() - new Date(call.created_date).getTime() >= CALL_RING_TIMEOUT_MS);
+  if (!expired.length) return;
+  expired.forEach(call => {
+    call.status = 'missed'; call.endedAt = now(); call.updated_date = now(); call.signals = [];
+    emitChatEvent(call.participantIds, 'call', { callId: call.id, conversationId: call.conversationId, action: 'missed' });
+  });
+  await save();
+};
+const callView = (call, viewerId) => {
+  const peerId = call.participantIds?.find(id => id !== viewerId);
+  const peer = db.data.User.find(item => item.id === peerId);
+  return {
+    ...call,
+    signals: undefined,
+    pendingSignals: (call.signals || []).filter(item => item.fromUserId !== viewerId).map(item => item.signal),
+    direction: call.initiatorId === viewerId ? 'outgoing' : 'incoming',
+    peer: peer ? chatUser(peer) : null,
+  };
+};
+const rtcConfiguration = userId => {
+  const stunUrls = String(process.env.STUN_URLS || 'stun:stun.l.google.com:19302').split(',').map(value => value.trim()).filter(Boolean);
+  const turnUrls = String(process.env.TURN_URLS || '').split(',').map(value => value.trim()).filter(Boolean);
+  const iceServers = stunUrls.length ? [{ urls: stunUrls }] : [];
+  if (turnUrls.length) {
+    let username = String(process.env.TURN_USERNAME || '');
+    let credential = String(process.env.TURN_CREDENTIAL || '');
+    if (process.env.TURN_SHARED_SECRET) {
+      username = `${Math.floor(Date.now() / 1000) + 3600}:${userId}`;
+      credential = createHmac('sha1', process.env.TURN_SHARED_SECRET).update(username).digest('base64');
+    }
+    if (username && credential) iceServers.push({ urls: turnUrls, username, credential });
+  }
+  return { iceServers, turnConfigured: turnUrls.length > 0 && iceServers.length > 1, credentialExpiresIn: process.env.TURN_SHARED_SECRET ? 3600 : null };
+};
+
+app.get('/api/chat/rtc-config', requireVerifiedUser, (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(rtcConfiguration(_req.user.id));
+});
+
+app.get('/api/chat/calls', requireVerifiedUser, async (req, res) => {
+  await closeExpiredCalls();
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
+  const calls = db.data.ChatCall.filter(item => !item.deleted_at && item.participantIds?.includes(req.user.id))
+    .sort((a, b) => String(b.created_date).localeCompare(String(a.created_date))).slice(0, limit);
+  res.json(calls.map(call => callView(call, req.user.id)));
 });
 
 app.post('/api/chat/calls', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  await closeExpiredCalls();
   const conversation = db.data.ChatConversation.find(item => item.id === String(req.body.conversationId || '') && !item.deleted_at);
   if (!conversation || !chatMember(conversation, req.user) || conversation.type === 'announcement') return res.status(404).json({ error: 'Conversation not found.' });
   const kind = req.body.kind === 'video' ? 'video' : 'voice';
-  const call = { id: newId(), conversationId: conversation.id, initiatorId: req.user.id, participantIds: conversation.participantIds, kind, status: 'ringing', created_date: now() };
+  const existing = db.data.ChatCall.find(item => item.conversationId === conversation.id && ['ringing', 'accepted'].includes(item.status) && !item.deleted_at);
+  if (existing) return res.status(409).json({ error: 'A call is already active in this conversation.', call: callView(existing, req.user.id) });
+  const call = { id: newId(), conversationId: conversation.id, initiatorId: req.user.id, participantIds: conversation.participantIds, kind, status: 'ringing', signals: [], created_date: now(), updated_date: now() };
   db.data.ChatCall.push(call); await save();
-  emitChatEvent(conversation.participantIds.filter(id => id !== req.user.id), 'call', { callId: call.id, conversationId: conversation.id, action: 'ringing', kind, from: chatUser(req.user) });
-  res.status(201).json(call);
+  const recipients = conversation.participantIds.filter(id => id !== req.user.id);
+  const callUrl = `/messages?conversation=${conversation.id}&call=${call.id}`;
+  recipients.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.call', title: `Incoming ${kind} call`, message: `${req.user.full_name || req.user.email} is calling`, section: 'messages', entity: 'ChatCall', entityId: call.id, priority: 'high', read: false, created_date: now() }));
+  await save();
+  emitChatEvent(recipients, 'call', { ...callView(call, recipients[0]), action: 'ringing', from: chatUser(req.user) });
+  await pushToUsers(recipients, { title: `Incoming ${kind} call`, body: `${req.user.full_name || req.user.email} is calling`, url: callUrl, tag: `call-${call.id}`, category: 'messages', callId: call.id, conversationId: conversation.id, kind });
+  setTimeout(() => closeExpiredCalls().catch(error => reportOperationalError('call_timeout_failed', error, { callId: call.id })), CALL_RING_TIMEOUT_MS + 250).unref?.();
+  res.status(201).json(callView(call, req.user.id));
 });
 
 app.patch('/api/chat/calls/:id', requireVerifiedUser, mutationLimiter, async (req, res) => {
@@ -2529,15 +2594,23 @@ app.patch('/api/chat/calls/:id', requireVerifiedUser, mutationLimiter, async (re
   if (!call) return res.status(404).json({ error: 'Call not found.' });
   const action = String(req.body.action || '');
   if (!['accepted', 'rejected', 'ended', 'missed'].includes(action)) return res.status(400).json({ error: 'Invalid call action.' });
+  if (action === 'accepted' && call.status !== 'ringing') return res.status(409).json({ error: 'This call is no longer ringing.' });
+  if (action === 'accepted' && call.initiatorId === req.user.id) return res.status(403).json({ error: 'The recipient must accept the call.' });
   call.status = action; call.updated_date = now(); if (action === 'accepted') call.acceptedAt = now(); if (['rejected', 'ended', 'missed'].includes(action)) call.endedAt = now();
-  await save(); emitChatEvent(call.participantIds, 'call', { callId: call.id, conversationId: call.conversationId, action, userId: req.user.id }); res.json(call);
+  if (['rejected', 'ended', 'missed'].includes(action)) call.signals = [];
+  await save(); emitChatEvent(call.participantIds, 'call', { callId: call.id, conversationId: call.conversationId, action, userId: req.user.id }); res.json(callView(call, req.user.id));
 });
 
-app.post('/api/chat/calls/:id/signal', requireVerifiedUser, mutationLimiter, (req, res) => {
+app.post('/api/chat/calls/:id/signal', requireVerifiedUser, mutationLimiter, async (req, res) => {
   const call = db.data.ChatCall.find(item => item.id === req.params.id && !item.deleted_at && item.participantIds?.includes(req.user.id));
   if (!call || ['rejected', 'ended', 'missed'].includes(call.status)) return res.status(404).json({ error: 'Active call not found.' });
   const signal = req.body.signal;
   if (!signal || typeof signal !== 'object' || JSON.stringify(signal).length > 100_000) return res.status(400).json({ error: 'Invalid WebRTC signal.' });
+  call.signals ||= [];
+  call.signals.push({ id: newId(), fromUserId: req.user.id, signal, createdAt: now() });
+  call.signals = call.signals.slice(-100);
+  call.updated_date = now();
+  await save();
   emitChatEvent(call.participantIds.filter(id => id !== req.user.id), 'call-signal', { callId: call.id, fromUserId: req.user.id, signal });
   res.json({ relayed: true });
 });
@@ -2592,8 +2665,12 @@ app.get('/api/chat/capabilities', requireVerifiedUser, (_req, res) => {
     encryptedAtRest: Boolean(process.env.CHAT_ENCRYPTION_KEY),
     endToEndEncryptionFoundation: true,
     independentlyAuditedE2EE: false,
+    multiDeviceKeyBundles: true,
+    offlineRecovery: true,
     voiceCalls: true,
     videoCalls: true,
+    turnConfigured: Boolean(process.env.TURN_URLS && (process.env.TURN_SHARED_SECRET || (process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL))),
+    incomingCallNotifications: pushConfigured,
     stories: true,
     groups: true,
     durableQueue: backgroundQueue.configured,

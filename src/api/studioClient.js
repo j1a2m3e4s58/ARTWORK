@@ -253,6 +253,8 @@ export const studioClient = {
     publishKeys: data => request('/api/chat/keys', { method: 'PUT', body: JSON.stringify(data) }),
     keysFor: userId => request(`/api/chat/keys/${encodeURIComponent(userId)}`),
     startCall: data => request('/api/chat/calls', { method: 'POST', body: JSON.stringify(data) }),
+    calls: (limit = 50) => request(`/api/chat/calls?limit=${encodeURIComponent(limit)}`),
+    rtcConfig: () => request('/api/chat/rtc-config'),
     updateCall: (id, data) => request(`/api/chat/calls/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
     signalCall: (id, data) => request(`/api/chat/calls/${encodeURIComponent(id)}/signal`, { method: 'POST', body: JSON.stringify(data) }),
     heartbeat: () => request('/api/chat/presence', { method: 'POST' }),
