@@ -378,14 +378,21 @@ function VoiceNoteRecorder({ onCancel, onReady, onSend, viewOnce, onViewOnceChan
   };
 
   const commitVoicePreview = () => {
-    if (previewCommittedRef.current || disposedRef.current || discardRef.current) return;
+    // Do not let a delayed cleanup leave the composer in "Preparing". A
+    // deliberate discard is the only case where the preview must not finish.
+    if (previewCommittedRef.current || discardRef.current) return;
     previewCommittedRef.current = true;
     finalizingRef.current = false;
     window.clearTimeout(finalizeTimerRef.current);
 
     try {
-      const type = String(recordingMimeRef.current || 'audio/webm').split(';')[0].toLowerCase();
       const usableChunks = chunksRef.current.filter((chunk) => chunk?.size);
+      // iOS and some Android browsers report a preferred type before they
+      // start, then emit chunks in a different supported type. Use the real
+      // chunk type so the generated Blob stays playable and uploadable.
+      const chunkType = usableChunks.find((chunk) => chunk?.type)?.type;
+      const type = String(chunkType || recordingMimeRef.current || 'audio/webm').split(';')[0].toLowerCase();
+      if (!usableChunks.length) throw new Error('No audio was captured. Check microphone access and record again.');
       const blob = new Blob(usableChunks, { type });
       stopTracks();
 
@@ -465,9 +472,21 @@ function VoiceNoteRecorder({ onCancel, onReady, onSend, viewOnce, onViewOnceChan
     const start = async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') throw new Error('Recording is not supported by this browser.');
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-        });
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: { ideal: true },
+              noiseSuppression: { ideal: true },
+              autoGainControl: { ideal: true },
+              channelCount: { ideal: 1 },
+            },
+          });
+        } catch {
+          // Some iPhone/iPad webviews reject advanced audio constraints even
+          // though they can record with the browser defaults.
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
         if (disposed) {
           stream.getTracks().forEach((track) => track.stop());
           return;
@@ -486,7 +505,11 @@ function VoiceNoteRecorder({ onCancel, onReady, onSend, viewOnce, onViewOnceChan
         recorderRef.current = recorder;
         recordingMimeRef.current = recorder.mimeType || preferred || 'audio/webm';
         chunksRef.current = [];
-        recorder.ondataavailable = (event) => event.data?.size && chunksRef.current.push(event.data);
+        recorder.ondataavailable = (event) => {
+          if (!event.data?.size) return;
+          if (event.data.type) recordingMimeRef.current = event.data.type;
+          chunksRef.current.push(event.data);
+        };
         recorder.onerror = (event) => {
           finalizingRef.current = false;
           setPhase('error');
@@ -494,7 +517,10 @@ function VoiceNoteRecorder({ onCancel, onReady, onSend, viewOnce, onViewOnceChan
         };
         // Give the final dataavailable event one task to land before building
         // the preview. The watchdog in finish() covers browsers that omit stop.
-        recorder.onstop = () => window.setTimeout(commitVoicePreview, 80);
+        recorder.onstop = () => {
+          window.clearTimeout(finalizeTimerRef.current);
+          window.setTimeout(commitVoicePreview, 0);
+        };
         stream.getAudioTracks().forEach((track) => {
           track.onended = () => {
             setNotice('Microphone access ended. Your recorded audio is being prepared.');
@@ -509,6 +535,7 @@ function VoiceNoteRecorder({ onCancel, onReady, onSend, viewOnce, onViewOnceChan
           analyser.smoothingTimeConstant = 0.7;
           context.createMediaStreamSource(stream).connect(analyser);
           audioContextRef.current = context;
+          if (context.state === 'suspended') await context.resume().catch(() => {});
           const samples = new Uint8Array(analyser.frequencyBinCount);
           let lastSample = 0;
           const draw = (timestamp) => {
@@ -523,7 +550,13 @@ function VoiceNoteRecorder({ onCancel, onReady, onSend, viewOnce, onViewOnceChan
           };
           animationRef.current = requestAnimationFrame(draw);
         }
-        recorder.start(250);
+        try {
+          recorder.start(250);
+        } catch {
+          // A few Safari releases reject a timeslice; stop() still provides a
+          // valid final audio chunk without one.
+          recorder.start();
+        }
         startedAtRef.current = performance.now();
         setPhase('recording');
         setNotice('Recording… swipe left to cancel or up to lock.');
