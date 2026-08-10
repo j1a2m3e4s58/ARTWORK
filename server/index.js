@@ -3813,6 +3813,10 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
   }
   if (!req.file) return res.status(400).json({ error: 'Choose a supported image, video, or PDF file.' });
   const detected = await fileTypeFromBuffer(req.file.buffer);
+  const encryptedChatAttachment = isChatAttachment
+    && req.file.mimetype === 'application/octet-stream'
+    && req.file.originalname === 'encrypted-attachment.bin';
+  const uploadType = encryptedChatAttachment ? { mime: 'application/octet-stream', ext: 'bin' } : detected;
   const allowed = new Set([
     'image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif',
     'video/mp4', 'video/webm', 'video/quicktime',
@@ -3822,16 +3826,19 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   ]);
-  if (!detected || !allowed.has(detected.mime)) return res.status(400).json({ error: 'Choose a supported image, video, audio, PDF, Word, Excel, PowerPoint or ZIP file.' });
-  if (isProfileAvatar && !detected.mime.startsWith('image/')) {
+  if (!encryptedChatAttachment && (!detected || !allowed.has(detected.mime))) return res.status(400).json({ error: 'Choose a supported image, video, audio, PDF, Word, Excel, PowerPoint or ZIP file.' });
+  if (isProfileAvatar && !uploadType.mime.startsWith('image/')) {
     return res.status(400).json({ error: 'Profile photos must be JPG, PNG, WebP, AVIF or GIF images.' });
   }
   let scanStatus = 'not-configured';
-  if (process.env.MALWARE_SCAN_URL) {
+  // Content scanners cannot inspect authenticated ciphertext. The strict
+  // sentinel filename/MIME pair above prevents this exception applying to
+  // ordinary uploads; recipients decrypt only after Web Crypto authentication.
+  if (process.env.MALWARE_SCAN_URL && !encryptedChatAttachment) {
     try {
       const scanResponse = await fetch(process.env.MALWARE_SCAN_URL, {
         method: 'POST', body: req.file.buffer, signal: AbortSignal.timeout(20_000),
-        headers: { 'content-type': detected.mime, 'x-file-name': encodeURIComponent(String(req.file.originalname || 'upload').slice(0, 180)), ...(process.env.MALWARE_SCAN_TOKEN ? { authorization: `Bearer ${process.env.MALWARE_SCAN_TOKEN}` } : {}) },
+        headers: { 'content-type': uploadType.mime, 'x-file-name': encodeURIComponent(String(req.file.originalname || 'upload').slice(0, 180)), ...(process.env.MALWARE_SCAN_TOKEN ? { authorization: `Bearer ${process.env.MALWARE_SCAN_TOKEN}` } : {}) },
       });
       if (!scanResponse.ok) throw new Error(`Scanner returned ${scanResponse.status}.`);
       const scan = await scanResponse.json();
@@ -3847,17 +3854,17 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     }
   }
   const fileId = newId();
-  const stored = await storeFile({ buffer: req.file.buffer, mime: detected.mime, extension: detected.ext, uploadDir, id: fileId });
+  const stored = await storeFile({ buffer: req.file.buffer, mime: uploadType.mime, extension: uploadType.ext, uploadDir, id: fileId });
   const media = {
     id: fileId,
     url: stored.url,
-    filename: String(req.file.originalname || `${fileId}.${detected.ext}`).slice(0, 240),
-    mime: detected.mime,
+    filename: String(req.file.originalname || `${fileId}.${uploadType.ext}`).slice(0, 240),
+    mime: uploadType.mime,
     bytes: req.file.size,
     provider: storageProvider,
     publicId: stored.publicId,
     resourceType: stored.resourceType,
-    scanStatus,
+    scanStatus: encryptedChatAttachment ? 'client-encrypted' : scanStatus,
     userId: req.user.id,
     purpose: isPublicApplicationUpload ? 'internship-letter' : isChatAttachment ? 'chat-attachment' : isProfileAvatar ? 'profile-avatar' : staffRoles.has(req.user.role) ? 'content-library' : 'customer-reference',
     altText: '',
@@ -3866,13 +3873,13 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     // Keep a private database copy of modest-sized chat documents. Some cloud
     // accounts restrict PDF/raw delivery even after accepting the upload; the
     // authenticated attachment endpoint can still serve the exact bytes.
-    preservedData: isChatAttachment && !detected.mime.startsWith('image/') && !detected.mime.startsWith('video/') && !detected.mime.startsWith('audio/') && req.file.size <= 12 * 1024 * 1024
+    preservedData: isChatAttachment && !uploadType.mime.startsWith('image/') && !uploadType.mime.startsWith('video/') && !uploadType.mime.startsWith('audio/') && req.file.size <= 12 * 1024 * 1024
       ? req.file.buffer.toString('base64')
       : undefined,
     created_date: now(),
   };
   db.data.Media.push(media);
-  await audit(req.user, 'file.uploaded', 'Upload', fileId, { mime: detected.mime, bytes: req.file.size, provider: storageProvider });
+  await audit(req.user, 'file.uploaded', 'Upload', fileId, { mime: uploadType.mime, bytes: req.file.size, provider: storageProvider, clientEncrypted: encryptedChatAttachment });
   await save();
   res.status(201).json({ file_url: stored.url, media });
 });

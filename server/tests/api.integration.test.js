@@ -52,6 +52,9 @@ test('API keeps public reads open while blocking unverified customer mutations',
       JWT_SECRET: 'integration-test-secret-that-is-longer-than-32-characters',
       ADMIN_EMAIL: 'admin@example.test',
       ADMIN_PASSWORD: 'AdminCanvas2026!',
+      VAPID_PUBLIC_KEY: '',
+      VAPID_PRIVATE_KEY: '',
+      VAPID_SUBJECT: '',
     },
     stdio: 'ignore',
   });
@@ -152,6 +155,16 @@ test('API keeps public reads open while blocking unverified customer mutations',
     });
     assert.equal(conversationResponse.status, 201);
     const conversation = await conversationResponse.json();
+    const encryptedUpload = new FormData();
+    encryptedUpload.append('purpose', 'chat-attachment');
+    encryptedUpload.append('file', new Blob([new Uint8Array([17, 91, 203, 44, 8, 199, 73, 5])], { type: 'application/octet-stream' }), 'encrypted-attachment.bin');
+    const encryptedUploadResponse = await fetch(`${baseUrl}/api/upload`, {
+      method: 'POST',
+      headers: { Cookie: adminCookieHeader, 'X-CSRF-Token': adminCsrf },
+      body: encryptedUpload,
+    });
+    assert.equal(encryptedUploadResponse.status, 201, 'Opaque private-chat ciphertext should be accepted only through the encrypted attachment sentinel.');
+    assert.equal((await encryptedUploadResponse.json()).media.scanStatus, 'client-encrypted');
     const chatMessageResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, {
       method: 'POST', headers: securedHeaders, body: JSON.stringify({ clientId: 'integration-chat-message-1', body: 'Welcome to the studio messenger.' }),
     });

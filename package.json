@@ -24,6 +24,7 @@
     "backup:rehearse": "node scripts/rehearse-backup-restore.mjs",
     "launch:review": "node scripts/production-review.mjs",
     "push:keys": "web-push generate-vapid-keys",
+    "chat:configure-local": "node scripts/configure-secure-chat.mjs",
     "audit:prod": "node scripts/audit-production.mjs",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build && npm run audit:prod"
   },

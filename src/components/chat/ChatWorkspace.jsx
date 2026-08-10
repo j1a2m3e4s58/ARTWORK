@@ -57,7 +57,9 @@ import CallOverlay from '@/components/chat/CallOverlay';
 import {
   cacheConversations,
   cacheMessages,
+  decryptChatAttachment,
   decryptMessageRows,
+  encryptChatAttachment,
   encryptChatText,
   publishDeviceKeys,
   readCachedConversations,
@@ -781,8 +783,46 @@ function QuotedMessage({ message }) {
   );
 }
 
+function EncryptedAttachmentPreview({ attachment, compact, onOpen }) {
+  const [resolved, setResolved] = useState(null);
+  const [failure, setFailure] = useState('');
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl = '';
+    setResolved(null);
+    setFailure('');
+    fetch(attachment.url, { credentials: 'include', signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error('The encrypted attachment could not be downloaded.');
+        return response.blob();
+      })
+      .then((blob) => decryptChatAttachment(blob, attachment.encryptedMetadata))
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        setResolved({
+          ...attachment,
+          url: objectUrl,
+          previewUrl: objectUrl,
+          downloadUrl: objectUrl,
+          encryptedMetadata: null,
+        });
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError') setFailure(error.message || 'Unable to decrypt this attachment on this device.');
+      });
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [attachment.messageId, attachment.url, attachment.encryptedMetadata]);
+  if (failure) return <p className="mt-2 border border-red-500/20 bg-red-950/20 p-3 text-xs text-red-200">{failure}</p>;
+  if (!resolved) return <p className="mt-2 flex items-center gap-2 border border-brass/15 bg-obsidian p-3 text-xs text-ivory/45"><Loader2 size={14} className="animate-spin" /> Decrypting attachment…</p>;
+  return <AttachmentPreview attachment={resolved} compact={compact} onOpen={onOpen} />;
+}
+
 function AttachmentPreview({ attachment, compact = false, onOpen }) {
   if (!attachment?.url) return null;
+  if (attachment.encryptedMetadata) return <EncryptedAttachmentPreview attachment={attachment} compact={compact} onOpen={onOpen} />;
   const { url, name, type, bytes } = attachment;
   // Check voice notes before generic WebM video. Some media hosts identify an
   // audio-only WebM container as video/webm, while the voice-message filename
@@ -1802,8 +1842,24 @@ export default function ChatWorkspace({ adminMode = false }) {
         const messages = [];
         for (let index = 0; index < outgoingAttachments.length; index += 1) {
           const item = outgoingAttachments[index];
+          const shouldEncrypt = active?.type !== 'announcement';
+          const originalType = isVoiceAttachment({ name: item.file.name, type: item.mime || item.file.type })
+            ? item.mime || item.file.type || 'audio/webm'
+            : item.mime || item.file.type || 'application/octet-stream';
+          const originalFile = item.file.type === originalType
+            ? item.file
+            : new File([item.file], item.file.name, { type: originalType, lastModified: item.file.lastModified });
+          const encrypted = shouldEncrypt
+            ? await encryptChatAttachment(studioClient, {
+                file: originalFile,
+                body: index === 0 ? outgoingText : '',
+                participantIds: active?.participantIds || [],
+                userId: user.id,
+              })
+            : null;
+          const uploadFile = encrypted?.file || originalFile;
           const uploaded = await studioClient.integrations.Core.UploadFileProgress({
-            file: item.file,
+            file: uploadFile,
             purpose: 'chat-attachment',
             signal: uploadAbortRef.current.signal,
             onProgress: (progress) =>
@@ -1812,23 +1868,17 @@ export default function ChatWorkspace({ adminMode = false }) {
                 [item.id]: progress,
               })),
           });
-          const encryptedCaption = index === 0 && outgoingText && active?.type !== 'announcement'
-            ? await encryptChatText(studioClient, { body: outgoingText, participantIds: active?.participantIds || [], userId: user.id })
-            : '';
           messages.push({
             clientId: crypto.randomUUID?.() || `${Date.now()}-${index}-${Math.random()}`,
-            body: encryptedCaption ? '' : index === 0 ? outgoingText : '',
-            ciphertext: encryptedCaption,
-            encryption: encryptedCaption ? { algorithm: 'ECDH-P256+AES-256-GCM', version: 1 } : null,
+            body: shouldEncrypt ? '' : index === 0 ? outgoingText : '',
+            ciphertext: encrypted?.ciphertext || '',
+            encryption: encrypted ? { algorithm: 'ECDH-P256+AES-256-GCM', version: 1, attachment: 'AES-256-GCM' } : null,
             attachmentUrl: uploaded.file_url,
-            attachmentName: item.file.name,
-            // Preserve the format recorded by the device. iPhone/Safari emits
-            // MP4/M4A while Chromium generally emits WebM; forcing WebM makes
-            // valid iPhone recordings fail preview and playback after upload.
-            attachmentType: isVoiceAttachment({ name: item.file.name, type: item.mime || item.file.type })
-              ? item.mime || item.file.type || 'audio/webm'
-              : uploaded.media?.mime || item.mime || item.file.type || 'application/octet-stream',
-            attachmentBytes: item.file.size,
+            // Original filenames, MIME types and file keys stay inside the
+            // per-device encrypted envelope. The server only receives opaque bytes.
+            attachmentName: encrypted ? 'encrypted-attachment.bin' : item.file.name,
+            attachmentType: encrypted ? 'application/vnd.reigns.encrypted' : uploaded.media?.mime || originalType,
+            attachmentBytes: uploadFile.size,
             replyToId: index === 0 ? replyingTo?.id || null : null,
             viewOnce,
             expiresInSeconds: disappearAfter,
@@ -2852,12 +2902,13 @@ export default function ChatWorkspace({ adminMode = false }) {
                   const mine = message.senderId === user.id;
                   const attachment = message.attachmentUrl
                     ? {
-                        url: message.attachmentUrl,
+                        url: studioClient.chat.attachmentUrl(message.id),
                         previewUrl: studioClient.chat.attachmentUrl(message.id),
                         downloadUrl: studioClient.chat.attachmentUrl(message.id, true),
-                        name: message.attachmentName,
-                        type: message.attachmentType,
-                        bytes: message.attachmentBytes,
+                        name: message.decryptedAttachment?.name || message.attachmentName,
+                        type: message.decryptedAttachment?.type || message.attachmentType,
+                        bytes: message.decryptedAttachment?.bytes || message.attachmentBytes,
+                        encryptedMetadata: message.decryptedAttachment || null,
                         messageId: message.id,
                       }
                     : null;
@@ -3007,7 +3058,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                           ) : (
                             <AttachmentPreview attachment={attachment} onOpen={setPreview} />
                           )}
-                          {voiceAttachment && (
+                          {voiceAttachment && !attachment?.encryptedMetadata && (
                             <button
                               type="button"
                               disabled={transcribingId === message.id}

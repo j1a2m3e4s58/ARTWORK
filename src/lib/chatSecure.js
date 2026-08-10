@@ -93,13 +93,13 @@ const verifiedDevices = async (studioClient, userId) => {
   return devices;
 };
 
-export const encryptChatText = async (studioClient, { body, participantIds, userId }) => {
+export const encryptChatPayload = async (studioClient, { payload, participantIds, userId }) => {
   await publishDeviceKeys(studioClient, userId);
   const targetIds = [...new Set([...(participantIds || []), userId])];
   const deviceGroups = await Promise.all(targetIds.map(id => verifiedDevices(studioClient, id)));
   const devices = deviceGroups.flat();
   if (!devices.length) throw new Error('No verified recipient devices are available for encrypted messaging.');
-  const plaintext = textEncoder.encode(JSON.stringify({ body, sentAt: new Date().toISOString() }));
+  const plaintext = textEncoder.encode(JSON.stringify({ ...payload, sentAt: new Date().toISOString() }));
   const envelopes = [];
   for (const device of devices) {
     const recipientKey = await crypto.subtle.importKey('jwk', JSON.parse(device.signedPreKey), { name: 'ECDH', namedCurve: 'P-256' }, false, []);
@@ -115,8 +115,39 @@ export const encryptChatText = async (studioClient, { body, participantIds, user
   return JSON.stringify({ version: 1, algorithm: 'ECDH-P256+AES-256-GCM', senderDeviceId: chatDeviceId(), envelopes });
 };
 
-export const decryptChatText = async (ciphertext, userId) => {
-  if (!ciphertext) return '';
+export const encryptChatText = (studioClient, { body, participantIds, userId }) => encryptChatPayload(studioClient, {
+  payload: { body }, participantIds, userId,
+});
+
+export const encryptChatAttachment = async (studioClient, { file, body = '', participantIds, userId }) => {
+  const fileKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  const rawKey = await crypto.subtle.exportKey('raw', fileKey);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encryptedBytes = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, fileKey, await file.arrayBuffer());
+  const ciphertext = await encryptChatPayload(studioClient, {
+    participantIds,
+    userId,
+    payload: {
+      body,
+      attachment: {
+        version: 1,
+        algorithm: 'AES-256-GCM',
+        key: encode(rawKey),
+        iv: encode(iv),
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        bytes: file.size,
+      },
+    },
+  });
+  return {
+    ciphertext,
+    file: new File([encryptedBytes], 'encrypted-attachment.bin', { type: 'application/octet-stream' }),
+  };
+};
+
+export const decryptChatPayload = async (ciphertext, userId) => {
+  if (!ciphertext) return {};
   const payload = JSON.parse(ciphertext);
   const identity = await ensureDeviceIdentity(userId);
   const envelope = payload.envelopes?.find(item => item.userId === userId && item.deviceId === identity.deviceId);
@@ -124,13 +155,27 @@ export const decryptChatText = async (ciphertext, userId) => {
   const ephemeralKey = await crypto.subtle.importKey('jwk', envelope.ephemeralKey, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
   const messageKey = await crypto.subtle.deriveKey({ name: 'ECDH', public: ephemeralKey }, identity.agreementPrivateKey, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
   const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: decode(envelope.iv) }, messageKey, decode(envelope.ciphertext));
-  return JSON.parse(textDecoder.decode(plaintext)).body || '';
+  return JSON.parse(textDecoder.decode(plaintext));
+};
+
+export const decryptChatText = async (ciphertext, userId) => (await decryptChatPayload(ciphertext, userId)).body || '';
+
+export const decryptChatAttachment = async (encryptedBlob, metadata) => {
+  if (!metadata?.key || !metadata?.iv) throw new Error('The encrypted attachment key is unavailable on this device.');
+  const key = await crypto.subtle.importKey('raw', decode(metadata.key), { name: 'AES-GCM' }, false, ['decrypt']);
+  const plaintext = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: decode(metadata.iv) },
+    key,
+    await encryptedBlob.arrayBuffer(),
+  );
+  return new Blob([plaintext], { type: metadata.type || 'application/octet-stream' });
 };
 
 export const decryptMessageRows = async (rows, userId) => Promise.all((rows || []).map(async message => {
   if (!message.ciphertext) return message;
   try {
-    return { ...message, body: await decryptChatText(message.ciphertext, userId), decrypted: true };
+    const payload = await decryptChatPayload(message.ciphertext, userId);
+    return { ...message, body: payload.body || '', decryptedAttachment: payload.attachment || null, decrypted: true };
   } catch (error) {
     return { ...message, body: '', encryptionError: error.message || 'Unable to decrypt on this device.' };
   }

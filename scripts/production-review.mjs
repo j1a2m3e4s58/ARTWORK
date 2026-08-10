@@ -8,7 +8,10 @@ const required = [
   'TURNSTILE_SECRET_KEY', 'VITE_TURNSTILE_SITE_KEY', 'APP_ORIGIN', 'SITE_URL',
   'METRICS_TOKEN', 'ERROR_WEBHOOK_URL',
 ];
-if (production) required.push('PAYSTACK_PUBLIC_KEY', 'PAYSTACK_SECRET_KEY', 'PAYSTACK_WEBHOOK_SECRET');
+if (production) required.push(
+  'PAYSTACK_PUBLIC_KEY', 'PAYSTACK_SECRET_KEY', 'PAYSTACK_WEBHOOK_SECRET',
+  'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT', 'TURN_URLS',
+);
 const missing = required.filter(name => !process.env[name]);
 const findings = [];
 if (missing.length) findings.push({ check: 'environment', ok: false, detail: `Missing: ${missing.join(', ')}` });
@@ -16,6 +19,9 @@ if (process.env.TRUST_PROXY !== 'true') findings.push({ check: 'trust-proxy', ok
 if (process.env.STORAGE_PROVIDER !== 'cloudinary') findings.push({ check: 'storage', ok: false, detail: 'STORAGE_PROVIDER must be cloudinary.' });
 if (production && (!process.env.PAYSTACK_SECRET_KEY?.startsWith('sk_live_') || !process.env.PAYSTACK_PUBLIC_KEY?.startsWith('pk_live_'))) {
   findings.push({ check: 'payments', ok: false, detail: 'Production review requires Paystack live keys.' });
+}
+if (production && !process.env.TURN_SHARED_SECRET && !(process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL)) {
+  findings.push({ check: 'turn-auth', ok: false, detail: 'Configure TURN_SHARED_SECRET or both TURN_USERNAME and TURN_CREDENTIAL.' });
 }
 
 if (process.env.STAGING_URL) {
