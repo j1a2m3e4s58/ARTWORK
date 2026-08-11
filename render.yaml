@@ -101,6 +101,10 @@ services:
         generateValue: true
       - key: ERROR_WEBHOOK_URL
         sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: SENTRY_TRACES_SAMPLE_RATE
+        value: "0"
       - key: BACKUP_VERIFIED_AT
         sync: false
       - key: LOG_REQUESTS

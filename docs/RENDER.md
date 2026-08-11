@@ -23,6 +23,8 @@ Enter these values during the first Blueprint creation:
 - `REDIS_URL`: a persistent Redis instance used by BullMQ for delivery,
   notification, media-processing retries and dead-letter recovery.
 - `BACKUP_ENCRYPTION_KEY`: a separate random secret of at least 32 characters.
+- `SENTRY_DSN`: the Node.js project DSN used for production error monitoring.
+  `ERROR_WEBHOOK_URL` remains available as an optional generic webhook fallback.
 - `MALWARE_SCAN_URL` and, when required, `MALWARE_SCAN_TOKEN`: the private
   fail-closed attachment scanner endpoint and its bearer credential.
 

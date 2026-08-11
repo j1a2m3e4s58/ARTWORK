@@ -11,7 +11,8 @@
 - Redis through `REDIS_URL` for durable delivery, push-notification and media-processing queues.
 - A malware scanner through `MALWARE_SCAN_URL` and, when required, `MALWARE_SCAN_TOKEN`.
 - Paystack credentials when `PAYMENT_PROVIDER=paystack`.
-- An error-alert destination in `ERROR_WEBHOOK_URL` and a recorded restore rehearsal in `BACKUP_VERIFIED_AT`.
+- A Sentry error destination in `SENTRY_DSN` (or generic fallback in
+  `ERROR_WEBHOOK_URL`) and a recorded restore rehearsal in `BACKUP_VERIFIED_AT`.
 
 `GET /api/ready` must return HTTP 200 before traffic is switched to a new release.
 

@@ -11,7 +11,8 @@ Required provider checks:
 3. SMTP sends verification, invitation, reset, message-reply and order emails.
 4. Turnstile succeeds and fails closed on public mutation forms.
 5. `APP_ORIGIN` and `SITE_URL` are the exact HTTPS staging origin; `TRUST_PROXY=true`.
-6. `ERROR_WEBHOOK_URL` receives a deliberate staging alert and `METRICS_TOKEN` protects `/api/metrics`.
+6. `SENTRY_DSN` (or `ERROR_WEBHOOK_URL`) receives a deliberate staging alert
+   and `METRICS_TOKEN` protects `/api/metrics`.
 
 Run:
 

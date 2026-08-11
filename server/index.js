@@ -1173,7 +1173,8 @@ app.get('/api/ready', async (_req, res) => {
   const storage = checkStorage();
   const production = process.env.NODE_ENV === 'production';
   const monitoring = {
-    ok: Boolean(process.env.ERROR_WEBHOOK_URL),
+    ok: Boolean(process.env.SENTRY_DSN || process.env.ERROR_WEBHOOK_URL),
+    provider: process.env.SENTRY_DSN ? 'sentry' : (process.env.ERROR_WEBHOOK_URL ? 'webhook' : null),
     metricsProtected: Boolean(process.env.METRICS_TOKEN),
   };
   const backup = {
@@ -1221,7 +1222,8 @@ app.get('/api/admin/system-status', requireAdmin, async (_req, res) => {
   ]);
   const storage = checkStorage();
   const monitoring = {
-    ok: Boolean(process.env.ERROR_WEBHOOK_URL),
+    ok: Boolean(process.env.SENTRY_DSN || process.env.ERROR_WEBHOOK_URL),
+    provider: process.env.SENTRY_DSN ? 'sentry' : (process.env.ERROR_WEBHOOK_URL ? 'webhook' : null),
     metricsProtected: Boolean(process.env.METRICS_TOKEN),
   };
   const backup = {
