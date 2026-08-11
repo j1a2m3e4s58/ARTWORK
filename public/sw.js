@@ -1,4 +1,4 @@
-const CACHE = 'reigns-atelier-v10';
+const CACHE = 'reigns-atelier-v11';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/brand/reigns-app-icon-192.png', '/brand/reigns-app-icon-512.png'];
 
 self.addEventListener('install', event => {
@@ -32,6 +32,7 @@ self.addEventListener('push', event => {
   const title = payload.title || 'Reigns Atelier';
   const badgeCount = Math.max(0, Number(payload.badgeCount) || 0);
   const incomingCall = Boolean(payload.callId);
+  const canQuickReply = Boolean(payload.replyUrl) && !incomingCall;
   const notification = self.registration.showNotification(title, {
     body: payload.body || 'You have a new studio action to review.',
     icon: payload.icon || '/brand/reigns-app-icon-192.png',
@@ -43,7 +44,9 @@ self.addEventListener('push', event => {
     data: { url: payload.url || '/admin?section=alerts', replyUrl: payload.replyUrl || payload.url || '/messages', callId: payload.callId || '' },
     actions: incomingCall
       ? [{ action: 'answer', title: 'Answer' }, { action: 'dismiss', title: 'Dismiss' }]
-      : [{ action: 'reply', title: 'Reply' }, { action: 'open', title: 'Open message' }],
+      : canQuickReply
+        ? [{ action: 'reply', title: 'Quick reply' }, { action: 'open', title: 'Open message' }]
+        : [{ action: 'open', title: 'Open' }],
   });
   const badge = badgeCount
     ? self.registration.setAppBadge?.(badgeCount)

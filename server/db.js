@@ -1,4 +1,5 @@
-import { copyFile, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { createCipheriv, createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSONFilePreset } from 'lowdb/node';
@@ -353,20 +354,29 @@ export const now = () => new Date().toISOString();
 export async function backupDatabase({ force = false } = {}) {
   if (postgresPool) return null;
   try {
-    const info = await stat(databasePath);
-    const backups = (await readdir(backupDir)).filter(name => name.endsWith('.json')).sort();
+    const info = await stat(databasePath).catch(() => null);
+    const backups = (await readdir(backupDir)).filter(name => name.endsWith('.enc')).sort();
     const latest = backups.at(-1);
     if (!force && latest) {
       const latestInfo = await stat(path.join(backupDir, latest));
       if (Date.now() - latestInfo.mtimeMs < 24 * 60 * 60 * 1000) return null;
     }
-    const stamp = new Date(info.mtimeMs || Date.now()).toISOString().replace(/[:.]/g, '-');
-    const destination = path.join(backupDir, `db-${stamp}.json`);
-    await copyFile(databasePath, destination);
-    const updated = (await readdir(backupDir)).filter(name => name.endsWith('.json')).sort();
+    const stamp = new Date(info?.mtimeMs || Date.now()).toISOString().replace(/[:.]/g, '-');
+    const destination = path.join(backupDir, `db-${stamp}.enc`);
+    const secret = process.env.BACKUP_ENCRYPTION_KEY || (process.env.NODE_ENV === 'production' ? '' : process.env.JWT_SECRET);
+    if (!secret) return null;
+    const key = createHash('sha256').update(secret).digest();
+    const iv = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', key, iv);
+    const plaintext = info ? await readFile(databasePath) : Buffer.from(JSON.stringify(db.data, null, 2));
+    const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+    const authenticationTag = cipher.getAuthTag();
+    await writeFile(destination, Buffer.concat([Buffer.from('RAB1'), iv, authenticationTag, ciphertext]), { mode: 0o600 });
+    const updated = (await readdir(backupDir)).filter(name => name.endsWith('.enc')).sort();
     await Promise.all(updated.slice(0, -14).map(name => rm(path.join(backupDir, name))));
     return destination;
-  } catch {
+  } catch (error) {
+    if (force) throw error;
     return null;
   }
 }

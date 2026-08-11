@@ -33,6 +33,7 @@ import PartnersTab from '@/components/admin/PartnersTab';
 import StudioRequestsTab from '@/components/admin/StudioRequestsTab';
 import AwardsTab from '@/components/admin/AwardsTab';
 import ChatWorkspace from '@/components/chat/ChatWorkspace';
+import SupportAnalyticsTab from '@/components/admin/SupportAnalyticsTab';
 import ResponsiveSelect from '@/components/ResponsiveSelect';
 import { DEFAULT_STUDIO_OPTIONS, parseStudioOptions } from '@/lib/studioOptions';
 
@@ -61,6 +62,7 @@ const allTabs = [
   { id: 'internships', label: 'Internships', icon: Users, group: 'People' },
   { id: 'inbox', label: 'Inbox', icon: MessageSquare, group: 'Communication' },
   { id: 'messages', label: 'Customer Chat', icon: MessageSquare, group: 'Communication' },
+  { id: 'support-analytics', label: 'Support Analytics', icon: Activity, group: 'Communication' },
   { id: 'subscribers', label: 'Subscribers', icon: Users, group: 'Communication' },
   { id: 'users', label: 'People & Access', icon: Users, group: 'People' },
   { id: 'settings', label: 'Settings', icon: Settings, group: 'System' },
@@ -82,7 +84,7 @@ const STATUS_COLORS = {
 const ROLE_TABS = {
   admin: allTabs.map(tab => tab.id),
   editor: ['overview', 'alerts', 'gallery', 'banners', 'media', 'recycle', 'videos', 'awards', 'shop', 'price-guides', 'testimonials', 'quotes', 'pages', 'blog', 'commission-packages', 'commission-pricing', 'commission-form', 'internships'],
-  support: ['overview', 'alerts', 'inbox', 'messages', 'studio-requests', 'commissions', 'orders'],
+  support: ['overview', 'alerts', 'inbox', 'messages', 'support-analytics', 'studio-requests', 'commissions', 'orders'],
 };
 
 function ConfirmDelete({ onConfirm, onCancel }) {
@@ -793,6 +795,7 @@ export default function Admin() {
           {activeTab === 'studio-requests' && <StudioRequestsTab />}
           {activeTab === 'awards' && <AwardsTab />}
           {activeTab === 'messages' && <ChatWorkspace adminMode />}
+          {activeTab === 'support-analytics' && <SupportAnalyticsTab canRecoverJobs={user?.role === 'admin'} />}
           {activeTab === 'price-guides' && <PriceGuidesTab />}
           {activeTab === 'users' && <UsersTab currentUser={user} />}
 

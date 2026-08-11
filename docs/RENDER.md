@@ -20,6 +20,11 @@ Enter these values during the first Blueprint creation:
   `SMTP_SECURE` after creation if the provider requires different values.
 - `TURNSTILE_SECRET_KEY` and `VITE_TURNSTILE_SITE_KEY`: keys created for the
   Render hostname in Cloudflare Turnstile.
+- `REDIS_URL`: a persistent Redis instance used by BullMQ for delivery,
+  notification, media-processing retries and dead-letter recovery.
+- `BACKUP_ENCRYPTION_KEY`: a separate random secret of at least 32 characters.
+- `MALWARE_SCAN_URL` and, when required, `MALWARE_SCAN_TOKEN`: the private
+  fail-closed attachment scanner endpoint and its bearer credential.
 
 Do not put any of these secret values in Git.
 
@@ -37,7 +42,9 @@ The Blueprint creates:
 
 The application creates and upgrades its relational schema during startup.
 Render only marks the release healthy when PostgreSQL, SMTP, Cloudinary,
-Turnstile, and the public origins are configured successfully.
+Turnstile, and the public origins are configured successfully. Readiness also
+reports degraded warnings until Redis, backup encryption, malware scanning,
+monitoring, and a recent restore rehearsal are configured.
 
 ## Migrating existing media
 

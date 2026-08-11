@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
+import { createDecipheriv, createHash } from 'node:crypto';
 
 let baseUrl;
 
@@ -50,6 +51,7 @@ test('API keeps public reads open while blocking unverified customer mutations',
       DATA_DIR: dataDir,
       DATABASE_URL: '',
       JWT_SECRET: 'integration-test-secret-that-is-longer-than-32-characters',
+      BACKUP_ENCRYPTION_KEY: 'integration-backup-key-that-is-longer-than-32-characters',
       ADMIN_EMAIL: 'admin@example.test',
       ADMIN_PASSWORD: 'AdminCanvas2026!',
       VAPID_PUBLIC_KEY: '',
@@ -473,6 +475,36 @@ test('API keeps public reads open while blocking unverified customer mutations',
       body: JSON.stringify({ email: 'support@example.test', password: 'SupportCanvas2026!' }),
     });
     assert.equal(supportLogin.status, 200);
+    let supportCookieHeader = supportLogin.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
+    const supportCsrf = decodeURIComponent(supportCookieHeader.match(/atelier_csrf=([^;]+)/)?.[1] || '');
+    const supportUnlock = await fetch(`${baseUrl}/api/admin/unlock`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: supportCookieHeader, 'X-CSRF-Token': supportCsrf }, body: JSON.stringify({ password: 'SupportCanvas2026!' }),
+    });
+    assert.equal(supportUnlock.status, 200);
+    supportCookieHeader = [...supportCookieHeader.split('; '), ...supportUnlock.headers.getSetCookie().map(value => value.split(';')[0])].join('; ');
+    const supportAnalyticsResponse = await fetch(`${baseUrl}/api/admin/chat/analytics`, { headers: { Cookie: supportCookieHeader } });
+    assert.equal(supportAnalyticsResponse.status, 200, 'Support staff should see operational conversation analytics.');
+    const supportAnalytics = await supportAnalyticsResponse.json();
+    assert.equal(typeof supportAnalytics.averageResponseSeconds, 'number');
+    assert.ok(Array.isArray(supportAnalytics.unresolved));
+    assert.equal((await fetch(`${baseUrl}/api/admin/chat/analytics`, { headers: { Cookie: cookieHeader } })).status, 403, 'Customers must not see support analytics.');
+    assert.equal((await fetch(`${baseUrl}/api/admin/chat/moderation`, { headers: { Cookie: supportCookieHeader } })).status, 200, 'Support staff should be able to review moderation signals.');
+    const jobsResponse = await fetch(`${baseUrl}/api/admin/jobs`, { headers: { Cookie: adminCookieHeader } });
+    assert.equal(jobsResponse.status, 200);
+    assert.ok(Array.isArray((await jobsResponse.json()).failures));
+    assert.equal((await fetch(`${baseUrl}/api/admin/jobs`, { headers: { Cookie: supportCookieHeader } })).status, 403, 'Only administrators may inspect failed-job payloads.');
+    const backupResponse = await fetch(`${baseUrl}/api/admin/backup`, { method: 'POST', headers: securedHeaders });
+    const backupResult = await backupResponse.json();
+    assert.equal(backupResponse.status, 200, JSON.stringify(backupResult));
+    assert.equal(backupResult.success, true, JSON.stringify(backupResult));
+    assert.match(backupResult.path, /\.enc$/);
+    const encryptedBackup = await readFile(backupResult.path);
+    assert.equal(encryptedBackup.subarray(0, 4).toString(), 'RAB1', 'Local backup artifacts must be authenticated ciphertext.');
+    const backupKey = createHash('sha256').update('integration-backup-key-that-is-longer-than-32-characters').digest();
+    const backupDecipher = createDecipheriv('aes-256-gcm', backupKey, encryptedBackup.subarray(4, 16));
+    backupDecipher.setAuthTag(encryptedBackup.subarray(16, 32));
+    const restoredBackup = JSON.parse(Buffer.concat([backupDecipher.update(encryptedBackup.subarray(32)), backupDecipher.final()]).toString());
+    assert.ok(restoredBackup.User.some(item => item.email === 'admin@example.test'), 'The encrypted backup must decrypt into restorable application data.');
 
     const productResponse = await fetch(`${baseUrl}/api/entities/ShopProduct`, {
       method: 'POST',

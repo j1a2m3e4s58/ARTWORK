@@ -70,7 +70,7 @@ export default function SystemTab() {
       <h1 className="font-display text-4xl text-ivory">System & Operations</h1>
       <p className="mb-8 mt-2 text-sm text-ivory/40">Environment readiness, backups and administrator audit history.</p>
       {notice && <p role="status" className="mb-5 border border-brass/25 bg-brass/5 p-3 text-sm text-ivory/75">{notice}</p>}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-9">
         {[
           { label: 'API', value: health?.ok ? 'Ready' : health ? 'Needs attention' : 'Checking', icon: Activity, good: health?.ok },
           { label: 'Database', value: health?.services?.database?.kind || 'Checking', icon: Server, good: health?.services?.database?.ok },
@@ -97,6 +97,18 @@ export default function SystemTab() {
               : 'Not recorded',
             icon: DatabaseBackup,
             good: health?.services?.backup?.ok,
+          },
+          {
+            label: 'Job queue',
+            value: health?.services?.queue?.configured ? `${health.services.queue.waiting || 0} waiting` : 'Direct fallback',
+            icon: RefreshCw,
+            good: health?.services?.queue?.configured,
+          },
+          {
+            label: 'Malware scan',
+            value: health?.services?.malwareScanning?.configured ? 'Fail-closed' : 'Needs scanner',
+            icon: Activity,
+            good: health?.services?.malwareScanning?.configured,
           },
         ].map(({ label, value, icon: Icon, good }) => (
           <div key={label} className={`border p-4 ${good ? 'border-green-400/20 bg-green-400/5' : 'border-yellow-400/20 bg-yellow-400/5'}`}>

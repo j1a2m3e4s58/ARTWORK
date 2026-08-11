@@ -4,6 +4,8 @@ The chat now encrypts one-to-one text messages and newly uploaded private-chat a
 
 Server-side malware scanners cannot inspect encrypted attachment contents. Keep attachment size/type controls in the client, use safe browser rendering/download behavior, and include this limitation in the external security review and product risk assessment.
 
+Plain attachments are fail-closed when `MALWARE_SCAN_URL` is configured: a scanner outage rejects the upload, and a malware verdict prevents storage. End-to-end encrypted attachments remain marked `client-encrypted`; the server cannot honestly claim to scan ciphertext. Voice-note compatibility delivery is not E2EE and therefore passes through the configured scanner.
+
 Do not advertise the system as independently audited end-to-end encryption until a qualified external cryptography review has covered the protocol, browser key lifecycle, metadata exposure, device verification/revocation, attachment encryption, recovery, and the deployed build/supply chain. The capability endpoint deliberately reports `independentlyAuditedE2EE: false` until that work is complete.
 
 Run `npm run chat:configure-local` once to generate VAPID credentials into the ignored local `.env` file without printing secret values. Copy those three `VAPID_*` values into the production service's secret environment settings; do not commit `.env`.

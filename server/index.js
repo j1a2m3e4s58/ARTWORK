@@ -153,6 +153,7 @@ app.use((req, res, next) => {
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true });
 const mutationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 120, standardHeaders: true });
 const publicFormLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 20, standardHeaders: true });
+const chatMessageLimiter = rateLimit({ windowMs: 5 * 60 * 1000, limit: 75, standardHeaders: true, message: { error: 'Too many messages were sent from this connection. Wait a moment and try again.' } });
 const limitPublicForms = (req, res, next) => (
   ['Message', 'ArtRequest', 'FilmRequest', 'CommissionRequest', 'InternshipApplication', 'NewsletterSubscriber', 'Order'].includes(req.params.name)
     ? publicFormLimiter(req, res, next)
@@ -1144,7 +1145,7 @@ async function ensureSeeds() {
 await ensureSeeds();
 const backgroundJobsEnabled = process.env.BACKGROUND_JOBS_ENABLED !== 'false';
 const outboxTimer = backgroundJobsEnabled
-  ? setInterval(() => processEmailOutbox().catch(error => {
+  ? setInterval(() => enqueueJob('delivery.outbox', {}, { jobId: `outbox-${Math.floor(Date.now() / 60000)}` }).catch(error => {
     reportOperationalError('email_outbox_failed', error);
   }), 60_000)
   : null;
@@ -1178,7 +1179,10 @@ app.get('/api/ready', async (_req, res) => {
   const backup = {
     ok: Boolean(process.env.BACKUP_VERIFIED_AT),
     lastVerifiedAt: process.env.BACKUP_VERIFIED_AT || null,
+    encrypted: Boolean(process.env.BACKUP_ENCRYPTION_KEY),
   };
+  const queue = await jobQueueHealth().catch(error => ({ configured: false, error: error.message }));
+  const malwareScanning = { configured: Boolean(process.env.MALWARE_SCAN_URL), failClosed: Boolean(process.env.MALWARE_SCAN_URL) };
   const required = production
     ? [
         database.ok,
@@ -1196,9 +1200,12 @@ app.get('/api/ready', async (_req, res) => {
       ...(!requireEmail && emailConfigured ? ['email_unchecked'] : []),
       ...(production && !monitoring.ok ? ['monitoring'] : []),
       ...(production && !backup.ok ? ['backup_unverified'] : []),
+      ...(production && !backup.encrypted ? ['backup_encryption_missing'] : []),
+      ...(production && !queue.configured ? ['durable_queue_missing'] : []),
+      ...(production && !malwareScanning.configured ? ['malware_scanner_missing'] : []),
     ],
     services: {
-      database, email, storage, monitoring, backup,
+      database, email, storage, monitoring, backup, queue, malwareScanning,
       humanVerification: { ok: turnstileConfigured },
     },
     payment: paymentStatus,
@@ -1220,11 +1227,14 @@ app.get('/api/admin/system-status', requireAdmin, async (_req, res) => {
   const backup = {
     ok: Boolean(process.env.BACKUP_VERIFIED_AT),
     lastVerifiedAt: process.env.BACKUP_VERIFIED_AT || null,
+    encrypted: Boolean(process.env.BACKUP_ENCRYPTION_KEY),
   };
+  const queue = await jobQueueHealth().catch(error => ({ configured: false, error: error.message }));
   res.json({
     ok: database.ok && (process.env.NODE_ENV !== 'production' || (email.ok && storage.ok)),
     services: {
-      database, email, storage, monitoring, backup, payment: paymentStatus,
+      database, email, storage, monitoring, backup, payment: paymentStatus, queue,
+      malwareScanning: { configured: Boolean(process.env.MALWARE_SCAN_URL), failClosed: Boolean(process.env.MALWARE_SCAN_URL) },
       realtime: {
         ok: redisReady,
         provider: process.env.REDIS_URL ? 'redis' : 'single-server memory',
@@ -1774,7 +1784,7 @@ const inQuietHours = preferences => {
   const end = toMinutes(quiet.end || '07:00');
   return start <= end ? current >= start && current < end : current >= start || current < end;
 };
-const pushToUsers = async (userIds, payload, mutedBy = []) => {
+const deliverPushToUsers = async (userIds, payload, mutedBy = []) => {
   if (!pushConfigured) return;
   const category = payload.category || notificationCategory(payload.type);
   const recipients = db.data.PushSubscription.filter(item => {
@@ -1795,6 +1805,14 @@ const pushToUsers = async (userIds, payload, mutedBy = []) => {
       else reportOperationalError('push_delivery_failed', error, { userId: item.userId });
     }
   }));
+};
+let durableQueueInitialized = false;
+const pushToUsers = async (userIds, payload, mutedBy = []) => {
+  if (!pushConfigured || !userIds?.length) return;
+  if (!durableQueueInitialized) return deliverPushToUsers(userIds, payload, mutedBy);
+  return enqueueJob('notification.push', { userIds, payload, mutedBy }, {
+    jobId: `push-${payload.tag || payload.callId || newId()}-${Date.now()}`,
+  });
 };
 
 const audienceRecipients = audience => {
@@ -1858,6 +1876,14 @@ const processScheduledCommunityUpdates = async () => {
 };
 const backgroundQueue = await initializeJobQueue({
   handlers: {
+    'delivery.outbox': async () => { await processEmailOutbox(); return { completedAt: now() }; },
+    'notification.push': async data => { await deliverPushToUsers(data.userIds || [], data.payload || {}, data.mutedBy || []); return { completedAt: now() }; },
+    'media.process': async data => {
+      const media = db.data.Media.find(item => item.id === data.mediaId && !item.deleted_at);
+      if (!media) throw new Error('Media record not found.');
+      media.processingStatus = 'complete'; media.processedAt = now(); media.updated_date = now();
+      await save(); return { mediaId: media.id, completedAt: media.processedAt };
+    },
     'community.publish-due': async () => { await processScheduledCommunityUpdates(); return { completedAt: now() }; },
     'voice.transcribe': async data => {
       if (!process.env.SPEECH_API_URL) throw new Error('SPEECH_API_URL is not configured.');
@@ -1883,10 +1909,19 @@ const backgroundQueue = await initializeJobQueue({
     await save();
     reportOperationalError('background_job_dead_lettered', error, { jobId: job.id, name: job.name });
   },
+  onCompleted: async job => {
+    const failureId = String(job.data?._recoveryFailureId || '');
+    if (!failureId) return;
+    const failure = db.data.ChatJobFailure.find(item => item.id === failureId && !item.deleted_at);
+    if (!failure) return;
+    failure.status = 'recovered'; failure.recoveredAt = now(); failure.updated_date = now();
+    await save();
+  },
 }).catch(error => {
   reportOperationalError('job_queue_startup_failed', error);
   return { configured: false, mode: 'direct' };
 });
+durableQueueInitialized = true;
 const communityUpdateTimer = backgroundJobsEnabled
   ? setInterval(() => enqueueJob('community.publish-due', {}, { jobId: `community-${Math.floor(Date.now() / 30000)}` }).catch(error => reportOperationalError('community_update_job_failed', error)), 30_000)
   : null;
@@ -2204,7 +2239,7 @@ app.patch('/api/chat/conversations/:id/settings', requireVerifiedUser, mutationL
   res.json(conversationView(conversation, req.user));
 });
 
-app.post('/api/chat/conversations/:id/report', requireVerifiedUser, mutationLimiter, async (req, res) => {
+app.post('/api/chat/conversations/:id/report', requireVerifiedUser, chatMessageLimiter, mutationLimiter, async (req, res) => {
   const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
   if (!conversation || !chatMember(conversation, req.user) || conversation.type === 'announcement') return res.status(404).json({ error: 'Conversation not found.' });
   const reason = String(req.body.reason || '').trim().slice(0, 120);
@@ -2373,7 +2408,7 @@ app.get('/api/chat/conversations/:id/export', requireVerifiedUser, (req, res) =>
   res.json({ exportedAt: now(), conversation: { id: conversation.id, title: conversation.title || '', type: conversation.type }, participants, messages });
 });
 
-app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLimiter, async (req, res) => {
+app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, chatMessageLimiter, mutationLimiter, async (req, res) => {
   const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
   if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
   if (conversation.type === 'announcement' && !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'Only studio staff can post announcements.' });
@@ -2420,7 +2455,7 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLi
   res.status(201).json(message);
 });
 
-app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, mutationLimiter, async (req, res) => {
+app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, chatMessageLimiter, mutationLimiter, async (req, res) => {
   const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
   if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
   if (conversation.type === 'announcement' && !staffRoles.has(req.user.role)) return res.status(403).json({ error: 'Only studio staff can post announcements.' });
@@ -2982,24 +3017,83 @@ app.post('/api/chat/gifs/import', requireVerifiedUser, mutationLimiter, async (r
   }
 });
 
-app.get('/api/admin/chat/analytics', requireAdmin, async (_req, res) => {
+app.get('/api/admin/chat/analytics', requireStaffIdentity, async (_req, res) => {
   const sent = db.data.ChatMessage.filter(item => !item.deleted_at);
-  const replies = [];
-  for (const conversation of db.data.ChatConversation.filter(item => !item.deleted_at)) {
+  const staffIds = new Set(db.data.User.filter(item => staffRoles.has(item.role) && !item.deleted_at).map(item => item.id));
+  const responseDurations = [];
+  const unresolved = [];
+  for (const conversation of db.data.ChatConversation.filter(item => !item.deleted_at && item.type !== 'announcement')) {
     const rows = sent.filter(item => item.conversationId === conversation.id).sort((a, b) => String(a.created_date).localeCompare(String(b.created_date)));
-    for (let index = 1; index < rows.length; index += 1) if (rows[index].senderId !== rows[index - 1].senderId) replies.push(new Date(rows[index].created_date).getTime() - new Date(rows[index - 1].created_date).getTime());
+    let waitingSince = null;
+    for (const message of rows) {
+      if (!staffIds.has(message.senderId) && !waitingSince) waitingSince = message.created_date;
+      if (staffIds.has(message.senderId) && waitingSince) {
+        responseDurations.push(Math.max(0, new Date(message.created_date).getTime() - new Date(waitingSince).getTime()));
+        waitingSince = null;
+      }
+    }
+    if (waitingSince) {
+      const customerUnread = rows.filter(message => !staffIds.has(message.senderId) && ![...(message.readBy || [])].some(id => staffIds.has(id)));
+      unresolved.push({
+        id: conversation.id,
+        title: conversation.title || conversationView(conversation, _req.user).participants.find(item => item.id !== _req.user.id)?.name || 'Customer conversation',
+        waitingSince,
+        unreadSince: customerUnread[0]?.created_date || null,
+        unreadCount: customerUnread.length,
+        waitingSeconds: Math.max(0, Math.round((Date.now() - new Date(waitingSince).getTime()) / 1000)),
+      });
+    }
   }
+  const sortedDurations = [...responseDurations].sort((a, b) => a - b);
+  const responseSeconds = responseDurations.map(value => value / 1000);
+  const unresolvedUnread = unresolved.filter(item => item.unreadSince).map(item => Date.now() - new Date(item.unreadSince).getTime());
   res.json({
     messages: sent.length,
     conversations: db.data.ChatConversation.filter(item => !item.deleted_at).length,
-    groups: db.data.ChatConversation.filter(item => item.type === 'group' && !item.deleted_at).length,
-    activeStories: db.data.ChatStory.filter(item => !item.deleted_at && new Date(item.expiresAt).getTime() > Date.now()).length,
-    calls: db.data.ChatCall.filter(item => !item.deleted_at).length,
-    averageResponseSeconds: replies.length ? Math.round(replies.reduce((sum, value) => sum + value, 0) / replies.length / 1000) : 0,
+    averageResponseSeconds: responseSeconds.length ? Math.round(responseSeconds.reduce((sum, value) => sum + value, 0) / responseSeconds.length) : 0,
+    p95ResponseSeconds: sortedDurations.length ? Math.round(sortedDurations[Math.max(0, Math.ceil(sortedDurations.length * 0.95) - 1)] / 1000) : 0,
+    averageUnreadSeconds: unresolvedUnread.length ? Math.round(unresolvedUnread.reduce((sum, value) => sum + value, 0) / unresolvedUnread.length / 1000) : 0,
+    unresolvedCount: unresolved.length,
+    unresolved: unresolved.sort((a, b) => b.waitingSeconds - a.waitingSeconds).slice(0, 100),
     moderationReview: db.data.ChatModerationEvent.filter(item => item.status === 'review' && !item.deleted_at).length,
-    reportsOpen: db.data.ChatReport.filter(item => item.status === 'open' && !item.deleted_at).length,
+    reportsOpen: db.data.ChatReport.filter(item => ['open', 'reviewing'].includes(item.status) && !item.deleted_at).length,
+    malwareBlocked: db.data.ChatModerationEvent.filter(item => item.type === 'attachment_malware' && item.status === 'blocked' && !item.deleted_at).length,
     queue: await jobQueueHealth().catch(error => ({ configured: false, error: error.message })),
   });
+});
+
+app.get('/api/admin/jobs', requireAdmin, async (_req, res) => {
+  res.json({
+    health: await jobQueueHealth().catch(error => ({ configured: false, error: error.message })),
+    failures: db.data.ChatJobFailure.filter(item => !item.deleted_at).sort((a, b) => String(b.created_date).localeCompare(String(a.created_date))).slice(0, 100),
+  });
+});
+
+app.post('/api/admin/jobs/:id/retry', requireAdmin, mutationLimiter, async (req, res) => {
+  const failure = db.data.ChatJobFailure.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!failure) return res.status(404).json({ error: 'Failed job not found.' });
+  if (failure.status === 'recovered') return res.status(409).json({ error: 'This failed job has already been recovered.' });
+  const result = await enqueueJob(failure.name, { ...(failure.payload || {}), _recoveryFailureId: failure.id }, { jobId: `recovery-${failure.id}-${Date.now()}` });
+  failure.status = result?.queued ? 'retried' : 'recovered'; failure.retriedAt = now(); failure.retriedBy = req.user.id; failure.updated_date = now();
+  await audit(req.user, 'jobs.retry_requested', 'ChatJobFailure', failure.id, { name: failure.name });
+  await save();
+  res.json({ success: true, result, failure });
+});
+
+app.get('/api/admin/chat/moderation', requireStaffIdentity, (req, res) => {
+  res.json(db.data.ChatModerationEvent.filter(item => !item.deleted_at).sort((a, b) => String(b.created_date).localeCompare(String(a.created_date))).slice(0, 200).map(item => ({
+    ...item,
+    user: chatUser(db.data.User.find(user => user.id === item.userId) || { id: '', email: 'removed@account', role: 'customer' }),
+  })));
+});
+
+app.patch('/api/admin/chat/moderation/:id', requireStaff, mutationLimiter, async (req, res) => {
+  const event = db.data.ChatModerationEvent.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!event) return res.status(404).json({ error: 'Moderation event not found.' });
+  if (['review', 'resolved', 'dismissed', 'blocked'].includes(req.body.status)) event.status = req.body.status;
+  event.reviewedBy = req.user.id; event.reviewedAt = now(); event.updated_date = now();
+  await audit(req.user, 'chat.moderation_reviewed', 'ChatModerationEvent', event.id, { status: event.status });
+  await save(); res.json(event);
 });
 
 app.patch('/api/chat/messages/:id', requireVerifiedUser, mutationLimiter, async (req, res) => {
@@ -4024,6 +4118,7 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     publicId: stored.publicId,
     resourceType: stored.resourceType,
     scanStatus: encryptedChatAttachment ? 'client-encrypted' : scanStatus,
+    processingStatus: 'queued',
     userId: req.user.id,
     purpose: isPublicApplicationUpload ? 'internship-letter' : isChatAttachment ? 'chat-attachment' : isChatStory ? 'chat-story' : isProfileAvatar ? 'profile-avatar' : staffRoles.has(req.user.role) ? 'content-library' : 'customer-reference',
     altText: '',
@@ -4040,6 +4135,13 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
   db.data.Media.push(media);
   await audit(req.user, 'file.uploaded', 'Upload', fileId, { mime: uploadType.mime, bytes: req.file.size, provider: storageProvider, clientEncrypted: encryptedChatAttachment });
   await save();
+  try {
+    await enqueueJob('media.process', { mediaId: fileId }, { jobId: `media-${fileId}` });
+  } catch (error) {
+    media.processingStatus = 'failed'; media.processingError = String(error?.message || error).slice(0, 500); media.updated_date = now();
+    db.data.ChatJobFailure.push({ id: newId(), jobId: `media-${fileId}`, name: 'media.process', payload: { mediaId: fileId }, attempts: 1, error: media.processingError, status: 'dead-letter', created_date: now() });
+    await save(); reportOperationalError('media_processing_failed', error, { mediaId: fileId });
+  }
   res.status(201).json({ file_url: stored.url, media });
 });
 
@@ -4228,12 +4330,14 @@ app.get('/api/newsletter/unsubscribe', async (req, res) => {
 });
 
 app.post('/api/admin/backup', requireAdmin, async (req, res) => {
-  const result = await backupDatabase({ force: true });
-  await audit(req.user, 'system.backup_created', 'System', null);
-  await save();
-  res.json(result
-    ? { success: true, createdAt: now(), path: result }
-    : {
+  try {
+    await save();
+    const result = await backupDatabase({ force: true });
+    await audit(req.user, 'system.backup_created', 'System', null);
+    await save();
+    res.json(result
+      ? { success: true, createdAt: now(), path: result }
+      : {
         success: false,
         managed: databaseKind === 'postgresql-relational',
         provider: databaseKind,
@@ -4242,6 +4346,10 @@ app.post('/api/admin/backup', requireAdmin, async (req, res) => {
           ? 'Use the managed PostgreSQL backup and restore rehearsal for production data.'
           : 'No new backup was created.',
       });
+  } catch (error) {
+    reportOperationalError('encrypted_backup_failed', error, { actorId: req.user.id });
+    res.status(500).json({ error: 'The encrypted backup could not be created.', ...(process.env.NODE_ENV === 'production' ? {} : { detail: error.message }) });
+  }
 });
 
 app.post('/api/admin/outbox/retry', requireAdmin, async (req, res) => {

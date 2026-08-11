@@ -7,7 +7,9 @@
 - SMTP with SPF, DKIM and DMARC enabled.
 - Cloudflare Turnstile public and secret keys.
 - Final HTTPS values for `APP_ORIGIN` and `SITE_URL`.
-- A long random `JWT_SECRET`, administrator MFA and a private `METRICS_TOKEN`.
+- A long random `JWT_SECRET`, a separate `BACKUP_ENCRYPTION_KEY`, administrator MFA and a private `METRICS_TOKEN`.
+- Redis through `REDIS_URL` for durable delivery, push-notification and media-processing queues.
+- A malware scanner through `MALWARE_SCAN_URL` and, when required, `MALWARE_SCAN_TOKEN`.
 - Paystack credentials when `PAYMENT_PROVIDER=paystack`.
 - An error-alert destination in `ERROR_WEBHOOK_URL` and a recorded restore rehearsal in `BACKUP_VERIFIED_AT`.
 
@@ -52,6 +54,10 @@ Database backups are owned by the PostgreSQL provider. Perform a restore rehears
 
 Record the successful rehearsal timestamp as an ISO 8601 value in
 `BACKUP_VERIFIED_AT`. A backup existing is not the same as a verified restore.
+
+Run `npm run backup:rehearse` against a disposable `RESTORE_DATABASE_URL`. The rehearsal creates an AES-256-GCM archive using `BACKUP_ENCRYPTION_KEY`, deletes the plaintext dump, decrypts into a temporary restore file, restores it, and compares the source and restored table inventories. Never point `RESTORE_DATABASE_URL` at production. Record the successful output and update `BACKUP_VERIFIED_AT` at least quarterly.
+
+Redis jobs use bounded exponential retries. Administrators can inspect and retry dead-lettered delivery, notification and media-processing jobs in Studio Control → Support Analytics. Keep Redis persistence enabled and alert on growing waiting or failed counts.
 
 ## Credential rotation
 

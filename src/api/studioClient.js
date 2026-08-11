@@ -163,6 +163,21 @@ export const studioClient = {
     testAlert() {
       return request('/api/admin/test-alert', { method: 'POST' });
     },
+    supportAnalytics() {
+      return request('/api/admin/chat/analytics');
+    },
+    jobs() {
+      return request('/api/admin/jobs');
+    },
+    retryJob(id) {
+      return request(`/api/admin/jobs/${encodeURIComponent(id)}/retry`, { method: 'POST' });
+    },
+    moderation() {
+      return request('/api/admin/chat/moderation');
+    },
+    reviewModeration(id, status) {
+      return request(`/api/admin/chat/moderation/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+    },
     async reviewPartnerApplication(id, data) {
       const result = await request(`/api/admin/partners/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) });
       if (String(data?.status).toLowerCase() === 'approved') emitRequestFeedback('approval', 'PartnerApplication', result?.application || result);
