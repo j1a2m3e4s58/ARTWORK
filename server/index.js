@@ -17,7 +17,7 @@ import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from 'jose';
 import { fileTypeFromBuffer } from 'file-type';
 import {
   db, save, newId, now, backupDatabase, databaseKind, closeDatabase, checkDatabase,
-  queryCollection, claimOutboxBatch, completeOutboxRecord,
+  queryCollection, claimOutboxBatch, completeOutboxRecord, updateUserPresence,
 } from './db.js';
 import { sendEmail, checkEmail, emailConfigured } from './email.js';
 import { validateEntity } from './validation.js';
@@ -2016,8 +2016,7 @@ app.get('/api/chat/group-directory', requireVerifiedUser, (req, res) => {
 app.post('/api/chat/presence', requireVerifiedUser, async (req, res) => {
   const previous = new Date(req.user.lastSeenAt || 0).getTime();
   if (Date.now() - previous > 45_000) {
-    req.user.lastSeenAt = now();
-    await save();
+    await updateUserPresence(req.user.id, now());
   }
   res.json({ online: true });
 });

@@ -254,6 +254,39 @@ export async function queryCollection(name, { filters = {}, sort = '-created_dat
   return { records: records.rows.map(row => row.data), total: count.rows[0]?.total || 0 };
 }
 
+export async function updateUserPresence(id, lastSeenAt = new Date().toISOString()) {
+  if (!postgresPool) {
+    const user = database.data.User.find(item => item.id === id);
+    if (!user) return null;
+    user.lastSeenAt = lastSeenAt;
+    await save();
+    return user;
+  }
+
+  const client = await postgresPool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('reigns_atelier_state_write'))");
+    const result = await client.query(
+      `UPDATE users
+       SET data = jsonb_set(data, '{lastSeenAt}', to_jsonb($2::text), true),
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING data`,
+      [id, lastSeenAt],
+    );
+    await client.query('COMMIT');
+    if (!result.rowCount) return null;
+    syncLocalRecord('User', result.rows[0].data);
+    return result.rows[0].data;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 function syncLocalRecord(name, record) {
   const records = database.data[name];
   const index = records.findIndex(item => item.id === record.id);
