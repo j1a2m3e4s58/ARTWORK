@@ -25,7 +25,7 @@ const encryptedArchive = path.join(tempDir, 'atelier.dump.enc');
 const restoreArchive = path.join(tempDir, 'atelier.restore.dump');
 const command = name => process.platform === 'win32' ? `${name}.exe` : name;
 try {
-  const dump = spawnSync(command('pg_dump'), ['--format=custom', '--no-owner', '--file', archive, process.env.DATABASE_URL], { stdio: 'inherit' });
+  const dump = spawnSync(command('pg_dump'), ['--format=custom', '--no-owner', '--no-acl', '--file', archive, process.env.DATABASE_URL], { stdio: 'inherit' });
   if (dump.status !== 0) throw new Error('pg_dump failed. Install PostgreSQL client tools and verify database access.');
   const key = createHash('sha256').update(process.env.BACKUP_ENCRYPTION_KEY).digest();
   const iv = randomBytes(12);
@@ -40,7 +40,7 @@ try {
   decipher.setAuthTag(encrypted.subarray(16, 32));
   await writeFile(restoreArchive, Buffer.concat([decipher.update(encrypted.subarray(32)), decipher.final()]), { mode: 0o600 });
   const restore = spawnSync(command('pg_restore'), [
-    '--clean', '--if-exists', '--no-owner', '--dbname', process.env.RESTORE_DATABASE_URL, restoreArchive,
+    '--clean', '--if-exists', '--no-owner', '--no-acl', '--dbname', process.env.RESTORE_DATABASE_URL, restoreArchive,
   ], { stdio: 'inherit' });
   if (restore.status !== 0) throw new Error('pg_restore failed.');
   const source = new pg.Client({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false } });
