@@ -15,7 +15,12 @@ export default function FloatingActions() {
     window.addEventListener('scroll', update, { passive: true });
     return () => window.removeEventListener('scroll', update);
   }, []);
-  const cleanNumber = String(settings.whatsapp_number || '').replace(/[^\d]/g, '');
+  const configuredNumber = String(
+    settings.whatsapp_number || settings.contact_phone || '+233 55 915 5792',
+  ).replace(/[^\d]/g, '');
+  const cleanNumber = configuredNumber.startsWith('0')
+    ? `233${configuredNumber.slice(1)}`
+    : configuredNumber;
   const message = settings.whatsapp_message || "Hello, I'm interested in a commission from Reigns Atelier";
   const whatsappHref = cleanNumber
     ? `https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`
