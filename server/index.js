@@ -4180,6 +4180,17 @@ app.post('/api/admin/recycle-bin/purge', requireAdmin, mutationLimiter, async (r
   res.json({ success: true, purged });
 });
 
+app.post('/api/admin/audit-logs/purge', requireAdmin, mutationLimiter, async (req, res) => {
+  const removeAll = req.body?.all === true;
+  const ids = new Set(Array.isArray(req.body?.ids) ? req.body.ids.map(String).filter(Boolean) : []);
+  if (!removeAll && !ids.size) return res.status(400).json({ error: 'Select at least one audit event to delete.' });
+  const before = db.data.AuditLog.length;
+  db.data.AuditLog = removeAll ? [] : db.data.AuditLog.filter(item => !ids.has(String(item.id)));
+  const purged = before - db.data.AuditLog.length;
+  await save();
+  res.json({ success: true, purged });
+});
+
 app.get('/api/notifications/unread-count', requireVerifiedUser, (req, res) => {
   res.json({ count: unreadNotificationCount(req.user.id) });
 });

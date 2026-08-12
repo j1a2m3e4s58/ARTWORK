@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
-import { Activity, BellRing, CheckCircle2, Cloud, CreditCard, DatabaseBackup, MailCheck, MailWarning, RefreshCw, Server } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Activity, BellRing, CheckCircle2, CheckSquare, Cloud, CreditCard, DatabaseBackup, MailCheck, MailWarning, RefreshCw, Server, Square, Trash2 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
+import GlassConfirmDialog from '@/components/GlassConfirmDialog';
 
 export default function SystemTab() {
   const { user, checkUserAuth } = useAuth();
@@ -15,11 +16,40 @@ export default function SystemTab() {
   const [recoveryCode, setRecoveryCode] = useState('');
   const [recoveryCodes, setRecoveryCodes] = useState([]);
   const [testing, setTesting] = useState('');
+  const [selectedLogs, setSelectedLogs] = useState(new Set());
+  const [auditDelete, setAuditDelete] = useState(null);
+  const [deletingLogs, setDeletingLogs] = useState(false);
   useEffect(() => {
     Promise.all([studioClient.system.status(), studioClient.entities.AuditLog.list('-created_date', 50)])
       .then(([ready, auditLogs]) => { setHealth(ready); setLogs(auditLogs); })
       .catch(error => setNotice(error.message));
   }, []);
+  const allLogsSelected = useMemo(() => logs.length > 0 && logs.every(log => selectedLogs.has(log.id)), [logs, selectedLogs]);
+  const selectedAuditLogs = useMemo(() => logs.filter(log => selectedLogs.has(log.id)), [logs, selectedLogs]);
+  const toggleAuditLog = id => setSelectedLogs(current => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleAllAuditLogs = () => setSelectedLogs(allLogsSelected ? new Set() : new Set(logs.map(log => log.id)));
+  const deleteAuditLogs = async () => {
+    if (!auditDelete) return;
+    setDeletingLogs(true);
+    setNotice('');
+    try {
+      const removeAll = auditDelete === 'all';
+      const ids = removeAll ? [] : auditDelete.map(log => log.id);
+      const result = await studioClient.admin.purgeAuditLogs(ids, removeAll);
+      setLogs(current => removeAll ? [] : current.filter(log => !ids.includes(log.id)));
+      setSelectedLogs(new Set());
+      setAuditDelete(null);
+      setNotice(`${result.purged} audit event${result.purged === 1 ? '' : 's'} permanently deleted.`);
+    } catch (error) {
+      setNotice(`Audit deletion failed: ${error.message}`);
+    } finally {
+      setDeletingLogs(false);
+    }
+  };
   const backup = async () => {
     const result = await studioClient.admin.backup();
     setNotice(result.success ? 'Backup created.' : 'Managed PostgreSQL backups must be configured with your database provider.');
@@ -177,11 +207,29 @@ export default function SystemTab() {
           </div>
         )}
       </section>
-      <h2 className="mb-4 mt-10 font-display text-2xl">Recent audit activity</h2>
+      <div className="mb-4 mt-10 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div><h2 className="font-display text-2xl">Recent audit activity</h2><p className="mt-1 text-xs text-ivory/35">Security history is permanent once deleted and cannot be restored.</p></div>
+        {user?.role === 'admin' && logs.length > 0 && <div className="flex flex-wrap gap-2">
+          <button onClick={toggleAllAuditLogs} className="min-h-10 border border-brass/25 px-3 text-xs text-ivory/65 hover:border-brass/50">{allLogsSelected ? 'Clear selection' : 'Select all'}</button>
+          <button disabled={!selectedAuditLogs.length || deletingLogs} onClick={() => setAuditDelete(selectedAuditLogs)} className="min-h-10 border border-red-400/30 px-3 text-xs text-red-300 disabled:cursor-not-allowed disabled:opacity-40">Delete selected ({selectedAuditLogs.length})</button>
+          <button disabled={deletingLogs} onClick={() => setAuditDelete('all')} className="min-h-10 bg-red-500/15 px-3 text-xs text-red-200 hover:bg-red-500/25 disabled:opacity-40">Delete all</button>
+        </div>}
+      </div>
       <div className="overflow-hidden border border-brass/10">
-        {logs.map(log => <div key={log.id} className="grid gap-1 border-t border-brass/10 p-3 text-xs first:border-0 sm:grid-cols-[1fr_1fr_auto]"><span className="text-ivory/65">{log.action}</span><span className="text-brass/65">{log.actorEmail}</span><time className="text-ivory/25">{new Date(log.created_date).toLocaleString()}</time></div>)}
+        {logs.map(log => <div key={log.id} className={`grid gap-2 border-t p-3 text-xs first:border-0 sm:grid-cols-[auto_1fr_1fr_auto] sm:items-center ${selectedLogs.has(log.id) ? 'border-brass/25 bg-brass/5' : 'border-brass/10'}`}>
+          {user?.role === 'admin' && <button onClick={() => toggleAuditLog(log.id)} aria-label={`Select audit event ${log.action}`} className="text-brass">{selectedLogs.has(log.id) ? <CheckSquare size={18} /> : <Square size={18} />}</button>}
+          <span className="text-ivory/65">{log.action}</span><span className="text-brass/65">{log.actorEmail}</span><div className="flex items-center justify-between gap-3"><time className="text-ivory/25">{new Date(log.created_date).toLocaleString()}</time>{user?.role === 'admin' && <button onClick={() => setAuditDelete([log])} aria-label={`Delete audit event ${log.action}`} className="flex h-9 w-9 items-center justify-center text-red-300/55 hover:bg-red-500/10 hover:text-red-200"><Trash2 size={14} /></button>}</div>
+        </div>)}
         {!logs.length && <p className="p-8 text-center text-sm text-ivory/30">No audit events yet.</p>}
       </div>
+      <GlassConfirmDialog
+        open={Boolean(auditDelete)}
+        onOpenChange={open => !open && setAuditDelete(null)}
+        onConfirm={deleteAuditLogs}
+        busy={deletingLogs}
+        title={auditDelete === 'all' ? 'Delete the entire audit log?' : `Delete ${auditDelete?.length || 0} audit event${auditDelete?.length === 1 ? '' : 's'}?`}
+        description={auditDelete === 'all' ? 'Every recorded administrator and security event will be permanently removed. This cannot be undone.' : 'The selected security history will be permanently removed. This cannot be undone.'}
+      />
     </div>
   );
 }

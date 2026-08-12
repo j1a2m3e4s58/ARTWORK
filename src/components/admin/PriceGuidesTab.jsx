@@ -3,10 +3,12 @@ import { FileText, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import FileUploadField from './FileUploadField';
 import ResponsiveSelect from '@/components/ResponsiveSelect';
+import useGlassConfirm from '@/hooks/useGlassConfirm';
 
 const emptyGuide = { title: '', description: '', fileUrl: '', status: 'published', sortOrder: 0 };
 
 export default function PriceGuidesTab() {
+  const { confirm, confirmDialog } = useGlassConfirm();
   const [guides, setGuides] = useState([]);
   const [form, setForm] = useState(emptyGuide);
   const [editingId, setEditingId] = useState(null);
@@ -34,12 +36,12 @@ export default function PriceGuidesTab() {
   };
   const edit = guide => { setEditingId(guide.id); setForm({ ...emptyGuide, ...guide }); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const remove = async guide => {
-    if (!window.confirm(`Remove “${guide.title}” from the customer price guides? The stored PDF will remain in Media Library until you permanently purge it.`)) return;
+    if (!await confirm({ title: 'Remove this price guide?', description: `“${guide.title}” will disappear from customer price guides. Its PDF remains in Media Library until permanently purged.`, confirmLabel: 'Remove guide' })) return;
     try { await studioClient.entities.PriceGuide.delete(guide.id); await load(); }
     catch (removeError) { setError(removeError.message); }
   };
 
-  return <div className="mx-auto max-w-5xl">
+  return <div className="mx-auto max-w-5xl">{confirmDialog}
     <header className="mb-7"><p className="text-xs uppercase tracking-[.28em] text-brass">Art shop</p><h1 className="mt-2 font-display text-4xl text-ivory">Customer price guides</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-ivory/45">Publish downloadable PDF price lists for customers. You can upload a replacement, keep a guide as a draft, reorder it, or remove it at any time.</p></header>
     <form onSubmit={save} className="border border-brass/15 bg-carbon p-4 sm:p-6">
       <div className="mb-5 flex items-center justify-between gap-3"><h2 className="flex items-center gap-2 font-display text-2xl text-ivory"><FileText className="text-brass" size={20} />{editingId ? 'Edit price guide' : 'Add price guide'}</h2>{editingId && <button type="button" onClick={reset} className="text-xs text-brass hover:underline">Cancel edit</button>}</div>

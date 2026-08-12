@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, Eye, EyeOff, Pencil, Plus, Save, Trash2, X } fr
 import { studioClient } from '@/api/studioClient';
 import FileUploadField from './FileUploadField';
 import ResponsiveSelect from '@/components/ResponsiveSelect';
+import useGlassConfirm from '@/hooks/useGlassConfirm';
 
 const EMPTY_SLIDE = {
   eyebrow: 'Reigns Atelier',
@@ -134,6 +135,7 @@ function SlideForm({ initialValue, onSave, onCancel, saving }) {
 }
 
 export default function HeroSlidesTab() {
+  const { confirm, confirmDialog } = useGlassConfirm();
   const [slides, setSlides] = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -171,7 +173,7 @@ export default function HeroSlidesTab() {
   };
 
   const remove = async slide => {
-    if (!window.confirm(`Remove “${slide.title}” from the home banners?`)) return;
+    if (!await confirm({ title: 'Remove this home banner?', description: `“${slide.title}” will move to the recycle bin and disappear from the home page.`, confirmLabel: 'Remove banner' })) return;
     try {
       await studioClient.entities.HeroSlide.delete(slide.id);
       setSlides(current => current.filter(item => item.id !== slide.id));
@@ -198,6 +200,7 @@ export default function HeroSlidesTab() {
 
   return (
     <div>
+      {confirmDialog}
       <div className="mb-8 flex items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-4xl text-ivory">Home Banners</h1>

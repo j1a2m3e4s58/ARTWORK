@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { FileVideo, Image as ImageIcon, Loader2, Save, Trash2, Upload } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
+import useGlassConfirm from '@/hooks/useGlassConfirm';
 
 export default function MediaLibraryTab() {
+  const { confirm, confirmDialog } = useGlassConfirm();
   const inputRef = useRef(null);
   const [items, setItems] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -35,12 +37,13 @@ export default function MediaLibraryTab() {
     }
   };
   const remove = async item => {
-    if (!window.confirm(`Remove ${item.filename} from the media library? Existing published URLs are not deleted automatically.`)) return;
+    if (!await confirm({ title: 'Remove this media item?', description: `${item.filename} will move to the recycle bin. Existing published URLs are not deleted automatically.`, confirmLabel: 'Remove media' })) return;
     await studioClient.entities.Media.delete(item.id);
     setItems(current => current.filter(candidate => candidate.id !== item.id));
   };
   return (
     <div>
+      {confirmDialog}
       <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div><h1 className="font-display text-4xl text-ivory">Media Library</h1><p className="mt-2 text-sm text-ivory/40">Upload reusable media and record accessible descriptions and licensing sources.</p></div>
         <button onClick={() => inputRef.current?.click()} disabled={busy} className="flex min-h-11 items-center justify-center gap-2 bg-brass px-5 py-3 text-xs uppercase tracking-widest text-obsidian disabled:opacity-50">

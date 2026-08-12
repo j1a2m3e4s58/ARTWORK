@@ -3,6 +3,7 @@ import { Bell, CheckCheck, CreditCard, Download, ImagePlus, Lock, MessageSquare,
 import PageTransition from '@/components/PageTransition';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
+import useGlassConfirm from '@/hooks/useGlassConfirm';
 
 const statusClass = status => ({
   pending: 'text-yellow-300 bg-yellow-300/10',
@@ -20,6 +21,7 @@ const isUnfinishedOrder = order => (
 );
 
 export default function Account() {
+  const { confirm, confirmDialog } = useGlassConfirm();
   const { user, checkUserAuth, logout } = useAuth();
   const [data, setData] = useState({ messages: [], commissions: [], artRequests: [], filmRequests: [], orders: [], notifications: [] });
   const [name, setName] = useState(user?.full_name || '');
@@ -108,7 +110,7 @@ export default function Account() {
     finally { setUploadingAvatar(false); }
   };
   const removeUnfinishedOrder = async order => {
-    if (!window.confirm(`Remove unfinished order ${order.trackingCode || ''} from your account?`)) return;
+    if (!await confirm({ title: 'Remove this unfinished order?', description: `Order ${order.trackingCode || ''} will be removed from your account.`, confirmLabel: 'Remove order' })) return;
     setRemovingOrderId(order.id); setError('');
     try {
       await studioClient.account.removeUnfinishedOrder(order.id);
@@ -119,7 +121,7 @@ export default function Account() {
   };
   const removeAllUnfinishedOrders = async () => {
     const count = data.orders.filter(isUnfinishedOrder).length;
-    if (!count || !window.confirm(`Remove all ${count} unfinished orders from your account?`)) return;
+    if (!count || !await confirm({ title: 'Remove all unfinished orders?', description: `${count} unfinished order${count === 1 ? '' : 's'} will be removed from your account.`, confirmLabel: 'Remove all' })) return;
     setRemovingOrderId('all'); setError('');
     try {
       await studioClient.account.removeAllUnfinishedOrders();
@@ -158,7 +160,7 @@ export default function Account() {
 
   const removeAccount = async () => {
     if (!closePassword) return setError('Enter your current password before closing the account.');
-    if (!window.confirm('Permanently close your account? Your business records will be retained only where legally required.')) return;
+    if (!await confirm({ title: 'Permanently close your account?', description: 'Access to your account will be removed. Business records will be retained only where legally required.', confirmLabel: 'Close account' })) return;
     try {
       await studioClient.account.remove(closePassword);
       await logout();
@@ -216,6 +218,7 @@ export default function Account() {
 
   return (
     <PageTransition>
+      {confirmDialog}
       <main className="min-h-screen bg-obsidian px-5 pb-28 pt-28 text-ivory md:px-10">
         <div className="mx-auto max-w-6xl">
           <p className="font-tight text-xs uppercase tracking-[0.3em] text-brass">Customer account</p>

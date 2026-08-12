@@ -154,6 +154,9 @@ export const studioClient = {
     purgeRecycleBin(items) {
       return request('/api/admin/recycle-bin/purge', { method: 'POST', body: JSON.stringify({ items }) });
     },
+    purgeAuditLogs(ids, all = false) {
+      return request('/api/admin/audit-logs/purge', { method: 'POST', body: JSON.stringify({ ids, all }) });
+    },
     testEmail() {
       return request('/api/admin/test-email', { method: 'POST' });
     },

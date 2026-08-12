@@ -2,10 +2,12 @@
 import { MailPlus, RefreshCw, Shield, Users } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import ResponsiveSelect from '@/components/ResponsiveSelect';
+import useGlassConfirm from '@/hooks/useGlassConfirm';
 
 const ROLE_OPTIONS = ['customer', 'partner', 'support', 'editor', 'admin'];
 
 export default function UsersTab({ currentUser }) {
+  const { confirm, confirmDialog } = useGlassConfirm();
   const [users, setUsers] = useState([]);
   const [draft, setDraft] = useState({ full_name: '', email: '', role: 'customer' });
   const [error, setError] = useState('');
@@ -21,7 +23,7 @@ export default function UsersTab({ currentUser }) {
     }
   };
   const updateUser = async (user, changes) => {
-    if (changes.role === 'admin' && !window.confirm(`Give ${user.email} full administrator access?`)) return;
+    if (changes.role === 'admin' && !await confirm({ title: 'Grant administrator access?', description: `${user.email} will receive full access to Studio Control and sensitive business operations.`, confirmLabel: 'Grant access' })) return;
     try {
       setError('');
       const updated = await studioClient.entities.User.update(user.id, changes);
@@ -40,6 +42,7 @@ export default function UsersTab({ currentUser }) {
   };
   return (
     <div>
+      {confirmDialog}
       <h1 className="font-display text-4xl text-ivory mb-2">People &amp; Access</h1>
       <p className="text-ivory/40 text-sm mb-8">Invite staff or customers securely. Invitees create their own password from a time-limited email link.</p>
       <div className="mb-6 grid gap-3 border border-brass/15 bg-carbon p-4 md:grid-cols-4">
