@@ -1495,30 +1495,6 @@ export default function ChatWorkspace({ adminMode = false }) {
   }, [user.id]);
 
   useEffect(() => {
-    let activeEffect = true;
-    const checkRecipientDevices = async () => {
-      if (!active || active.type === 'announcement') {
-        if (activeEffect) setRecipientEncryptionState('standard');
-        return;
-      }
-      const recipientIds = [...new Set((active.participantIds || []).filter(id => id !== user.id))];
-      if (!recipientIds.length) {
-        if (activeEffect) setRecipientEncryptionState('unavailable');
-        return;
-      }
-      if (activeEffect) setRecipientEncryptionState('checking');
-      try {
-        await Promise.all(recipientIds.map(id => studioClient.chat.keysFor(id)));
-        if (activeEffect) setRecipientEncryptionState('ready');
-      } catch {
-        if (activeEffect) setRecipientEncryptionState('unavailable');
-      }
-    };
-    checkRecipientDevices();
-    return () => { activeEffect = false; };
-  }, [active, user.id]);
-
-  useEffect(() => {
     load()
       .then(() => setConnectionState('connected'))
       .catch((loadError) => {
@@ -1629,6 +1605,29 @@ export default function ChatWorkspace({ adminMode = false }) {
 
   const active = conversations.find((conversation) => conversation.id === activeId);
   const other = active?.participants?.find((person) => person.id !== user.id);
+  useEffect(() => {
+    let activeEffect = true;
+    const checkRecipientDevices = async () => {
+      if (!active || active.type === 'announcement') {
+        if (activeEffect) setRecipientEncryptionState('standard');
+        return;
+      }
+      const recipientIds = [...new Set((active.participantIds || []).filter(id => id !== user.id))];
+      if (!recipientIds.length) {
+        if (activeEffect) setRecipientEncryptionState('unavailable');
+        return;
+      }
+      if (activeEffect) setRecipientEncryptionState('checking');
+      try {
+        await Promise.all(recipientIds.map(id => studioClient.chat.keysFor(id)));
+        if (activeEffect) setRecipientEncryptionState('ready');
+      } catch {
+        if (activeEffect) setRecipientEncryptionState('unavailable');
+      }
+    };
+    checkRecipientDevices();
+    return () => { activeEffect = false; };
+  }, [active, user.id]);
   const myGroupRole = active?.roles?.[user.id] || '';
   const canManageActiveGroup = active?.type === 'group' && (['owner', 'admin'].includes(myGroupRole) || ['admin', 'editor', 'support'].includes(user.role));
   const canCreateGroups = user?.role === 'admin';
