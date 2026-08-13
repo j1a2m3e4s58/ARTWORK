@@ -1183,6 +1183,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [error, setError] = useState('');
   const [connectionState, setConnectionState] = useState('connecting');
   const [encryptionState, setEncryptionState] = useState('starting');
+  const [recipientEncryptionState, setRecipientEncryptionState] = useState('checking');
   const [currentCall, setCurrentCall] = useState(null);
   const [callSignals, setCallSignals] = useState([]);
   const [rtcConfig, setRtcConfig] = useState({ iceServers: [], turnConfigured: false });
@@ -1492,6 +1493,30 @@ export default function ChatWorkspace({ adminMode = false }) {
       window.removeEventListener('online', synchronize);
     };
   }, [user.id]);
+
+  useEffect(() => {
+    let activeEffect = true;
+    const checkRecipientDevices = async () => {
+      if (!active || active.type === 'announcement') {
+        if (activeEffect) setRecipientEncryptionState('standard');
+        return;
+      }
+      const recipientIds = [...new Set((active.participantIds || []).filter(id => id !== user.id))];
+      if (!recipientIds.length) {
+        if (activeEffect) setRecipientEncryptionState('unavailable');
+        return;
+      }
+      if (activeEffect) setRecipientEncryptionState('checking');
+      try {
+        await Promise.all(recipientIds.map(id => studioClient.chat.keysFor(id)));
+        if (activeEffect) setRecipientEncryptionState('ready');
+      } catch {
+        if (activeEffect) setRecipientEncryptionState('unavailable');
+      }
+    };
+    checkRecipientDevices();
+    return () => { activeEffect = false; };
+  }, [active, user.id]);
 
   useEffect(() => {
     load()
@@ -1934,18 +1959,28 @@ export default function ChatWorkspace({ adminMode = false }) {
     setUploadFailed(false);
     setUploadProgress(Object.fromEntries(outgoingAttachments.map((item) => [item.id, 1])));
     setError('');
-    let usedVoiceCompatibility = false;
+    let usedProtectedCompatibility = false;
     try {
       if (!outgoingAttachments.length) {
         const shouldEncrypt = active?.type !== 'announcement';
-        const ciphertext = shouldEncrypt
-          ? await encryptChatText(studioClient, { body: outgoingText, participantIds: active?.participantIds || [], userId: user.id })
-          : '';
+        let ciphertext = '';
+        let deliverySecurity = shouldEncrypt ? 'end-to-end-encrypted' : 'standard';
+        if (shouldEncrypt) {
+          try {
+            ciphertext = await encryptChatText(studioClient, { body: outgoingText, participantIds: active?.participantIds || [], userId: user.id });
+          } catch (encryptionError) {
+            const recipientHasNoDevice = /not enabled encrypted messaging|no verified recipient devices/i.test(String(encryptionError.message || ''));
+            if (!recipientHasNoDevice) throw encryptionError;
+            deliverySecurity = 'account-protected';
+            usedProtectedCompatibility = true;
+          }
+        }
         await studioClient.chat.send(activeId, {
           clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-          body: shouldEncrypt ? '' : outgoingText,
+          body: ciphertext ? '' : outgoingText,
           ciphertext,
           encryption: ciphertext ? { algorithm: 'ECDH-P256+AES-256-GCM', version: 1 } : null,
+          deliverySecurity,
           replyToId: replyingTo?.id || null,
           expiresInSeconds: disappearAfter,
           allowForward: false,
@@ -1975,9 +2010,9 @@ export default function ChatWorkspace({ adminMode = false }) {
               : null;
           } catch (encryptionError) {
             const recipientHasNoDevice = /not enabled encrypted messaging|no verified recipient devices/i.test(String(encryptionError.message || ''));
-            if (!isVoiceAttachment({ name: originalFile.name, type: originalType }) || !recipientHasNoDevice) throw encryptionError;
+            if (!recipientHasNoDevice) throw encryptionError;
             deliverySecurity = 'account-protected';
-            usedVoiceCompatibility = true;
+            usedProtectedCompatibility = true;
           }
           const uploadFile = encrypted?.file || originalFile;
           const uploaded = await studioClient.integrations.Core.UploadFileProgress({
@@ -1992,13 +2027,13 @@ export default function ChatWorkspace({ adminMode = false }) {
           });
           messages.push({
             clientId: crypto.randomUUID?.() || `${Date.now()}-${index}-${Math.random()}`,
-            body: shouldEncrypt ? '' : index === 0 ? outgoingText : '',
+            body: encrypted ? '' : index === 0 ? outgoingText : '',
             ciphertext: encrypted?.ciphertext || '',
             encryption: encrypted ? { algorithm: 'ECDH-P256+AES-256-GCM', version: 1, attachment: 'AES-256-GCM' } : null,
             deliverySecurity,
             attachmentUrl: uploaded.file_url,
             // Encrypted files keep their metadata inside the device envelope.
-            // A voice-only compatibility fallback keeps the original metadata
+            // A protected compatibility fallback keeps the original metadata
             // and is explicitly marked as account-protected, never as E2EE.
             attachmentName: encrypted ? 'encrypted-attachment.bin' : item.file.name,
             attachmentType: encrypted ? 'application/vnd.reigns.encrypted' : uploaded.media?.mime || originalType,
@@ -2010,8 +2045,8 @@ export default function ChatWorkspace({ adminMode = false }) {
           });
         }
         await studioClient.chat.sendBatch(activeId, messages);
-        if (usedVoiceCompatibility) setSecurityNotice('Voice note sent with protected account delivery because the recipient has no encrypted device yet. It is not labelled end-to-end encrypted.');
       }
+      if (usedProtectedCompatibility) setSecurityNotice('Message sent with protected account delivery because the recipient has no encrypted device yet. It is not labelled end-to-end encrypted.');
       setText('');
       outgoingAttachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
       setAttachments([]);
@@ -2916,11 +2951,11 @@ export default function ChatWorkspace({ adminMode = false }) {
                 )}
                 {active.type !== 'announcement' && (
                   <span
-                    className={`hidden items-center gap-1 text-[10px] uppercase tracking-wider md:flex ${encryptionState === 'ready' ? 'text-green-400' : 'text-amber-300'}`}
-                    title={encryptionState === 'ready' ? 'Text messages are end-to-end encrypted on linked devices' : 'Encrypted messaging is unavailable on this browser'}
+                    className={`hidden items-center gap-1 text-[10px] uppercase tracking-wider md:flex ${encryptionState === 'ready' && recipientEncryptionState === 'ready' ? 'text-green-400' : 'text-amber-300'}`}
+                    title={encryptionState === 'ready' && recipientEncryptionState === 'ready' ? 'Text messages are end-to-end encrypted on linked devices' : 'Messages use protected account delivery until every participant links an encrypted device'}
                   >
                     <Lock size={12} />
-                    {encryptionState === 'ready' ? 'Encrypted' : 'Encryption setup'}
+                    {encryptionState === 'ready' && recipientEncryptionState === 'ready' ? 'Encrypted' : 'Protected'}
                   </span>
                 )}
                 {active.type !== 'announcement' && (
@@ -3337,7 +3372,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                               {transcribingId === message.id ? 'Requesting transcription…' : 'Transcribe voice note'}
                             </button>
                           )}
-                          {voiceAttachment && message.deliverySecurity === 'account-protected' && (
+                          {message.deliverySecurity === 'account-protected' && (
                             <p className="mt-1 flex items-center gap-1 text-[9px] uppercase tracking-wider text-amber-200/70" title="The recipient has not linked an encrypted messaging device."><Lock size={10} /> Protected delivery · not end-to-end encrypted</p>
                           )}
                           {message.transcription?.text && <p className="mt-2 border-l-2 border-brass/30 px-3 text-xs leading-5 text-ivory/55">{message.transcription.text}</p>}

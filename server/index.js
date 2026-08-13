@@ -2322,7 +2322,7 @@ const messageExtensions = (entry, replyTo) => ({
   encryption: entry?.ciphertext ? { algorithm: String(entry?.encryption?.algorithm || 'X25519-AES-GCM').slice(0, 40), keyId: String(entry?.encryption?.keyId || '').slice(0, 120), version: 1 } : null,
   deliverySecurity: entry?.ciphertext
     ? 'end-to-end-encrypted'
-    : (entry?.deliverySecurity === 'account-protected' && String(entry?.attachmentType || '').startsWith('audio/') ? 'account-protected' : 'standard'),
+    : (entry?.deliverySecurity === 'account-protected' ? 'account-protected' : 'standard'),
 });
 const chatPushPayload = (message, sender, conversationId, batchCount = 1) => {
   const type = String(message?.attachmentType || '').toLowerCase();

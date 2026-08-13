@@ -295,6 +295,11 @@ test('API keeps public reads open while blocking unverified customer mutations',
     });
     assert.equal(compatibleVoiceResponse.status, 201);
     assert.equal((await compatibleVoiceResponse.json()).deliverySecurity, 'account-protected', 'Voice notes may use the explicit non-E2EE compatibility delivery mode.');
+    const compatibleTextResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, {
+      method: 'POST', headers: securedHeaders, body: JSON.stringify({ body: 'Protected compatibility message.', deliverySecurity: 'account-protected' }),
+    });
+    assert.equal(compatibleTextResponse.status, 201);
+    assert.equal((await compatibleTextResponse.json()).deliverySecurity, 'account-protected', 'Text messages may use protected account delivery when the recipient has no encryption device.');
 
     const muteResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/settings`, {
       method: 'PATCH', headers: securedHeaders, body: JSON.stringify({ muted: true, archived: true, blocked: true, favourite: true, pinned: true }),
