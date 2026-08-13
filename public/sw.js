@@ -1,4 +1,5 @@
-const CACHE = 'reigns-atelier-v11';
+const CACHE = 'reigns-atelier-v12';
+const CANONICAL_ORIGIN = 'https://reignsatelier.com';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/brand/reigns-app-icon-192.png', '/brand/reigns-app-icon-512.png'];
 
 self.addEventListener('install', event => {
@@ -62,9 +63,9 @@ self.addEventListener('notificationclick', event => {
     : event.notification.data?.url || '/messages';
   // iOS may omit action buttons, but tapping the notification still opens the
   // exact conversation. Use an absolute URL for reliable installed-PWA routing.
-  const target = new URL(targetPath, self.location.origin).href;
+  const target = new URL(targetPath, CANONICAL_ORIGIN).href;
   event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windows => {
-    const existing = windows.find(client => new URL(client.url).origin === self.location.origin);
+    const existing = windows.find(client => new URL(client.url).origin === CANONICAL_ORIGIN);
     if (existing) { existing.navigate(target); return existing.focus(); }
     return clients.openWindow(target);
   }));
