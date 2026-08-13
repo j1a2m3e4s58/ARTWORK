@@ -4108,7 +4108,13 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     }
   }
   const fileId = newId();
-  const stored = await storeFile({ buffer: req.file.buffer, mime: uploadType.mime, extension: uploadType.ext, uploadDir, id: fileId });
+  // Cloudinary may reject opaque AES-GCM blobs as raw files even though they
+  // are valid private-chat attachments. Keep modest encrypted payloads in the
+  // database and expose them only through the authenticated attachment route.
+  const preserveEncryptedAttachment = encryptedChatAttachment && req.file.size <= 12 * 1024 * 1024;
+  const stored = preserveEncryptedAttachment
+    ? { url: `${String(process.env.SITE_URL || process.env.APP_ORIGIN || '').replace(/\/$/, '')}/api/chat/media/${fileId}`, publicId: '', resourceType: 'raw' }
+    : await storeFile({ buffer: req.file.buffer, mime: uploadType.mime, extension: uploadType.ext, uploadDir, id: fileId });
   const media = {
     id: fileId,
     url: stored.url,
@@ -4128,7 +4134,8 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     // Keep a private database copy of modest-sized chat documents. Some cloud
     // accounts restrict PDF/raw delivery even after accepting the upload; the
     // authenticated attachment endpoint can still serve the exact bytes.
-    preservedData: isChatAttachment && !uploadType.mime.startsWith('image/') && !uploadType.mime.startsWith('video/') && !uploadType.mime.startsWith('audio/') && req.file.size <= 12 * 1024 * 1024
+    preservedData: isChatAttachment && req.file.size <= 12 * 1024 * 1024
+      && (encryptedChatAttachment || (!uploadType.mime.startsWith('image/') && !uploadType.mime.startsWith('video/') && !uploadType.mime.startsWith('audio/')))
       ? req.file.buffer.toString('base64')
       : undefined,
     created_date: now(),

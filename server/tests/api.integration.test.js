@@ -168,7 +168,9 @@ test('API keeps public reads open while blocking unverified customer mutations',
       body: encryptedUpload,
     });
     assert.equal(encryptedUploadResponse.status, 201, 'Opaque private-chat ciphertext should be accepted only through the encrypted attachment sentinel.');
-    assert.equal((await encryptedUploadResponse.json()).media.scanStatus, 'client-encrypted');
+    const encryptedUploadResult = await encryptedUploadResponse.json();
+    assert.equal(encryptedUploadResult.media.scanStatus, 'client-encrypted');
+    assert.ok(encryptedUploadResult.media.preservedData, 'Modest encrypted chat attachments should retain a private authenticated copy.');
     const chatMessageResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, {
       method: 'POST', headers: securedHeaders, body: JSON.stringify({ clientId: 'integration-chat-message-1', body: 'Welcome to the studio messenger.' }),
     });
