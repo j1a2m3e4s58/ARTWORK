@@ -22,6 +22,10 @@ Enter these values during the first Blueprint creation:
   Render hostname in Cloudflare Turnstile.
 - `REDIS_URL`: a persistent Redis instance used by BullMQ for delivery,
   notification, media-processing retries and dead-letter recovery.
+- `JOB_WORKER_DRAIN_DELAY_SECONDS=300` and
+  `JOB_WORKER_STALLED_INTERVAL_MS=300000`: quota-safe worker intervals for
+  request-metered Redis. If the provider rejects commands after its monthly
+  quota or budget is reached, jobs fall back to direct processing.
 - `BACKUP_ENCRYPTION_KEY`: a separate random secret of at least 32 characters.
 - `SENTRY_DSN`: the Node.js project DSN used for production error monitoring.
   `ERROR_WEBHOOK_URL` remains available as an optional generic webhook fallback.

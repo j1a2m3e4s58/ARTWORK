@@ -115,6 +115,10 @@ services:
         value: "90"
       - key: BACKGROUND_JOBS_ENABLED
         value: "true"
+      - key: JOB_WORKER_DRAIN_DELAY_SECONDS
+        value: "300"
+      - key: JOB_WORKER_STALLED_INTERVAL_MS
+        value: "300000"
       - key: VAPID_PUBLIC_KEY
         sync: false
       - key: VAPID_PRIVATE_KEY
