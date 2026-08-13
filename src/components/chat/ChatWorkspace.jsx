@@ -1958,7 +1958,6 @@ export default function ChatWorkspace({ adminMode = false }) {
     setUploadFailed(false);
     setUploadProgress(Object.fromEntries(outgoingAttachments.map((item) => [item.id, 1])));
     setError('');
-    let usedProtectedCompatibility = false;
     try {
       if (!outgoingAttachments.length) {
         const shouldEncrypt = active?.type !== 'announcement';
@@ -1971,7 +1970,6 @@ export default function ChatWorkspace({ adminMode = false }) {
             const recipientHasNoDevice = /not enabled encrypted messaging|no verified recipient devices/i.test(String(encryptionError.message || ''));
             if (!recipientHasNoDevice) throw encryptionError;
             deliverySecurity = 'account-protected';
-            usedProtectedCompatibility = true;
           }
         }
         await studioClient.chat.send(activeId, {
@@ -2011,7 +2009,6 @@ export default function ChatWorkspace({ adminMode = false }) {
             const recipientHasNoDevice = /not enabled encrypted messaging|no verified recipient devices/i.test(String(encryptionError.message || ''));
             if (!recipientHasNoDevice) throw encryptionError;
             deliverySecurity = 'account-protected';
-            usedProtectedCompatibility = true;
           }
           const uploadFile = encrypted?.file || originalFile;
           const uploaded = await studioClient.integrations.Core.UploadFileProgress({
@@ -2045,7 +2042,6 @@ export default function ChatWorkspace({ adminMode = false }) {
         }
         await studioClient.chat.sendBatch(activeId, messages);
       }
-      if (usedProtectedCompatibility) setSecurityNotice('Message sent with protected account delivery because the recipient has no encrypted device yet. It is not labelled end-to-end encrypted.');
       setText('');
       outgoingAttachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
       setAttachments([]);
@@ -3370,9 +3366,6 @@ export default function ChatWorkspace({ adminMode = false }) {
                             >
                               {transcribingId === message.id ? 'Requesting transcription…' : 'Transcribe voice note'}
                             </button>
-                          )}
-                          {message.deliverySecurity === 'account-protected' && (
-                            <p className="mt-1 flex items-center gap-1 text-[9px] uppercase tracking-wider text-amber-200/70" title="The recipient has not linked an encrypted messaging device."><Lock size={10} /> Protected delivery · not end-to-end encrypted</p>
                           )}
                           {message.transcription?.text && <p className="mt-2 border-l-2 border-brass/30 px-3 text-xs leading-5 text-ivory/55">{message.transcription.text}</p>}
                           {message.expiresAt && (
