@@ -2887,17 +2887,41 @@ const limitedResponseText = async (response, maximumBytes = 500_000) => {
   return Buffer.concat(chunks).toString('utf8');
 };
 
+const fetchPreviewPage = async initialTarget => {
+  let target = initialTarget;
+  for (let redirects = 0; redirects <= 4; redirects += 1) {
+    const response = await fetch(target, { redirect: 'manual', signal: AbortSignal.timeout(6000), headers: { 'user-agent': 'ReignsAtelier-LinkPreview/1.0', accept: 'text/html' } });
+    if (![301, 302, 303, 307, 308].includes(response.status)) return { response, target };
+    const location = response.headers.get('location');
+    if (!location || redirects === 4) throw new Error('That link redirects too many times to preview safely.');
+    target = await safePreviewTarget(new URL(location, target));
+  }
+  throw new Error('That link could not be previewed safely.');
+};
+
+const decodePreviewText = value => String(value || '')
+  .replace(/&amp;/gi, '&')
+  .replace(/&quot;/gi, '"')
+  .replace(/&#39;|&apos;/gi, "'")
+  .replace(/&lt;/gi, '<')
+  .replace(/&gt;/gi, '>')
+  .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number(code)))
+  .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCodePoint(Number.parseInt(code, 16)))
+  .replace(/\s+/g, ' ')
+  .trim();
+
 app.post('/api/chat/link-preview', requireVerifiedUser, mutationLimiter, async (req, res) => {
   try {
-    const target = await safePreviewTarget(req.body.url);
-    const response = await fetch(target, { redirect: 'error', signal: AbortSignal.timeout(6000), headers: { 'user-agent': 'ReignsAtelier-LinkPreview/1.0', accept: 'text/html' } });
+    const initialTarget = await safePreviewTarget(req.body.url);
+    const { response, target } = await fetchPreviewPage(initialTarget);
     if (!response.ok || !String(response.headers.get('content-type') || '').includes('text/html')) throw new Error('That page does not provide a safe HTML preview.');
     const html = await limitedResponseText(response);
-    const title = htmlMeta(html, ['og:title', 'twitter:title']) || html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim().slice(0, 240) || target.hostname;
+    const title = decodePreviewText(htmlMeta(html, ['og:title', 'twitter:title']) || html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]).slice(0, 240) || target.hostname;
     const image = htmlMeta(html, ['og:image', 'twitter:image']);
     let imageUrl = '';
     try { if (image) { const candidate = await safePreviewTarget(new URL(image, target)); imageUrl = candidate.toString(); } } catch { /* omit unsafe or private-network images */ }
-    res.json({ url: target.toString(), hostname: target.hostname, title, description: htmlMeta(html, ['og:description', 'description', 'twitter:description']), imageUrl });
+    res.setHeader('Cache-Control', 'private, max-age=900');
+    res.json({ url: target.toString(), hostname: target.hostname, title, description: decodePreviewText(htmlMeta(html, ['og:description', 'description', 'twitter:description'])).slice(0, 600), imageUrl });
   } catch (error) {
     res.status(400).json({ error: error.message || 'This link could not be previewed safely.' });
   }

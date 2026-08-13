@@ -919,24 +919,36 @@ function LocationPreview({ location, mine, onStop }) {
   );
 }
 
+const LINK_PREVIEW_TTL_MS = 15 * 60 * 1000;
+const LINK_PREVIEW_FAILURE_TTL_MS = 30 * 1000;
 const linkPreviewCache = new Map();
 const firstSecureUrl = body => String(body || '').match(/https?:\/\/[^\s<>{}"']+/i)?.[0]?.replace(/[),.!?]+$/, '') || '';
 
+const loadSecureLinkPreview = url => {
+  const current = linkPreviewCache.get(url);
+  if (current && current.expiresAt > Date.now()) return current.promise;
+  const promise = studioClient.chat.linkPreview(url)
+    .then(result => {
+      linkPreviewCache.set(url, { promise: Promise.resolve(result), expiresAt: Date.now() + LINK_PREVIEW_TTL_MS });
+      return result;
+    })
+    .catch(error => {
+      linkPreviewCache.set(url, { promise: Promise.resolve(null), expiresAt: Date.now() + LINK_PREVIEW_FAILURE_TTL_MS });
+      throw error;
+    });
+  linkPreviewCache.set(url, { promise, expiresAt: Date.now() + LINK_PREVIEW_TTL_MS });
+  return promise;
+};
+
 function SecureLinkPreview({ body }) {
   const url = firstSecureUrl(body);
-  const [preview, setPreview] = useState(() => linkPreviewCache.get(url) || null);
+  const [preview, setPreview] = useState(null);
   useEffect(() => {
     let active = true;
-    if (!url || linkPreviewCache.has(url)) {
-      setPreview(linkPreviewCache.get(url) || null);
-      return () => { active = false; };
-    }
-    studioClient.chat.linkPreview(url).then(result => {
-      linkPreviewCache.set(url, result);
+    setPreview(null);
+    if (url) loadSecureLinkPreview(url).then(result => {
       if (active) setPreview(result);
-    }).catch(() => {
-      linkPreviewCache.set(url, null);
-    });
+    }).catch(() => {});
     return () => { active = false; };
   }, [url]);
   if (!url || !preview) return null;
@@ -2383,7 +2395,7 @@ export default function ChatWorkspace({ adminMode = false }) {
         before: nextCursor,
         limit: 60,
       });
-      const older = response.items || [];
+      const older = await decryptMessageRows(response.items || [], user.id);
       setMessages((current) => [...older, ...current]);
       setNextCursor(response.nextCursor || null);
       window.requestAnimationFrame(() => {
