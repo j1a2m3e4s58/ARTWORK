@@ -425,6 +425,29 @@
     min-height: 2.75rem;
     font-size: 0.8rem;
   }
+
+  .chat-conversation-menu {
+    inset: 3.75rem 0.5rem auto auto !important;
+    width: min(17rem, calc(100vw - 1rem)) !important;
+    max-height: min(68dvh, 28rem) !important;
+    border-radius: 0.9rem !important;
+    padding: 0.3rem !important;
+    box-shadow: 0 18px 55px rgb(0 0 0 / 0.68) !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .chat-attachment-menu {
+    width: 17rem !important;
+    padding: 0.35rem !important;
+    border-radius: 0.95rem !important;
+  }
+
+  .chat-attachment-menu > button {
+    min-height: 2.7rem;
+    border-radius: 0.7rem;
+    font-size: 0.8rem;
+  }
 }
 
 /* Keep secondary copy comfortably above WCAG AA contrast on the studio's dark surfaces. */

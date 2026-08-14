@@ -2345,6 +2345,29 @@ const cleanSharedContact = value => {
   const email = String(value.email || '').trim().toLowerCase().slice(0, 180);
   return name && (phone || email) ? { name, phone, email } : null;
 };
+const cleanSharedPoll = value => {
+  if (!value || typeof value !== 'object') return null;
+  const question = String(value.question || '').trim().slice(0, 240);
+  const options = (Array.isArray(value.options) ? value.options : [])
+    .map(option => String(option || '').trim().slice(0, 120))
+    .filter(Boolean)
+    .slice(0, 8);
+  return question && options.length >= 2 ? { question, options, votesByUser: {} } : null;
+};
+const cleanSharedEvent = value => {
+  if (!value || typeof value !== 'object') return null;
+  const title = String(value.title || '').trim().slice(0, 180);
+  const startsAtDate = new Date(value.startsAt);
+  if (!title || Number.isNaN(startsAtDate.getTime())) return null;
+  const endsAtDate = value.endsAt ? new Date(value.endsAt) : null;
+  return {
+    title,
+    startsAt: startsAtDate.toISOString(),
+    endsAt: endsAtDate && !Number.isNaN(endsAtDate.getTime()) && endsAtDate >= startsAtDate ? endsAtDate.toISOString() : null,
+    location: String(value.location || '').trim().slice(0, 180),
+    notes: String(value.notes || '').trim().slice(0, 1000),
+  };
+};
 const messageRisk = (userId, body) => {
   const recent = db.data.ChatMessage.filter(item => item.senderId === userId && Date.now() - new Date(item.created_date).getTime() < 60_000);
   const duplicateCount = recent.filter(item => item.body && item.body === body).length;
@@ -2359,6 +2382,8 @@ const messageExtensions = (entry, replyTo) => ({
   viewOnce: Boolean(entry?.viewOnce), viewedOnceBy: [],
   sharedLocation: cleanSharedLocation(entry?.sharedLocation),
   sharedContact: cleanSharedContact(entry?.sharedContact),
+  sharedPoll: cleanSharedPoll(entry?.sharedPoll),
+  sharedEvent: cleanSharedEvent(entry?.sharedEvent),
   sticker: cleanSticker(entry?.sticker),
   voiceDurationSeconds: Math.min(300, Math.max(0, Number(entry?.voiceDurationSeconds || 0))),
   ciphertext: String(entry?.ciphertext || '').slice(0, 50_000),
@@ -2466,9 +2491,11 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, chatMessag
   const attachmentUrl = String(req.body.attachmentUrl || '').trim().slice(0, 2048);
   const sharedLocation = cleanSharedLocation(req.body.sharedLocation);
   const sharedContact = cleanSharedContact(req.body.sharedContact);
+  const sharedPoll = cleanSharedPoll(req.body.sharedPoll);
+  const sharedEvent = cleanSharedEvent(req.body.sharedEvent);
   const sticker = cleanSticker(req.body.sticker);
   const ciphertext = String(req.body.ciphertext || '').trim();
-  if (!body && !attachmentUrl && !sharedLocation && !sharedContact && !sticker && !ciphertext) return res.status(400).json({ error: 'Write a message or attach something.' });
+  if (!body && !attachmentUrl && !sharedLocation && !sharedContact && !sharedPoll && !sharedEvent && !sticker && !ciphertext) return res.status(400).json({ error: 'Write a message or attach something.' });
   if (attachmentUrl && !/^https?:\/\//i.test(attachmentUrl) && !attachmentUrl.startsWith('/uploads/')) {
     return res.status(400).json({ error: 'The attachment address is not valid.' });
   }
@@ -2485,14 +2512,14 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, chatMessag
     attachmentUrl, attachmentName: String(req.body.attachmentName || '').slice(0, 240),
     attachmentType: String(req.body.attachmentType || '').slice(0, 120),
     attachmentBytes: Math.max(0, Number(req.body.attachmentBytes || 0)),
-    ...messageExtensions(req.body, replyTo), sharedLocation, sharedContact, sticker,
+    ...messageExtensions(req.body, replyTo), sharedLocation, sharedContact, sharedPoll, sharedEvent, sticker,
     allowForward: staffRoles.has(req.user.role) ? Boolean(req.body.allowForward) : false,
     deliveredAt: deliveredBy.length ? now() : null, deliveredBy, readBy: [req.user.id], reactions: {}, created_date: now(),
   };
   if (riskScore >= 45) db.data.ChatModerationEvent.push({ id: newId(), type: 'spam_score', status: 'review', score: riskScore, userId: req.user.id, messageId: message.id, conversationId: conversation.id, created_date: now() });
   db.data.ChatMessage.push(message);
   conversation.lastMessageAt = message.created_date;
-  conversation.lastMessage = body || (message.ciphertext ? 'Encrypted message' : '') || (sticker ? 'Sticker' : '') || (sharedLocation ? (sharedLocation.liveUntil ? 'Live location' : 'Location') : '') || message.attachmentName || 'Attachment';
+  conversation.lastMessage = body || (message.ciphertext ? 'Encrypted message' : '') || (sticker ? 'Sticker' : '') || (sharedPoll ? 'Poll' : '') || (sharedEvent ? 'Event' : '') || (sharedLocation ? (sharedLocation.liveUntil ? 'Live location' : 'Location') : '') || message.attachmentName || 'Attachment';
   recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.message', title: `New message from ${req.user.full_name || req.user.email}`, message: conversation.lastMessage.slice(0, 180), section: 'messages', entity: 'ChatConversation', entityId: conversation.id, priority: 'normal', read: false, created_date: now() }));
   await pushToUsers(recipientIds, chatPushPayload(message, req.user, conversation.id), conversation.mutedBy || []);
   await save();
@@ -2521,7 +2548,7 @@ app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, chat
     const body = String(entry?.body || '').trim().slice(0, 10000);
     const attachmentUrl = String(entry?.attachmentUrl || '').trim().slice(0, 2048);
     const extension = messageExtensions(entry, index === 0 ? replyTo : null);
-    if (!body && !attachmentUrl && !extension.sharedLocation && !extension.sharedContact && !extension.sticker && !extension.ciphertext) return res.status(400).json({ error: `Message ${index + 1} is empty.` });
+    if (!body && !attachmentUrl && !extension.sharedLocation && !extension.sharedContact && !extension.sharedPoll && !extension.sharedEvent && !extension.sticker && !extension.ciphertext) return res.status(400).json({ error: `Message ${index + 1} is empty.` });
     if (attachmentUrl && !/^https?:\/\//i.test(attachmentUrl) && !attachmentUrl.startsWith('/uploads/')) {
       return res.status(400).json({ error: `Attachment ${index + 1} has an invalid address.` });
     }
@@ -2547,6 +2574,21 @@ app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, chat
   await save();
   emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageIds: fresh.map(item => item.id), senderId: req.user.id, recipientIds });
   res.status(201).json(created);
+});
+
+app.post('/api/chat/messages/:id/poll-vote', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at);
+  const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+  if (!message || !conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Poll not found.' });
+  if (!message.sharedPoll || !Array.isArray(message.sharedPoll.options)) return res.status(400).json({ error: 'This message is not a poll.' });
+  const optionIndex = Number(req.body.optionIndex);
+  if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= message.sharedPoll.options.length) return res.status(400).json({ error: 'Choose a valid poll option.' });
+  message.sharedPoll.votesByUser ||= {};
+  message.sharedPoll.votesByUser[req.user.id] = optionIndex;
+  message.updatedAt = now();
+  await save();
+  emitChatEvent(conversation.participantIds, 'message.updated', { conversationId: conversation.id, messageId: message.id });
+  res.json(message.sharedPoll);
 });
 
 app.post('/api/chat/conversations/:id/read', requireVerifiedUser, async (req, res) => {

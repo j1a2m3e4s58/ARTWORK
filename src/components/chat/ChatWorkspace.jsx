@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
   Archive,
+  BarChart3,
   ArrowDown,
   ArrowLeft,
   Ban,
@@ -11,6 +12,8 @@ import {
   Bookmark,
   Check,
   CheckCheck,
+  CalendarDays,
+  Camera,
   Clapperboard,
   Download,
   File,
@@ -1190,6 +1193,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [conversationFilter, setConversationFilter] = useState('all');
   const [queuedCount, setQueuedCount] = useState(0);
   const [showConversationMenu, setShowConversationMenu] = useState(false);
+  const [showConversationMore, setShowConversationMore] = useState(false);
   const [conversationMenuPosition, setConversationMenuPosition] = useState(null);
   const [chatAnimationsEnabled, setChatAnimationsEnabled] = useState(() => {
     try { return window.localStorage.getItem('atelier-chat-animations') !== 'off'; } catch { return true; }
@@ -1206,6 +1210,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [pushState, setPushState] = useState('unknown');
   const [showAnnouncement, setShowAnnouncement] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [structuredComposer, setStructuredComposer] = useState(null);
   const [attachmentMenuPosition, setAttachmentMenuPosition] = useState(null);
   const [emojiMenuPosition, setEmojiMenuPosition] = useState(null);
   const [composerOptionsPosition, setComposerOptionsPosition] = useState(null);
@@ -1282,6 +1287,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const photosInputRef = useRef(null);
   const documentsInputRef = useRef(null);
   const audioInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const composerRef = useRef(null);
   const typingTimerRef = useRef(null);
   const initializedSelectionRef = useRef(false);
@@ -1345,6 +1351,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     setEmojiMenuPosition(null);
     setComposerOptionsPosition(null);
     setShowConversationMenu(false);
+    setShowConversationMore(false);
     setConversationMenuPosition(null);
     setMessageMenuId('');
     setMessageMenuPosition(null);
@@ -2322,6 +2329,35 @@ export default function ChatWorkspace({ adminMode = false }) {
       setError(callError.message);
     }
   };
+  const sendStructuredMessage = async (kind, form) => {
+    setBusy(true);
+    setError('');
+    try {
+      const payload = kind === 'poll'
+        ? { sharedPoll: { question: form.question, options: form.options.filter(option => option.trim()) } }
+        : { sharedEvent: { title: form.title, startsAt: form.startsAt, endsAt: form.endsAt || null, location: form.location, notes: form.notes } };
+      await studioClient.chat.send(activeId, {
+        clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+        ...payload,
+        expiresInSeconds: disappearAfter,
+      });
+      setStructuredComposer(null);
+      await loadMessages(activeId, '', { mergeLatest: true, scrollToBottom: true, smooth: true });
+      await load();
+    } catch (sendError) {
+      setError(sendError.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const voteInPoll = async (messageId, optionIndex) => {
+    try {
+      const sharedPoll = await studioClient.chat.votePoll(messageId, optionIndex);
+      setMessages(current => current.map(item => item.id === messageId ? { ...item, sharedPoll } : item));
+    } catch (voteError) {
+      setError(voteError.message);
+    }
+  };
   const acceptCall = async callId => {
     const updated = await studioClient.chat.updateCall(callId, { action: 'accepted' });
     setCurrentCall(current => current?.id === callId ? { ...current, ...updated, peer: current.peer || updated.peer } : current);
@@ -3179,8 +3215,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     <MoreVertical size={18} />
                   </button>
                   {showConversationMenu && conversationMenuPosition && createPortal(
-                    <div data-chat-popover style={conversationMenuPosition} className="chat-mobile-sheet chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
-                      <div className="chat-sheet-heading" aria-hidden="true"><span />Chat options</div>
+                    <div data-chat-popover style={conversationMenuPosition} className="chat-conversation-menu chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
                       {active.type === 'group' && (
                         <button type="button" onClick={() => { setShowConversationMenu(false); openGroupSettings(); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
                           <Users size={14} /> Group info
@@ -3202,6 +3237,10 @@ export default function ChatWorkspace({ adminMode = false }) {
                       <button type="button" onClick={() => openChatBrowser('media')} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
                         <Images size={14} /> Media & files
                       </button>
+                      <button type="button" onClick={() => setShowConversationMore(current => !current)} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs font-semibold text-brass hover:bg-brass/10">
+                        <MoreVertical size={14} /> {showConversationMore ? 'Fewer options' : 'More'}
+                      </button>
+                      {showConversationMore && <>
                       <button type="button" onClick={exportConversation} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
                         <Download size={14} /> Export chat
                       </button>
@@ -3290,6 +3329,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                           Report conversation
                         </button>
                       )}
+                      </>}
                     </div>, document.body,
                   )}
                 </div>
@@ -3589,6 +3629,28 @@ export default function ChatWorkspace({ adminMode = false }) {
                               </div>
                             </div>
                           )}
+                          {message.sharedPoll && (() => {
+                            const votes = Object.values(message.sharedPoll.votesByUser || {});
+                            const myVote = message.sharedPoll.votesByUser?.[user.id];
+                            return (
+                              <div className="mt-3 min-w-[14rem] overflow-hidden rounded-xl border border-brass/15 bg-obsidian p-3">
+                                <div className="mb-3 flex items-start gap-2"><BarChart3 size={18} className="mt-0.5 shrink-0 text-brass" /><b className="text-sm text-ivory">{message.sharedPoll.question}</b></div>
+                                <div className="space-y-1.5">
+                                  {message.sharedPoll.options.map((option, optionIndex) => {
+                                    const count = votes.filter(vote => vote === optionIndex).length;
+                                    return <button key={`${message.id}-${optionIndex}`} type="button" onClick={() => voteInPoll(message.id, optionIndex)} className={`flex min-h-9 w-full items-center justify-between rounded-lg border px-3 text-left text-xs ${myVote === optionIndex ? 'border-brass bg-brass/10 text-brass' : 'border-brass/10 text-ivory/70 hover:bg-white/5'}`}><span>{option}</span><span>{count}</span></button>;
+                                  })}
+                                </div>
+                                <small className="mt-2 block text-ivory/40">{votes.length} vote{votes.length === 1 ? '' : 's'}</small>
+                              </div>
+                            );
+                          })()}
+                          {message.sharedEvent && (
+                            <div className="mt-3 overflow-hidden rounded-xl border border-brass/15 bg-obsidian p-3 text-sm">
+                              <div className="flex items-start gap-3"><CalendarDays size={20} className="mt-0.5 shrink-0 text-rose-400" /><span><b className="block text-ivory">{message.sharedEvent.title}</b><small className="mt-1 block text-ivory/55">{new Date(message.sharedEvent.startsAt).toLocaleString()}</small>{message.sharedEvent.location && <small className="mt-1 block text-ivory/45">{message.sharedEvent.location}</small>}</span></div>
+                              {message.sharedEvent.notes && <p className="mt-3 text-xs leading-5 text-ivory/60">{message.sharedEvent.notes}</p>}
+                            </div>
+                          )}
                           {attachment && message.viewOnce && !mine && message.viewedOnceBy?.includes(user.id) ? (
                             <div className="mt-3 flex items-center gap-2 border border-brass/15 p-3 text-xs text-ivory/40">
                               <Eye size={15} />
@@ -3717,7 +3779,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                   </button>
                 )}
               </div>
-              <footer className="chat-composer-footer relative z-30 shrink-0 border-t border-brass/15 bg-carbon/95 p-2 shadow-[0_-10px_30px_rgba(0,0,0,0.18)] backdrop-blur sm:p-3">
+              <footer className="chat-composer-footer relative z-30 shrink-0 bg-transparent p-2 sm:p-3">
                 {replyingTo && (
                   <div className="relative mb-2 pr-9">
                     <QuotedMessage
@@ -3823,7 +3885,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     Retry failed upload
                   </button>
                 )}
-                <div className="flex min-w-0 items-end gap-0.5 rounded-[1.55rem] border border-brass/20 bg-obsidian p-1 shadow-inner">
+                <div className={`flex min-w-0 items-end gap-0.5 ${recording ? 'bg-transparent p-0 shadow-none' : 'rounded-[1.55rem] border border-brass/20 bg-obsidian p-1 shadow-inner'}`}>
                   <div data-chat-popover className={`relative ${recording ? 'md:hidden' : ''}`}>
                     <button
                       type="button"
@@ -3841,7 +3903,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                       <Paperclip size={17} />
                     </button>
                     {showAttachmentMenu && attachmentMenuPosition && createPortal(
-                      <div data-chat-popover style={attachmentMenuPosition} className="chat-mobile-sheet chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
+                      <div data-chat-popover style={attachmentMenuPosition} className="chat-attachment-menu chat-mobile-sheet chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
                         <div className="chat-sheet-heading" aria-hidden="true"><span />Share</div>
                         <button
                           type="button"
@@ -3853,6 +3915,9 @@ export default function ChatWorkspace({ adminMode = false }) {
                         >
                           <Image size={15} className="text-sky-400" />
                           <span>Photos & video</span>
+                        </button>
+                        <button type="button" onClick={() => { setShowAttachmentMenu(false); cameraInputRef.current?.click(); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10">
+                          <Camera size={15} className="text-pink-400" /><span>Camera</span>
                         </button>
                         <button
                           type="button"
@@ -3897,6 +3962,12 @@ export default function ChatWorkspace({ adminMode = false }) {
                         <button type="button" onClick={shareContact} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10">
                           <Contact size={15} className="text-cyan-400" />
                           <span>Contact</span>
+                        </button>
+                        <button type="button" onClick={() => { setShowAttachmentMenu(false); setStructuredComposer({ kind: 'poll', question: '', options: ['', ''] }); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10">
+                          <BarChart3 size={15} className="text-amber-400" /><span>Poll</span>
+                        </button>
+                        <button type="button" onClick={() => { setShowAttachmentMenu(false); setStructuredComposer({ kind: 'event', title: '', startsAt: '', endsAt: '', location: '', notes: '' }); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10">
+                          <CalendarDays size={15} className="text-rose-400" /><span>Event</span>
                         </button>
                         <button type="button" onClick={openShopPicker} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10">
                           <ShoppingBag size={15} className="text-brass" />
@@ -3948,6 +4019,17 @@ export default function ChatWorkspace({ adminMode = false }) {
                       multiple
                       className="hidden"
                       accept="audio/*"
+                      onChange={(event) => {
+                        chooseFiles(event.target.files);
+                        event.target.value = '';
+                      }}
+                    />
+                    <input
+                      ref={cameraInputRef}
+                      type="file"
+                      className="hidden"
+                      accept="image/*,video/*"
+                      capture="environment"
                       onChange={(event) => {
                         chooseFiles(event.target.files);
                         event.target.value = '';
@@ -4476,6 +4558,32 @@ export default function ChatWorkspace({ adminMode = false }) {
               ))}
             </div>
           </section>
+        </div>
+      )}
+      {structuredComposer && (
+        <div className="fixed inset-0 z-[260] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <form
+            onSubmit={(event) => { event.preventDefault(); sendStructuredMessage(structuredComposer.kind, structuredComposer); }}
+            className="w-full max-w-md overflow-hidden rounded-2xl border border-brass/20 bg-carbon shadow-2xl"
+          >
+            <header className="flex items-center justify-between border-b border-brass/15 p-4">
+              <div><p className="text-[10px] uppercase tracking-[0.18em] text-brass">New message</p><h3 className="font-display text-2xl text-ivory">{structuredComposer.kind === 'poll' ? 'Create a poll' : 'Create an event'}</h3></div>
+              <button type="button" onClick={() => setStructuredComposer(null)} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/5" aria-label="Close"><X size={18} /></button>
+            </header>
+            <div className="max-h-[65dvh] space-y-3 overflow-y-auto p-4">
+              {structuredComposer.kind === 'poll' ? <>
+                <input autoFocus required maxLength={240} value={structuredComposer.question} onChange={event => setStructuredComposer(current => ({ ...current, question: event.target.value }))} placeholder="Ask a question" className="min-h-12 w-full rounded-xl border border-brass/15 bg-obsidian px-4 text-sm text-ivory outline-none focus:border-brass" />
+                {structuredComposer.options.map((option, index) => <div key={index} className="flex items-center gap-2"><input required maxLength={120} value={option} onChange={event => setStructuredComposer(current => ({ ...current, options: current.options.map((item, optionIndex) => optionIndex === index ? event.target.value : item) }))} placeholder={`Option ${index + 1}`} className="min-h-11 min-w-0 flex-1 rounded-xl border border-brass/15 bg-obsidian px-4 text-sm text-ivory outline-none focus:border-brass" />{structuredComposer.options.length > 2 && <button type="button" onClick={() => setStructuredComposer(current => ({ ...current, options: current.options.filter((_, optionIndex) => optionIndex !== index) }))} className="text-ivory/40"><X size={16} /></button>}</div>)}
+                {structuredComposer.options.length < 8 && <button type="button" onClick={() => setStructuredComposer(current => ({ ...current, options: [...current.options, ''] }))} className="text-xs font-semibold text-brass">+ Add option</button>}
+              </> : <>
+                <input autoFocus required maxLength={180} value={structuredComposer.title} onChange={event => setStructuredComposer(current => ({ ...current, title: event.target.value }))} placeholder="Event title" className="min-h-12 w-full rounded-xl border border-brass/15 bg-obsidian px-4 text-sm text-ivory outline-none focus:border-brass" />
+                <label className="block text-xs text-ivory/55">Starts<input required type="datetime-local" value={structuredComposer.startsAt} onChange={event => setStructuredComposer(current => ({ ...current, startsAt: event.target.value }))} className="mt-1 min-h-11 w-full rounded-xl border border-brass/15 bg-obsidian px-4 text-sm text-ivory outline-none" /></label>
+                <input maxLength={180} value={structuredComposer.location} onChange={event => setStructuredComposer(current => ({ ...current, location: event.target.value }))} placeholder="Location (optional)" className="min-h-11 w-full rounded-xl border border-brass/15 bg-obsidian px-4 text-sm text-ivory outline-none" />
+                <textarea maxLength={1000} rows={3} value={structuredComposer.notes} onChange={event => setStructuredComposer(current => ({ ...current, notes: event.target.value }))} placeholder="Notes (optional)" className="w-full resize-none rounded-xl border border-brass/15 bg-obsidian p-4 text-sm text-ivory outline-none" />
+              </>}
+            </div>
+            <footer className="flex justify-end border-t border-brass/15 p-4"><button disabled={busy} className="min-h-11 rounded-full bg-brass px-6 text-xs font-semibold text-obsidian disabled:opacity-40">{busy ? 'Sending…' : structuredComposer.kind === 'poll' ? 'Send poll' : 'Send event'}</button></footer>
+          </form>
         </div>
       )}
       {currentCall && (

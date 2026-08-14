@@ -253,6 +253,7 @@ export const studioClient = {
     setForwarding: (messageId, allowed) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/forwarding`, { method: 'PATCH', body: JSON.stringify({ allowed }) }),
     forward: (messageId, conversationId) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/forward`, { method: 'POST', body: JSON.stringify({ conversationId }) }),
     react: (messageId, emoji) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/reaction`, { method: 'POST', body: JSON.stringify({ emoji }) }),
+    votePoll: (messageId, optionIndex) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/poll-vote`, { method: 'POST', body: JSON.stringify({ optionIndex }) }),
     star: (messageId, starred) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/star`, { method: 'PATCH', body: JSON.stringify({ starred }) }),
     saveMedia: (messageId, saved) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/save-media`, { method: 'PATCH', body: JSON.stringify({ saved }) }),
     savedItems: () => request('/api/chat/saved-items'),
