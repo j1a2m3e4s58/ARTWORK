@@ -332,10 +332,27 @@
   70% { transform: translateY(-3px) scale(1.08); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
+.chat-message-enter { animation: chat-message-enter 220ms cubic-bezier(.2,.8,.2,1) both; }
+.chat-sending-dot {
+  width: .45rem;
+  height: .45rem;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: chat-sending-pulse 900ms ease-in-out infinite;
+}
+@keyframes chat-message-enter {
+  from { opacity: 0; transform: translateY(.45rem) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes chat-sending-pulse {
+  0%, 100% { opacity: .35; transform: scale(.75); }
+  50% { opacity: 1; transform: scale(1); }
+}
 
 .chat-reaction-pop { animation: chat-reaction-pop 420ms cubic-bezier(.2,.9,.25,1.25) both; }
 .chat-sticker-pop { animation: chat-sticker-pop 520ms cubic-bezier(.2,.9,.25,1.2) both; }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-reaction-pop, .chat-sticker-pop { animation: none; }
+  .chat-reaction-pop, .chat-sticker-pop, .chat-message-enter, .chat-sending-dot { animation: none; }
 }

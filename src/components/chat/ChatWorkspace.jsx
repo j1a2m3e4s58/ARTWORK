@@ -1189,6 +1189,9 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [conversationFilter, setConversationFilter] = useState('all');
   const [queuedCount, setQueuedCount] = useState(0);
   const [showConversationMenu, setShowConversationMenu] = useState(false);
+  const [chatAnimationsEnabled, setChatAnimationsEnabled] = useState(() => {
+    try { return window.localStorage.getItem('atelier-chat-animations') !== 'off'; } catch { return true; }
+  });
   const [messageSelectionMode, setMessageSelectionMode] = useState(false);
   const [selectedMessageIds, setSelectedMessageIds] = useState([]);
   const [editing, setEditing] = useState(null);
@@ -2019,19 +2022,29 @@ export default function ChatWorkspace({ adminMode = false }) {
     setError('');
     const clientId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
     const optimisticId = `pending-${clientId}`;
-    if (!outgoingAttachments.length) {
-      setMessages(current => [...current, {
+    const optimisticMessages = outgoingAttachments.length
+      ? outgoingAttachments.map((item, index) => ({
+        id: `${optimisticId}-${index}`, clientId: `${clientId}-${index}`, conversationId: activeId, senderId: user.id,
+        body: index === 0 ? outgoingText : '', attachmentUrl: item.previewUrl,
+        attachmentName: item.file.name, attachmentType: item.mime || item.file.type || 'application/octet-stream',
+        attachmentBytes: item.file.size, voiceDurationSeconds: Number(item.file.voiceDurationSeconds) || 0,
+        pending: true, pendingLocalAttachment: true, pendingUploadItemId: item.id,
+        deliveredAt: null, readBy: [user.id], reactions: {}, created_date: new Date().toISOString(),
+      }))
+      : [{
         id: optimisticId, clientId, conversationId: activeId, senderId: user.id,
         body: outgoingText, deliveredAt: null, readBy: [user.id], reactions: {},
         pending: true, created_date: new Date().toISOString(),
-      }]);
-      setText('');
-      setReplyingTo(null);
-      window.requestAnimationFrame(() => {
-        const pane = messagesPaneRef.current;
-        if (pane) pane.scrollTop = pane.scrollHeight;
-      });
-    }
+      }];
+    setMessages(current => [...current, ...optimisticMessages]);
+    setText('');
+    setAttachments([]);
+    setReplyingTo(null);
+    setViewOnce(false);
+    window.requestAnimationFrame(() => {
+      const pane = messagesPaneRef.current;
+      if (pane) pane.scrollTop = pane.scrollHeight;
+    });
     try {
       if (!outgoingAttachments.length) {
         const shouldEncrypt = active?.type !== 'announcement';
@@ -2117,14 +2130,10 @@ export default function ChatWorkspace({ adminMode = false }) {
         });
         await studioClient.chat.sendBatch(activeId, messages);
       }
-      setText('');
-      outgoingAttachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-      setAttachments([]);
-      setReplyingTo(null);
-      setViewOnce(false);
       setUploadProgress({});
       await loadMessages(activeId, '', { scrollToBottom: true });
       await load();
+      outgoingAttachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
       return true;
     } catch (sendError) {
       if (!outgoingAttachments.length && (!navigator.onLine || /fetch|network|offline/i.test(String(sendError.message)))) {
@@ -2154,7 +2163,7 @@ export default function ChatWorkspace({ adminMode = false }) {
         setError('You are offline. This message is queued and will send automatically when the connection returns.');
         return false;
       }
-      if (!outgoingAttachments.length) setMessages(current => current.filter(message => message.id !== optimisticId));
+      setMessages(current => current.filter(message => !optimisticMessages.some(pending => pending.id === message.id)));
       if (outgoingAttachments.length) setAttachments(outgoingAttachments);
       setUploadFailed(Boolean(outgoingAttachments.length) && sendError.name !== 'AbortError');
       setError(sendError.name === 'AbortError' ? 'Upload cancelled. Your files are still ready to retry.' : sendError.message);
@@ -2366,11 +2375,15 @@ export default function ChatWorkspace({ adminMode = false }) {
     }
   };
   const removeMessage = async (message, mode) => {
+    const previousMessages = messages;
+    setMessageMenuId('');
+    setMessages(current => current.filter(item => item.id !== message.id));
     try {
       await studioClient.chat.remove(message.id, mode);
-      await loadMessages(activeId);
-      await load();
+      loadMessages(activeId).catch(() => {});
+      load().catch(() => {});
     } catch (removeError) {
+      setMessages(previousMessages);
       setError(removeError.message);
     }
   };
@@ -2417,6 +2430,9 @@ export default function ChatWorkspace({ adminMode = false }) {
       confirmLabel: selectedCount ? 'Delete selected' : 'Clear chat',
     });
     if (!approved) return;
+    const previousMessages = messages;
+    const selectedIds = new Set(messageIds || []);
+    setMessages(current => selectedCount ? current.filter(message => !selectedIds.has(message.id)) : []);
     setBusy(true);
     setError('');
     try {
@@ -2424,8 +2440,9 @@ export default function ChatWorkspace({ adminMode = false }) {
       setSelectedMessageIds([]);
       setMessageSelectionMode(false);
       setShowConversationMenu(false);
-      await Promise.all([loadMessages(activeId, '', { scrollToBottom: true }), load()]);
+      Promise.all([loadMessages(activeId, '', { scrollToBottom: true }), load()]).catch(() => {});
     } catch (clearError) {
+      setMessages(previousMessages);
       setError(clearError.message);
     } finally {
       setBusy(false);
@@ -3143,6 +3160,19 @@ export default function ChatWorkspace({ adminMode = false }) {
                       <button type="button" onClick={() => clearConversationMessages(null)} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-red-300 hover:bg-red-400/10">
                         <Trash2 size={15} /> Clear all messages
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !chatAnimationsEnabled;
+                          setChatAnimationsEnabled(next);
+                          try { window.localStorage.setItem('atelier-chat-animations', next ? 'on' : 'off'); } catch { /* preference remains active for this visit */ }
+                          setShowConversationMenu(false);
+                        }}
+                        className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10"
+                      >
+                        {chatAnimationsEnabled ? <Pause size={15} /> : <Play size={15} />}
+                        {chatAnimationsEnabled ? 'Disable animations' : 'Enable animations'}
+                      </button>
                       <Link to="/account#security" onClick={() => setShowConversationMenu(false)} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
                         <Lock size={15} /> Devices and account data
                       </Link>
@@ -3347,9 +3377,9 @@ export default function ChatWorkspace({ adminMode = false }) {
                   const mine = message.senderId === user.id;
                   const attachment = message.attachmentUrl
                     ? {
-                        url: studioClient.chat.attachmentUrl(message.id),
-                        previewUrl: studioClient.chat.attachmentUrl(message.id),
-                        downloadUrl: studioClient.chat.attachmentUrl(message.id, true),
+                        url: message.pendingLocalAttachment ? message.attachmentUrl : studioClient.chat.attachmentUrl(message.id),
+                        previewUrl: message.pendingLocalAttachment ? message.attachmentUrl : studioClient.chat.attachmentUrl(message.id),
+                        downloadUrl: message.pendingLocalAttachment ? message.attachmentUrl : studioClient.chat.attachmentUrl(message.id, true),
                         name: message.decryptedAttachment?.name || message.attachmentName,
                         type: message.decryptedAttachment?.type || message.attachmentType,
                         bytes: message.decryptedAttachment?.bytes || message.attachmentBytes,
@@ -3369,7 +3399,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                   const previous = messages[index - 1];
                   const showDate = !previous || new Date(previous.created_date).toDateString() !== new Date(message.created_date).toDateString();
                   return (
-                    <div key={message.id} className="min-w-0 max-w-full">
+                    <div key={message.id} className={`min-w-0 max-w-full ${chatAnimationsEnabled ? 'chat-message-enter' : ''}`}>
                       {showDate && (
                         <div className="my-4 flex items-center gap-3" aria-label={`Messages from ${new Date(message.created_date).toLocaleDateString()}`}>
                           <span className="h-px flex-1 bg-brass/10" />
@@ -3400,6 +3430,12 @@ export default function ChatWorkspace({ adminMode = false }) {
                           className={`relative min-w-0 ${messageSelectionMode ? 'cursor-pointer' : ''} ${voiceAttachment ? 'w-fit max-w-[94%] rounded-2xl border px-1.5 py-1 sm:max-w-[25rem]' : 'max-w-[90%] border p-3 sm:max-w-[72%]'} ${mine ? 'border-brass/20 bg-brass/10' : 'border-ivory/10 bg-carbon'}`}
                         >
                           {message.replyPreview && <QuotedMessage message={message} />}
+                          {message.pending && (
+                            <div className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-wider text-brass/70" role="status">
+                              <span className={chatAnimationsEnabled ? 'chat-sending-dot' : ''} />
+                              {message.pendingUploadItemId ? `Sending ${uploadProgress[message.pendingUploadItemId] || 1}%` : 'Sending'}
+                            </div>
+                          )}
                           {message.deletedForEveryone ? (
                             <div className="flex items-center gap-3">
                               <p className="flex items-center gap-2 text-sm italic text-ivory/35">
