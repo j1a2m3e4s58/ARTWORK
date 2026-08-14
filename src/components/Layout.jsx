@@ -8,19 +8,19 @@ import ServiceNotice from './ServiceNotice';
 
 export default function Layout() {
   const location = useLocation();
-  const isMessageWorkspace = location.pathname === '/messages';
+  const isMessageWorkspace = location.pathname === '/messages' || location.pathname.startsWith('/messages/');
 
   return (
     <div className={`min-h-screen bg-obsidian text-ivory ${isMessageWorkspace ? 'pb-0' : 'pb-20 md:pb-0'}`}>
-      {isMessageWorkspace ? <div className="hidden md:block"><Navbar /></div> : <Navbar />}
-      <ServiceNotice />
+      {!isMessageWorkspace && <Navbar />}
+      {!isMessageWorkspace && <ServiceNotice />}
       {!isMessageWorkspace && <FloatingSocial />}
       <main>
         <Outlet />
       </main>
       {!isMessageWorkspace && <Footer />}
       {!isMessageWorkspace && <FloatingActions />}
-      <MobileBottomNav />
+      {!isMessageWorkspace && <MobileBottomNav />}
     </div>
   );
 }

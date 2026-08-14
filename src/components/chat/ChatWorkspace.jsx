@@ -1189,6 +1189,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [conversationFilter, setConversationFilter] = useState('all');
   const [queuedCount, setQueuedCount] = useState(0);
   const [showConversationMenu, setShowConversationMenu] = useState(false);
+  const [conversationMenuPosition, setConversationMenuPosition] = useState(null);
   const [chatAnimationsEnabled, setChatAnimationsEnabled] = useState(() => {
     try { return window.localStorage.getItem('atelier-chat-animations') !== 'off'; } catch { return true; }
   });
@@ -1204,6 +1205,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [pushState, setPushState] = useState('unknown');
   const [showAnnouncement, setShowAnnouncement] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [attachmentMenuPosition, setAttachmentMenuPosition] = useState(null);
   const [shopPickerOpen, setShopPickerOpen] = useState(false);
   const [resourceKind, setResourceKind] = useState('shop');
   const [shopProducts, setShopProducts] = useState([]);
@@ -1312,15 +1314,25 @@ export default function ChatWorkspace({ adminMode = false }) {
   const floatingPosition = (element, preferredWidth, preferredHeight) => {
     const rect = element.getBoundingClientRect();
     const gutter = 12;
-    const width = Math.min(preferredWidth, window.innerWidth - gutter * 2);
-    const left = Math.min(window.innerWidth - width - gutter, Math.max(gutter, rect.right - width));
-    const below = window.innerHeight - rect.bottom;
-    const top = below >= preferredHeight + 8 ? rect.bottom + 8 : Math.max(gutter, rect.top - preferredHeight - 8);
+    const viewport = window.visualViewport;
+    const viewportLeft = viewport?.offsetLeft || 0;
+    const viewportTop = viewport?.offsetTop || 0;
+    const viewportWidth = viewport?.width || window.innerWidth;
+    const viewportHeight = viewport?.height || window.innerHeight;
+    const viewportRight = viewportLeft + viewportWidth;
+    const viewportBottom = viewportTop + viewportHeight;
+    const width = Math.min(preferredWidth, viewportWidth - gutter * 2);
+    const left = Math.min(viewportRight - width - gutter, Math.max(viewportLeft + gutter, rect.right - width));
+    const availableBelow = Math.max(0, viewportBottom - rect.bottom - gutter - 8);
+    const availableAbove = Math.max(0, rect.top - viewportTop - gutter - 8);
+    const opensBelow = availableBelow >= Math.min(preferredHeight, availableAbove);
+    const maxHeight = Math.max(120, Math.min(preferredHeight, opensBelow ? availableBelow : availableAbove));
+    const top = opensBelow ? rect.bottom + 8 : Math.max(viewportTop + gutter, rect.top - maxHeight - 8);
     return {
       left,
       top,
       width,
-      maxHeight: Math.max(120, window.innerHeight - top - gutter),
+      maxHeight,
     };
   };
   useEffect(() => {
@@ -2620,15 +2632,16 @@ export default function ChatWorkspace({ adminMode = false }) {
     <>
       {confirmDialog}
       <div
-        className={`grid min-h-0 max-w-full overflow-hidden bg-carbon md:border md:border-brass/15 lg:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] ${adminMode ? 'h-[clamp(360px,calc(100dvh-13rem),760px)]' : 'h-full'}`}
+        className={`grid min-h-0 max-w-full overflow-hidden bg-carbon lg:grid-cols-[minmax(280px,350px)_minmax(0,1fr)] ${adminMode ? 'h-[clamp(360px,calc(100dvh-13rem),760px)] md:border md:border-brass/15' : 'h-full'}`}
       >
         <aside className={`${mobileConversationOpen ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col overflow-hidden border-r border-brass/15`}>
           <div className="shrink-0 border-b border-brass/15 p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2">
                 {!adminMode && (
-                  <Link to="/" aria-label="Return to the studio" className="flex h-9 w-9 shrink-0 items-center justify-center border border-brass/15 text-brass lg:hidden">
+                  <Link to="/" aria-label="Return to the main site" title="Back to the main site" className="flex h-10 shrink-0 items-center justify-center gap-2 rounded-full border border-brass/30 bg-brass/10 px-3.5 text-brass shadow-lg shadow-black/20 transition hover:border-brass/60 hover:bg-brass hover:text-obsidian">
                     <ArrowLeft size={17} />
+                    <span className="hidden text-[10px] font-semibold uppercase tracking-wider sm:inline">Main site</span>
                   </Link>
                 )}
                 <h2 className="truncate font-display text-2xl text-ivory">{adminMode ? 'Studio conversations' : 'Messages'}</h2>
@@ -3122,14 +3135,18 @@ export default function ChatWorkspace({ adminMode = false }) {
                 <div data-chat-popover className="relative">
                   <button
                     type="button"
-                    onClick={() => setShowConversationMenu((value) => !value)}
+                    onClick={(event) => {
+                      const opening = !showConversationMenu;
+                      setShowConversationMenu(opening);
+                      setConversationMenuPosition(opening ? floatingPosition(event.currentTarget, 240, Math.min(620, window.innerHeight - 24)) : null);
+                    }}
                     className="flex h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass"
                     aria-label="Conversation options"
                   >
                     <MoreVertical size={18} />
                   </button>
-                  {showConversationMenu && (
-                    <div data-chat-popover className="absolute right-0 top-11 z-30 w-52 border border-brass/20 bg-carbon p-1 shadow-2xl">
+                  {showConversationMenu && conversationMenuPosition && createPortal(
+                    <div data-chat-popover style={conversationMenuPosition} className="fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon p-1 shadow-2xl [scrollbar-gutter:stable]">
                       {active.type === 'group' && (
                         <button type="button" onClick={() => { setShowConversationMenu(false); openGroupSettings(); }} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
                           <Users size={15} /> Group members
@@ -3239,7 +3256,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                           Report conversation
                         </button>
                       )}
-                    </div>
+                    </div>, document.body,
                   )}
                 </div>
               </header>
@@ -3760,15 +3777,19 @@ export default function ChatWorkspace({ adminMode = false }) {
                     <button
                       type="button"
                       disabled={active.blocked || (active.type === 'announcement' && !adminMode)}
-                      onClick={() => setShowAttachmentMenu((value) => !value)}
+                      onClick={(event) => {
+                        const opening = !showAttachmentMenu;
+                        setShowAttachmentMenu(opening);
+                        setAttachmentMenuPosition(opening ? floatingPosition(event.currentTarget, 260, Math.min(600, window.innerHeight - 24)) : null);
+                      }}
                       className="flex h-11 w-11 shrink-0 items-center justify-center border border-brass/20 text-brass disabled:cursor-not-allowed disabled:opacity-40"
                       title="Add an attachment"
                       aria-label="Open attachment menu"
                     >
                       <Paperclip size={17} />
                     </button>
-                    {showAttachmentMenu && (
-                      <div className="absolute bottom-12 left-0 z-50 w-[min(15rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-hidden border border-brass/20 bg-carbon p-1 shadow-2xl">
+                    {showAttachmentMenu && attachmentMenuPosition && createPortal(
+                      <div data-chat-popover style={attachmentMenuPosition} className="fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon p-1 shadow-2xl [scrollbar-gutter:stable]">
                         <button
                           type="button"
                           onClick={() => {
@@ -3877,7 +3898,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                             <small className="text-ivory/35">Share a studio film</small>
                           </span>
                         </button>
-                      </div>
+                      </div>, document.body,
                     )}
                     <input
                       ref={photosInputRef}
@@ -4053,7 +4074,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       {reactionPickerId &&
         reactionPickerPosition &&
         createPortal(
-          <div data-chat-popover style={reactionPickerPosition} className="fixed z-[220] flex gap-1 overflow-x-auto border border-brass/20 bg-carbon p-2 shadow-2xl">
+            <div data-chat-popover style={reactionPickerPosition} className="fixed z-[220] flex gap-1 overflow-x-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon p-2 shadow-2xl">
             {REACTIONS.map((emoji) => (
               <button
                 type="button"
@@ -4083,7 +4104,7 @@ export default function ChatWorkspace({ adminMode = false }) {
             setMessageMenuPosition(null);
           };
           return createPortal(
-            <div data-chat-popover style={messageMenuPosition} className="fixed z-[220] overflow-y-auto border border-brass/20 bg-carbon p-1 shadow-2xl">
+            <div data-chat-popover style={messageMenuPosition} className="fixed z-[220] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon p-1 shadow-2xl [scrollbar-gutter:stable]">
               {mine && message.body && !message.ciphertext && (
                 <button
                   type="button"
