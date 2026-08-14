@@ -1311,7 +1311,14 @@ function CameraCapture({ onCapture, onClose, onError }) {
       canvas.width = 1;
       canvas.height = 1;
       if (!blob) throw new Error('The photo could not be saved. Free some phone storage and try again.');
-      const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+      // Older Android WebViews expose Blob but not a constructible File class.
+      // A named Blob is accepted by FormData and avoids the minified
+      // "... is not a constructor" failure after taking a picture.
+      const file = blob;
+      Object.defineProperties(file, {
+        name: { value: `camera-${Date.now()}.jpg`, configurable: true },
+        lastModified: { value: Date.now(), configurable: true },
+      });
       await onCapture(file);
       onClose();
     } catch (captureError) {
@@ -1368,7 +1375,8 @@ function AttachmentComposer({
     if (itemMime.startsWith('image/')) return <img src={item.previewUrl} alt="" className="h-full w-full object-cover" />;
     if (itemMime.startsWith('video/')) return <video src={item.previewUrl} muted className="h-full w-full object-cover" />;
     if (itemMime.startsWith('audio/')) return <Mic size={19} />;
-    return <FileText size={19} />;
+    const { Icon, color } = fileVisual(itemMime, item.file?.name);
+    return <span className={`flex h-full w-full items-center justify-center ${color}`}><Icon size={24} /></span>;
   };
 
   return createPortal(
@@ -1401,10 +1409,17 @@ function AttachmentComposer({
             <audio key={activeItem.id} src={activeItem.previewUrl} controls className="mt-5 w-full" />
           </div>
         )}
-        {isPdf && <iframe key={activeItem.id} src={activeItem.previewUrl} title={activeItem.file?.name || 'PDF preview'} className="h-full w-full max-w-4xl bg-white" />}
+        {isPdf && <iframe key={activeItem.id} src={activeItem.previewUrl} title={activeItem.file?.name || 'PDF preview'} className="hidden h-full w-full max-w-4xl bg-white md:block" />}
+        {isPdf && (
+          <div className="flex w-full max-w-md flex-col items-center rounded-2xl bg-[#172126] px-6 py-12 text-center md:hidden">
+            <span className="flex h-24 w-24 items-center justify-center rounded-xl bg-red-600 text-white"><FileText size={52} /></span>
+            <p className="mt-6 max-w-full break-words text-base">{activeItem.file?.name || 'PDF document'}</p>
+            <p className="mt-2 text-sm text-ivory/50">PDF · {formatBytes(activeItem.file?.size)}</p>
+          </div>
+        )}
         {!isImage && !isVideo && !isAudio && !isPdf && (
           <div className="flex w-full max-w-md flex-col items-center rounded-2xl bg-[#172126] px-6 py-12 text-center">
-            <FileText size={76} className="text-ivory/90" />
+            {(() => { const { Icon, color } = fileVisual(mime, activeItem.file?.name); return <span className={`flex h-24 w-24 items-center justify-center rounded-xl ${color}`}><Icon size={52} /></span>; })()}
             <p className="mt-6 max-w-full break-words text-base">{activeItem.file?.name || 'Document'}</p>
             <p className="mt-2 text-sm text-ivory/50">No preview available · {formatBytes(activeItem.file?.size)}</p>
           </div>
@@ -4103,7 +4118,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                                     const opening = reactionPickerId !== message.id;
                                     closeFloatingMenus();
                                     setReactionPickerId(opening ? message.id : '');
-                                    setReactionPickerPosition(opening ? floatingPosition(event.currentTarget, 238, 60) : null);
+                                    setReactionPickerPosition(opening ? floatingPosition(event.currentTarget, Math.min(304, window.innerWidth - 16), 60) : null);
                                   }}
                                   title="React"
                                   className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"
@@ -4523,8 +4538,8 @@ export default function ChatWorkspace({ adminMode = false }) {
                     data-chat-popover
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => event.stopPropagation()}
-                    style={emojiMenuPosition}
-                    className="chat-emoji-picker fixed z-[240] overflow-hidden rounded-2xl border border-brass/20 bg-carbon shadow-2xl"
+                    style={window.innerWidth >= 1024 ? emojiMenuPosition : undefined}
+                    className="chat-emoji-picker fixed inset-x-0 bottom-0 z-[240] h-[min(68dvh,34rem)] overflow-hidden rounded-t-3xl border border-brass/20 bg-carbon shadow-2xl lg:inset-auto lg:rounded-2xl"
                   >
                     <EmojiPicker
                       theme={Theme.DARK}
@@ -4645,7 +4660,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       {reactionPickerId &&
         reactionPickerPosition &&
         createPortal(
-            <div data-chat-popover style={reactionPickerPosition} className="fixed z-[220] flex gap-1 overflow-x-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon p-2 shadow-2xl">
+            <div data-chat-popover style={reactionPickerPosition} className="fixed z-[220] flex items-center justify-center gap-0.5 overflow-hidden rounded-full border border-brass/20 bg-carbon p-1.5 shadow-2xl">
             {REACTIONS.map((emoji) => (
               <button
                 type="button"

@@ -558,3 +558,18 @@
 @media (prefers-reduced-motion: reduce) {
   .chat-reaction-pop, .chat-sticker-pop, .chat-message-enter, .chat-sending-dot { animation: none; }
 }
+/* Emoji sheets keep touch/mouse scrolling while hiding platform scrollbars. */
+.chat-emoji-picker .epr-body,
+.chat-emoji-picker .epr-emoji-category-content {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+.chat-emoji-picker .epr-body::-webkit-scrollbar,
+.chat-emoji-picker .epr-emoji-category-content::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
