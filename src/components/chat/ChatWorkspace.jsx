@@ -3080,15 +3080,15 @@ export default function ChatWorkspace({ adminMode = false }) {
         <section className={`${!mobileConversationOpen ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col overflow-hidden`}>
           {active ? (
             <>
-              <header className="shrink-0 flex items-center gap-2 border-b border-brass/15 p-3 sm:gap-3 sm:p-4">
+              <header className="shrink-0 flex items-center gap-1.5 border-b border-brass/15 px-2 py-1.5 sm:gap-3 sm:p-4">
                 <button
                   onClick={() => setMobileConversationOpen(false)}
-                  className="flex h-10 w-10 items-center justify-center text-brass lg:hidden"
+                  className="flex h-9 w-9 items-center justify-center text-brass lg:hidden"
                   aria-label="Back to conversations"
                 >
                   <ArrowLeft size={19} />
                 </button>
-                <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass">
+                <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass sm:h-10 sm:w-10">
                   <span className="flex h-full w-full overflow-hidden rounded-full">
                     {active.type === 'announcement' ? (
                       <span className="m-auto">
@@ -3103,7 +3103,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                   {other?.online && <i className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-carbon bg-green-400" />}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-display text-xl text-ivory">{conversationName(active, user.id)}</p>
+                  <p className="truncate font-display text-lg text-ivory sm:text-xl">{conversationName(active, user.id)}</p>
                   <p className={`truncate text-xs ${active.typingUsers?.length || other?.online ? 'text-green-400' : 'text-ivory/35'}`}>
                     {active.typingUsers?.length
                       ? `${active.typingUsers[0].name} is typing…`
@@ -3179,7 +3179,8 @@ export default function ChatWorkspace({ adminMode = false }) {
                     <MoreVertical size={18} />
                   </button>
                   {showConversationMenu && conversationMenuPosition && createPortal(
-                    <div data-chat-popover style={conversationMenuPosition} className="chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
+                    <div data-chat-popover style={conversationMenuPosition} className="chat-mobile-sheet chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
+                      <div className="chat-sheet-heading" aria-hidden="true"><span />Chat options</div>
                       {active.type === 'group' && (
                         <button type="button" onClick={() => { setShowConversationMenu(false); openGroupSettings(); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
                           <Users size={14} /> Group info
@@ -3716,7 +3717,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                   </button>
                 )}
               </div>
-              <footer className="relative z-30 shrink-0 border-t border-brass/15 bg-carbon/95 p-2.5 shadow-[0_-10px_30px_rgba(0,0,0,0.18)] backdrop-blur sm:p-3">
+              <footer className="chat-composer-footer relative z-30 shrink-0 border-t border-brass/15 bg-carbon/95 p-2 shadow-[0_-10px_30px_rgba(0,0,0,0.18)] backdrop-blur sm:p-3">
                 {replyingTo && (
                   <div className="relative mb-2 pr-9">
                     <QuotedMessage
@@ -3840,7 +3841,8 @@ export default function ChatWorkspace({ adminMode = false }) {
                       <Paperclip size={17} />
                     </button>
                     {showAttachmentMenu && attachmentMenuPosition && createPortal(
-                      <div data-chat-popover style={attachmentMenuPosition} className="chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
+                      <div data-chat-popover style={attachmentMenuPosition} className="chat-mobile-sheet chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
+                        <div className="chat-sheet-heading" aria-hidden="true"><span />Share</div>
                         <button
                           type="button"
                           onClick={() => {

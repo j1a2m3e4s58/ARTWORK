@@ -128,6 +128,10 @@
     line-height: 1rem;
   }
 
+  .chat-sheet-heading {
+    display: none;
+  }
+
   /* A restrained atelier motif gives the conversation depth without competing with messages. */
   .atelier-chat-canvas {
     background-color: rgba(8, 8, 9, 0.72);
@@ -359,13 +363,67 @@
   }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
   html.messages-conversation-open .mobile-bottom-nav {
     display: none;
   }
 
   html.messages-conversation-open .messages-page {
-    padding-bottom: env(safe-area-inset-bottom);
+    height: var(--messages-viewport-height, 100dvh);
+    max-height: var(--messages-viewport-height, 100dvh);
+    padding-bottom: 0;
+  }
+
+  html.messages-conversation-open .chat-composer-footer {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+
+  .chat-mobile-sheet {
+    inset: auto 0 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: min(72dvh, 34rem) !important;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 1.25rem 1.25rem 0 0 !important;
+    padding: 0.25rem 0.5rem max(0.75rem, env(safe-area-inset-bottom));
+    box-shadow: 0 -18px 60px rgb(0 0 0 / 0.65), 0 0 0 100vmax rgb(0 0 0 / 0.48);
+  }
+
+  .chat-mobile-sheet.chat-menu-fade {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .chat-mobile-sheet .chat-sheet-heading {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    margin: -0.25rem -0.5rem 0.25rem;
+    padding: 0.5rem 1rem 0.6rem;
+    background: rgb(18 18 19 / 0.97);
+    color: rgb(249 246 240 / 0.68);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .chat-mobile-sheet .chat-sheet-heading > span {
+    width: 2.5rem;
+    height: 0.22rem;
+    border-radius: 999px;
+    background: rgb(249 246 240 / 0.2);
+  }
+
+  .chat-mobile-sheet.chat-menu-compact > :is(button, a) {
+    min-height: 2.75rem;
+    font-size: 0.8rem;
   }
 }
 
