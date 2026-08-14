@@ -2318,6 +2318,7 @@ const messageExtensions = (entry, replyTo) => ({
   sharedLocation: cleanSharedLocation(entry?.sharedLocation),
   sharedContact: cleanSharedContact(entry?.sharedContact),
   sticker: cleanSticker(entry?.sticker),
+  voiceDurationSeconds: Math.min(300, Math.max(0, Number(entry?.voiceDurationSeconds || 0))),
   ciphertext: String(entry?.ciphertext || '').slice(0, 50_000),
   encryption: entry?.ciphertext ? { algorithm: String(entry?.encryption?.algorithm || 'X25519-AES-GCM').slice(0, 40), keyId: String(entry?.encryption?.keyId || '').slice(0, 120), version: 1 } : null,
   deliverySecurity: entry?.ciphertext
@@ -3154,9 +3155,26 @@ app.get('/api/chat/messages/:id/attachment', requireVerifiedUser, async (req, re
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Cache-Control', 'private, max-age=300');
   const media = db.data.Media.find(item => item.url === message.attachmentUrl && item.preservedData);
+  const sendAttachmentBuffer = (body, type) => {
+    res.type(type || 'application/octet-stream');
+    res.setHeader('Accept-Ranges', 'bytes');
+    const range = String(req.headers.range || '').match(/^bytes=(\d*)-(\d*)$/);
+    if (!range) {
+      res.setHeader('Content-Length', body.length);
+      return res.send(body);
+    }
+    const requestedStart = range[1] ? Number(range[1]) : 0;
+    const requestedEnd = range[2] ? Number(range[2]) : body.length - 1;
+    const start = Math.max(0, Math.min(requestedStart, body.length - 1));
+    const end = Math.max(start, Math.min(requestedEnd, body.length - 1));
+    res.status(206);
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${body.length}`);
+    res.setHeader('Content-Length', end - start + 1);
+    return res.send(body.subarray(start, end + 1));
+  };
   if (media?.preservedData) {
     const body = Buffer.from(media.preservedData, 'base64');
-    return res.type(message.attachmentType || media.mime || 'application/octet-stream').send(body);
+    return sendAttachmentBuffer(body, message.attachmentType || media.mime);
   }
   if (message.attachmentUrl.startsWith('/uploads/')) {
     const localName = path.basename(message.attachmentUrl);
@@ -3181,7 +3199,7 @@ app.get('/api/chat/messages/:id/attachment', requireVerifiedUser, async (req, re
     if (length > 80 * 1024 * 1024) return res.status(413).json({ error: 'Attachment is too large to preview.' });
     const body = Buffer.from(await upstream.arrayBuffer());
     if (body.length > 80 * 1024 * 1024) return res.status(413).json({ error: 'Attachment is too large to preview.' });
-    res.type(message.attachmentType || upstream.headers.get('content-type') || 'application/octet-stream').send(body);
+    return sendAttachmentBuffer(body, message.attachmentType || upstream.headers.get('content-type'));
   } catch (error) {
     reportOperationalError('chat_attachment_proxy_failed', error, { messageId: message.id });
     res.status(502).type('text/plain').send('This attachment is temporarily unavailable. Please try again.');
@@ -4159,7 +4177,7 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     // accounts restrict PDF/raw delivery even after accepting the upload; the
     // authenticated attachment endpoint can still serve the exact bytes.
     preservedData: isChatAttachment && req.file.size <= 12 * 1024 * 1024
-      && (encryptedChatAttachment || (!uploadType.mime.startsWith('image/') && !uploadType.mime.startsWith('video/') && !uploadType.mime.startsWith('audio/')))
+      && (encryptedChatAttachment || uploadType.mime.startsWith('audio/') || (!uploadType.mime.startsWith('image/') && !uploadType.mime.startsWith('video/')))
       ? req.file.buffer.toString('base64')
       : undefined,
     created_date: now(),

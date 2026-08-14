@@ -180,12 +180,12 @@ const isVoiceAttachment = (attachment = {}) => {
   return type.startsWith('audio/') || /^voice-message-.*\.(webm|m4a|mp4|ogg|oga|wav|mp3|aac)$/i.test(name);
 };
 
-function VoiceMessagePlayer({ src, name = 'Voice message' }) {
+function VoiceMessagePlayer({ src, name = 'Voice message', knownDuration = 0 }) {
   const audioRef = useRef(null);
   const animationRef = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState(() => Math.max(0, Number(knownDuration) || 0));
   const [playbackRate, setPlaybackRate] = useState(1);
   const [listened, setListened] = useState(false);
   const [playbackError, setPlaybackError] = useState('');
@@ -200,6 +200,13 @@ function VoiceMessagePlayer({ src, name = 'Voice message' }) {
     }
     return false;
   };
+
+  useEffect(() => {
+    setPlaying(false);
+    setCurrent(0);
+    setPlaybackError('');
+    setDuration(Math.max(0, Number(knownDuration) || 0));
+  }, [src, knownDuration]);
 
   useEffect(() => {
     if (!playing) {
@@ -263,24 +270,10 @@ function VoiceMessagePlayer({ src, name = 'Voice message' }) {
         preload="metadata"
         onLoadedMetadata={(event) => {
           const player = event.currentTarget;
-          if (!synchronizeDuration(player)) {
-            // MediaRecorder WebM files can initially report Infinity/NaN. A
-            // temporary seek asks Chromium/WebKit to parse the final cluster;
-            // durationchange/seeked then expose the real length.
-            const restoreAt = Number.isFinite(player.currentTime) ? player.currentTime : 0;
-            const restore = () => {
-              synchronizeDuration(player);
-              player.currentTime = restoreAt;
-              setCurrent(restoreAt);
-            };
-            player.addEventListener('durationchange', restore, { once: true });
-            player.addEventListener('seeked', restore, { once: true });
-            try {
-              player.currentTime = Number.MAX_SAFE_INTEGER;
-            } catch {
-              setDuration(0);
-            }
-          }
+          // Some mobile browsers report Infinity/NaN for MediaRecorder WebM
+          // files. Use the recorded duration instead of forcing a huge seek,
+          // which can make the conversation viewport jump.
+          if (!synchronizeDuration(player)) setDuration(Math.max(0, Number(knownDuration) || 0));
           setCurrent(event.currentTarget.currentTime || 0);
         }}
         onDurationChange={(event) => synchronizeDuration(event.currentTarget)}
@@ -451,6 +444,7 @@ function VoiceNoteRecorder({ onCancel, onReady, onSend, viewOnce, onViewOnceChan
         file = blob;
         Object.defineProperty(file, 'name', { configurable: true, value: name });
       }
+      Object.defineProperty(file, 'voiceDurationSeconds', { configurable: true, value: Math.max(0, elapsed || 0) });
       const url = URL.createObjectURL(blob);
       setPreview((previous) => {
         if (previous?.url) URL.revokeObjectURL(previous.url);
@@ -826,7 +820,7 @@ function EncryptedAttachmentPreview({ attachment, compact, onOpen }) {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [attachment.messageId, attachment.url, attachment.encryptedMetadata]);
+  }, [attachment.messageId, attachment.url, attachment.encryptedMetadata?.key, attachment.encryptedMetadata?.iv]);
   if (failure) return <p className="mt-2 border border-red-500/20 bg-red-950/20 p-3 text-xs text-red-200">{failure}</p>;
   if (!resolved) return <p className="mt-2 flex items-center gap-2 border border-brass/15 bg-obsidian p-3 text-xs text-ivory/45"><Loader2 size={14} className="animate-spin" /> Decrypting attachment…</p>;
   return <AttachmentPreview attachment={resolved} compact={compact} onOpen={onOpen} />;
@@ -842,7 +836,7 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
   if (isVoiceAttachment(attachment))
     return (
       <div className="mt-1 w-full min-w-0 max-w-full sm:w-[23rem]">
-        <VoiceMessagePlayer src={url} name={name} />
+      <VoiceMessagePlayer src={url} name={name} knownDuration={attachment.duration} />
       </div>
     );
   if (type?.startsWith('image/'))
@@ -2046,6 +2040,9 @@ export default function ChatWorkspace({ adminMode = false }) {
             attachmentName: encrypted ? 'encrypted-attachment.bin' : item.file.name,
             attachmentType: encrypted ? 'application/vnd.reigns.encrypted' : uploaded.media?.mime || originalType,
             attachmentBytes: uploadFile.size,
+            voiceDurationSeconds: isVoiceAttachment({ name: item.file.name, type: originalType })
+              ? Math.max(0, Number(item.file.voiceDurationSeconds) || 0)
+              : 0,
             replyToId: index === 0 ? replyingTo?.id || null : null,
             viewOnce,
             expiresInSeconds: disappearAfter,
@@ -3233,6 +3230,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                         bytes: message.decryptedAttachment?.bytes || message.attachmentBytes,
                         encryptedMetadata: message.decryptedAttachment || null,
                         messageId: message.id,
+                        duration: message.voiceDurationSeconds,
                       }
                     : null;
                   const voiceAttachment = isVoiceAttachment(attachment || {});
