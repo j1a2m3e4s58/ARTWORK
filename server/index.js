@@ -1686,6 +1686,7 @@ app.post('/api/admin/mfa/recovery-codes', requireAdmin, authLimiter, async (req,
 
 const chatTyping = new Map();
 const chatStreams = new Map();
+const hasActiveChatStream = userId => Boolean(chatStreams.get(userId)?.size);
 let redisPublisher = null;
 let redisSubscriber = null;
 let redisReady = false;
@@ -1741,7 +1742,7 @@ const chatUser = user => ({
   role: user.role,
   avatarUrl: user.avatarUrl || '',
   avatarUpdatedAt: user.updated_date || user.created_date || null,
-  online: Date.now() - new Date(user.lastSeenAt || 0).getTime() < 90_000,
+  online: hasActiveChatStream(user.id) || Date.now() - new Date(user.lastSeenAt || 0).getTime() < 90_000,
   lastSeenAt: user.lastSeenAt || null,
 });
 const isConversationBlocked = conversation => Boolean(conversation.blockedBy?.length);
@@ -1760,6 +1761,14 @@ const refreshConversationSummary = conversation => {
 const unreadNotificationCount = userId => db.data.Notification.filter(item => (
   item.userId === userId && !item.read && !item.deleted_at
 )).length;
+const unreadChatMessageCount = userId => db.data.ChatConversation
+  .filter(item => !item.deleted_at && item.participantIds?.includes(userId))
+  .reduce((total, conversation) => total + db.data.ChatMessage.filter(message => (
+    message.conversationId === conversation.id
+    && message.senderId !== userId
+    && !(message.readBy || []).includes(userId)
+    && !message.deleted_at
+  )).length, 0);
 const defaultNotificationPreferences = () => ({
   pushEnabled: true,
   messages: true,
@@ -1792,14 +1801,14 @@ const deliverPushToUsers = async (userIds, payload, mutedBy = []) => {
   const recipients = db.data.PushSubscription.filter(item => {
     const user = db.data.User.find(entry => entry.id === item.userId);
     const preferences = { ...defaultNotificationPreferences(), ...(user?.notificationPreferences || {}) };
-    return userIds.includes(item.userId) && !mutedBy.includes(item.userId) && !item.deleted_at
+    return userIds.includes(item.userId) && !hasActiveChatStream(item.userId) && !mutedBy.includes(item.userId) && !item.deleted_at
       && preferences.pushEnabled !== false && preferences[category] !== false && !inQuietHours(preferences);
   });
   await Promise.all(recipients.map(async item => {
     try {
       await webpush.sendNotification(item.subscription, JSON.stringify({
         ...payload,
-        badgeCount: unreadNotificationCount(item.userId),
+        badgeCount: category === 'messages' ? unreadChatMessageCount(item.userId) : unreadNotificationCount(item.userId),
       }));
       item.lastUsedAt = now();
     } catch (error) {
@@ -1941,6 +1950,9 @@ const conversationView = (item, viewer) => {
     ...item,
     lastMessageAt: latest?.created_date || item.created_date,
     lastMessage: latest ? (latest.body || (latest.ciphertext ? 'Encrypted message' : '') || latest.attachmentName || 'Attachment') : 'Conversation started',
+    lastMessageSenderId: latest?.senderId || null,
+    lastMessageDeliveredAt: latest?.deliveredAt || null,
+    lastMessageReadAt: latest?.readAt || null,
     participants: (item.participantIds || []).map(id => db.data.User.find(user => user.id === id)).filter(Boolean).map(chatUser),
     unread: db.data.ChatMessage.filter(message => message.conversationId === item.id && message.senderId !== viewer.id && !(message.readBy || []).includes(viewer.id) && chatMessageVisibleTo(message, viewer)).length,
     muted: Boolean(item.mutedBy?.includes(viewer.id)),
@@ -1951,6 +1963,33 @@ const conversationView = (item, viewer) => {
     blockedByMe: Boolean(item.blockedBy?.includes(viewer.id)),
     typingUsers,
   };
+};
+
+const markPendingMessagesDelivered = async userId => {
+  const deliveredAt = now();
+  const changedByConversation = new Map();
+  db.data.ChatConversation
+    .filter(conversation => !conversation.deleted_at && conversation.participantIds?.includes(userId))
+    .forEach(conversation => {
+      const changed = db.data.ChatMessage.filter(message => (
+        message.conversationId === conversation.id
+        && message.senderId !== userId
+        && !message.deleted_at
+        && (!message.recipientIds?.length || message.recipientIds.includes(userId))
+        && !(message.deliveredBy || []).includes(userId)
+      ));
+      changed.forEach(message => {
+        message.deliveredBy = [...new Set([...(message.deliveredBy || []), userId])];
+        message.deliveredAt ||= deliveredAt;
+      });
+      if (changed.length) changedByConversation.set(conversation.id, changed.map(message => message.id));
+    });
+  if (!changedByConversation.size) return;
+  await save();
+  changedByConversation.forEach((messageIds, conversationId) => {
+    const conversation = db.data.ChatConversation.find(item => item.id === conversationId);
+    emitChatEvent(conversation?.participantIds || [], 'delivery', { conversationId, messageIds, userId, deliveredAt });
+  });
 };
 
 app.get('/api/push/config', requireVerifiedUser, (_req, res) => {
@@ -1988,6 +2027,8 @@ app.get('/api/chat/events', requireVerifiedUser, (req, res) => {
   streams.add(res);
   chatStreams.set(req.user.id, streams);
   res.write(`event: ready\ndata: ${JSON.stringify({ connected: true })}\n\n`);
+  req.user.lastSeenAt = now();
+  markPendingMessagesDelivered(req.user.id).catch(error => reportOperationalError('chat_delivery_update_failed', error, { userId: req.user.id }));
   const keepAlive = setInterval(() => res.write(': keep-alive\n\n'), 25_000);
   req.on('close', () => {
     clearInterval(keepAlive);
@@ -2018,6 +2059,7 @@ app.post('/api/chat/presence', requireVerifiedUser, async (req, res) => {
   if (Date.now() - previous > 45_000) {
     await updateUserPresence(req.user.id, now());
   }
+  await markPendingMessagesDelivered(req.user.id);
   res.json({ online: true });
 });
 
@@ -2436,6 +2478,8 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, chatMessag
     : null;
   const riskScore = messageRisk(req.user.id, body);
   if (riskScore >= 80 && !staffRoles.has(req.user.role)) return res.status(429).json({ error: 'This message was paused by spam protection. Wait a moment and try again.' });
+  const recipientIds = (conversation.participantIds || []).filter(id => id !== req.user.id);
+  const deliveredBy = recipientIds.filter(hasActiveChatStream);
   const message = {
     id: newId(), clientId: clientId || null, conversationId: conversation.id, senderId: req.user.id, body,
     attachmentUrl, attachmentName: String(req.body.attachmentName || '').slice(0, 240),
@@ -2443,17 +2487,16 @@ app.post('/api/chat/conversations/:id/messages', requireVerifiedUser, chatMessag
     attachmentBytes: Math.max(0, Number(req.body.attachmentBytes || 0)),
     ...messageExtensions(req.body, replyTo), sharedLocation, sharedContact, sticker,
     allowForward: staffRoles.has(req.user.role) ? Boolean(req.body.allowForward) : false,
-    deliveredAt: now(), readBy: [req.user.id], reactions: {}, created_date: now(),
+    deliveredAt: deliveredBy.length ? now() : null, deliveredBy, readBy: [req.user.id], reactions: {}, created_date: now(),
   };
   if (riskScore >= 45) db.data.ChatModerationEvent.push({ id: newId(), type: 'spam_score', status: 'review', score: riskScore, userId: req.user.id, messageId: message.id, conversationId: conversation.id, created_date: now() });
   db.data.ChatMessage.push(message);
   conversation.lastMessageAt = message.created_date;
   conversation.lastMessage = body || (message.ciphertext ? 'Encrypted message' : '') || (sticker ? 'Sticker' : '') || (sharedLocation ? (sharedLocation.liveUntil ? 'Live location' : 'Location') : '') || message.attachmentName || 'Attachment';
-  const recipientIds = (conversation.participantIds || []).filter(id => id !== req.user.id);
   recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.message', title: `New message from ${req.user.full_name || req.user.email}`, message: conversation.lastMessage.slice(0, 180), section: 'messages', entity: 'ChatConversation', entityId: conversation.id, priority: 'normal', read: false, created_date: now() }));
   await pushToUsers(recipientIds, chatPushPayload(message, req.user, conversation.id), conversation.mutedBy || []);
   await save();
-  emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageId: message.id });
+  emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageId: message.id, senderId: req.user.id, recipientIds });
   res.status(201).json(message);
 });
 
@@ -2468,6 +2511,8 @@ app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, chat
   const replyTo = replyToId
     ? db.data.ChatMessage.find(item => item.id === replyToId && item.conversationId === conversation.id && !item.deleted_at)
     : null;
+  const recipientIds = (conversation.participantIds || []).filter(id => id !== req.user.id);
+  const deliveredBy = recipientIds.filter(hasActiveChatStream);
   const created = [];
   for (const [index, entry] of entries.entries()) {
     const clientId = String(entry?.clientId || '').trim().slice(0, 100);
@@ -2487,7 +2532,7 @@ app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, chat
       attachmentBytes: Math.max(0, Number(entry?.attachmentBytes || 0)),
       ...extension,
       allowForward: staffRoles.has(req.user.role) ? Boolean(entry?.allowForward) : false,
-      deliveredAt: now(), readBy: [req.user.id], reactions: {}, created_date: now(),
+      deliveredAt: deliveredBy.length ? now() : null, deliveredBy, readBy: [req.user.id], reactions: {}, created_date: now(),
     });
   }
   const existingMessageIds = new Set(db.data.ChatMessage.map(item => item.id));
@@ -2497,11 +2542,10 @@ app.post('/api/chat/conversations/:id/messages/batch', requireVerifiedUser, chat
   const last = fresh.at(-1);
   conversation.lastMessageAt = last.created_date;
   conversation.lastMessage = last.body || (last.ciphertext ? 'Encrypted message' : '') || last.attachmentName || (fresh.length > 1 ? `${fresh.length} attachments` : 'Attachment');
-  const recipientIds = (conversation.participantIds || []).filter(id => id !== req.user.id);
   recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.message', title: `New message from ${req.user.full_name || req.user.email}`, message: conversation.lastMessage.slice(0, 180), section: 'messages', entity: 'ChatConversation', entityId: conversation.id, priority: 'normal', read: false, created_date: now() }));
   await pushToUsers(recipientIds, chatPushPayload(last, req.user, conversation.id, fresh.length), conversation.mutedBy || []);
   await save();
-  emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageIds: fresh.map(item => item.id) });
+  emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageIds: fresh.map(item => item.id), senderId: req.user.id, recipientIds });
   res.status(201).json(created);
 });
 
@@ -2511,7 +2555,12 @@ app.post('/api/chat/conversations/:id/read', requireVerifiedUser, async (req, re
   const firstReadAt = now();
   db.data.ChatMessage
     .filter(item => item.conversationId === conversation.id && item.senderId !== req.user.id && !(item.readBy || []).includes(req.user.id))
-    .forEach(item => { item.readBy = [...new Set([...(item.readBy || []), req.user.id])]; item.readAt ||= firstReadAt; });
+    .forEach(item => {
+      item.deliveredBy = [...new Set([...(item.deliveredBy || []), req.user.id])];
+      item.deliveredAt ||= firstReadAt;
+      item.readBy = [...new Set([...(item.readBy || []), req.user.id])];
+      item.readAt ||= firstReadAt;
+    });
   db.data.Notification
     .filter(item => item.userId === req.user.id && item.entity === 'ChatConversation' && item.entityId === conversation.id && !item.read && !item.deleted_at)
     .forEach(item => { item.read = true; item.readAt = firstReadAt; });

@@ -9,6 +9,7 @@ import {
   Bell,
   BellOff,
   Bookmark,
+  Check,
   CheckCheck,
   Clapperboard,
   Download,
@@ -73,6 +74,44 @@ const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const STICKERS = ['🎨', '✨', '🔥', '👏', '💯', '🥳', '😍', '🙌', '🫶', '🌟', '✅', '😂'];
 const MAX_FILE_BYTES = 75 * 1024 * 1024;
 const urlsInMessage = value => [...new Set(String(value || '').match(/https?:\/\/[^\s<>()]+/gi) || [])];
+let notificationAudioContext;
+const playReignsMessageSound = () => {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    notificationAudioContext ||= new AudioContext();
+    if (notificationAudioContext.state === 'suspended') notificationAudioContext.resume().catch(() => {});
+    const start = notificationAudioContext.currentTime + 0.01;
+    [659.25, 783.99, 987.77].forEach((frequency, index) => {
+      const oscillator = notificationAudioContext.createOscillator();
+      const gain = notificationAudioContext.createGain();
+      const noteStart = start + index * 0.075;
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(frequency, noteStart);
+      gain.gain.setValueAtTime(0.0001, noteStart);
+      gain.gain.exponentialRampToValueAtTime(0.055, noteStart + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, noteStart + 0.13);
+      oscillator.connect(gain).connect(notificationAudioContext.destination);
+      oscillator.start(noteStart);
+      oscillator.stop(noteStart + 0.14);
+    });
+  } catch {
+    // A later message retries if the browser has not allowed audio yet.
+  }
+};
+const mapWithConcurrency = async (items, limit, mapper) => {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+};
 const messageAttachmentType = message => String(message?.decryptedAttachment?.type || message?.attachmentType || '').toLowerCase();
 const messageMatchesAttachmentFilter = (message, filter) => {
   if (!filter || filter === 'any') return true;
@@ -1528,8 +1567,15 @@ export default function ChatWorkspace({ adminMode = false }) {
       const payload = JSON.parse(event.data || '{}');
       load().catch(() => setConnectionState('offline'));
       if (payload.conversationId === activeIdRef.current) loadMessages(payload.conversationId, '', { mergeLatest: true }).catch(() => setConnectionState('offline'));
+      window.dispatchEvent(new Event('atelier:refresh-badge'));
     };
-    ['message', 'read', 'typing', 'conversation'].forEach((name) => stream.addEventListener(name, refresh));
+    const receiveMessage = (event) => {
+      const payload = JSON.parse(event.data || '{}');
+      refresh(event);
+      if (payload.senderId && payload.senderId !== user.id && document.visibilityState === 'visible') playReignsMessageSound();
+    };
+    stream.addEventListener('message', receiveMessage);
+    ['delivery', 'read', 'typing', 'conversation'].forEach((name) => stream.addEventListener(name, refresh));
     const refreshStories = () => loadStories().catch(() => {});
     stream.addEventListener('story', refreshStories);
     const receiveCall = (event) => {
@@ -1556,6 +1602,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       stream.removeEventListener('call', receiveCall);
       stream.removeEventListener('call-signal', receiveCallSignal);
       stream.removeEventListener('story', refreshStories);
+      stream.removeEventListener('message', receiveMessage);
       stream.close();
     };
   }, []);
@@ -1964,6 +2011,21 @@ export default function ChatWorkspace({ adminMode = false }) {
     setUploadFailed(false);
     setUploadProgress(Object.fromEntries(outgoingAttachments.map((item) => [item.id, 1])));
     setError('');
+    const clientId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+    const optimisticId = `pending-${clientId}`;
+    if (!outgoingAttachments.length) {
+      setMessages(current => [...current, {
+        id: optimisticId, clientId, conversationId: activeId, senderId: user.id,
+        body: outgoingText, deliveredAt: null, readBy: [user.id], reactions: {},
+        pending: true, created_date: new Date().toISOString(),
+      }]);
+      setText('');
+      setReplyingTo(null);
+      window.requestAnimationFrame(() => {
+        const pane = messagesPaneRef.current;
+        if (pane) pane.scrollTop = pane.scrollHeight;
+      });
+    }
     try {
       if (!outgoingAttachments.length) {
         const shouldEncrypt = active?.type !== 'announcement';
@@ -1979,7 +2041,7 @@ export default function ChatWorkspace({ adminMode = false }) {
           }
         }
         await studioClient.chat.send(activeId, {
-          clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+          clientId,
           body: ciphertext ? '' : outgoingText,
           ciphertext,
           encryption: ciphertext ? { algorithm: 'ECDH-P256+AES-256-GCM', version: 1 } : null,
@@ -1990,9 +2052,7 @@ export default function ChatWorkspace({ adminMode = false }) {
         });
       } else {
         uploadAbortRef.current = new AbortController();
-        const messages = [];
-        for (let index = 0; index < outgoingAttachments.length; index += 1) {
-          const item = outgoingAttachments[index];
+        const messages = await mapWithConcurrency(outgoingAttachments, 3, async (item, index) => {
           const shouldEncrypt = active?.type !== 'announcement';
           const originalType = isVoiceAttachment({ name: item.file.name, type: item.mime || item.file.type })
             ? item.mime || item.file.type || 'audio/webm'
@@ -2027,7 +2087,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                 [item.id]: progress,
               })),
           });
-          messages.push({
+          return {
             clientId: crypto.randomUUID?.() || `${Date.now()}-${index}-${Math.random()}`,
             body: encrypted ? '' : index === 0 ? outgoingText : '',
             ciphertext: encrypted?.ciphertext || '',
@@ -2047,8 +2107,8 @@ export default function ChatWorkspace({ adminMode = false }) {
             viewOnce,
             expiresInSeconds: disappearAfter,
             allowForward: false,
-          });
-        }
+          };
+        });
         await studioClient.chat.sendBatch(activeId, messages);
       }
       setText('');
@@ -2088,6 +2148,7 @@ export default function ChatWorkspace({ adminMode = false }) {
         setError('You are offline. This message is queued and will send automatically when the connection returns.');
         return false;
       }
+      if (!outgoingAttachments.length) setMessages(current => current.filter(message => message.id !== optimisticId));
       if (outgoingAttachments.length) setAttachments(outgoingAttachments);
       setUploadFailed(Boolean(outgoingAttachments.length) && sendError.name !== 'AbortError');
       setError(sendError.name === 'AbortError' ? 'Upload cancelled. Your files are still ready to retry.' : sendError.message);
@@ -2874,8 +2935,17 @@ export default function ChatWorkspace({ adminMode = false }) {
                       {conversation.pinned && <Pin size={11} className="shrink-0 text-brass" aria-label="Pinned" />}
                       {conversation.favourite && <Star size={11} className="shrink-0 fill-brass text-brass" aria-label="Favourite" />}
                     </span>
-                    <small className="block truncate text-ivory/35">
+                    <small className="flex min-w-0 items-center gap-1 text-ivory/35">
+                      {!conversation.typingUsers?.length && conversation.lastMessageSenderId === user.id && (
+                        conversation.lastMessageReadAt
+                          ? <CheckCheck size={13} className="shrink-0 text-sky-400" aria-label="Read" />
+                          : conversation.lastMessageDeliveredAt
+                            ? <CheckCheck size={13} className="shrink-0 text-ivory/35" aria-label="Delivered" />
+                            : <Check size={13} className="shrink-0 text-ivory/35" aria-label="Sent" />
+                      )}
+                      <span className="truncate">
                       {conversation.typingUsers?.length ? `${conversation.typingUsers[0].name} is typing…` : conversation.lastMessage || 'Conversation started'}
+                      </span>
                     </small>
                   </span>
                   {conversation.unread > 0 && (
@@ -3430,7 +3500,11 @@ export default function ChatWorkspace({ adminMode = false }) {
                                 hour: '2-digit',
                                 minute: '2-digit',
                               })}
-                              {mine && <CheckCheck size={13} aria-label={message.readAt ? 'Read' : 'Delivered'} className={message.readAt ? 'text-sky-400' : 'text-ivory/35'} />}
+                              {mine && (message.readAt
+                                ? <CheckCheck size={13} aria-label="Read" className="text-sky-400" />
+                                : message.deliveredAt
+                                  ? <CheckCheck size={13} aria-label="Delivered" className="text-ivory/35" />
+                                  : <Check size={13} aria-label="Sent" className="text-ivory/35" />)}
                             </div>
                           </div>
                           {Object.keys(groupedReactions).length > 0 && (

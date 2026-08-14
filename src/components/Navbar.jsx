@@ -100,9 +100,11 @@ export default function Navbar() {
       .catch(() => mounted && setChatUnread(0));
     refreshUnread();
     const timer = window.setInterval(refreshUnread, 15000);
+    window.addEventListener('atelier:refresh-badge', refreshUnread);
     return () => {
       mounted = false;
       window.clearInterval(timer);
+      window.removeEventListener('atelier:refresh-badge', refreshUnread);
     };
   }, [user?.id, location.pathname]);
   useEffect(() => {

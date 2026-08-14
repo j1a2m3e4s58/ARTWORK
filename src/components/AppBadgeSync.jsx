@@ -19,8 +19,8 @@ export default function AppBadgeSync() {
   const sync = useCallback(async () => {
     if (!user) return applyBadge(0);
     try {
-      const result = await studioClient.notifications.unreadCount();
-      await applyBadge(result.count);
+      const conversations = await studioClient.chat.conversations();
+      await applyBadge(conversations.reduce((sum, conversation) => sum + Number(conversation.unread || 0), 0));
     } catch {
       // Authentication/network recovery will retry on the next focus or interval.
     }
@@ -28,7 +28,7 @@ export default function AppBadgeSync() {
 
   useEffect(() => {
     sync();
-    const interval = window.setInterval(sync, 60_000);
+    const interval = window.setInterval(sync, 20_000);
     const onVisibility = () => { if (document.visibilityState === 'visible') sync(); };
     const onRefresh = () => sync();
     document.addEventListener('visibilitychange', onVisibility);

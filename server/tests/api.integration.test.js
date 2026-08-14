@@ -176,6 +176,7 @@ test('API keeps public reads open while blocking unverified customer mutations',
     });
     assert.equal(chatMessageResponse.status, 201);
     const chatMessage = await chatMessageResponse.json();
+    assert.equal(chatMessage.deliveredAt, null, 'A saved message must remain single-tick until the recipient reaches the message page.');
     const repeatedMessageResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, {
       method: 'POST', headers: securedHeaders, body: JSON.stringify({ clientId: 'integration-chat-message-1', body: 'Welcome to the studio messenger.' }),
     });
@@ -218,6 +219,7 @@ test('API keeps public reads open while blocking unverified customer mutations',
     const readOnce = await (await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, { headers: { Cookie: adminCookieHeader } })).json();
     const firstReadAt = readOnce.find(item => item.id === chatMessage.id).readAt;
     assert.ok(firstReadAt);
+    assert.ok(readOnce.find(item => item.id === chatMessage.id).deliveredAt, 'Reading a message must also confirm delivery.');
     await new Promise(resolve => setTimeout(resolve, 10));
     assert.equal((await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/read`, { method: 'POST', headers: markReadHeaders })).status, 200);
     const readTwice = await (await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, { headers: { Cookie: adminCookieHeader } })).json();
