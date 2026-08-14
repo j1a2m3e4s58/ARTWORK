@@ -1175,6 +1175,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [activeId, setActiveId] = useState('');
   const [mobileConversationOpen, setMobileConversationOpen] = useState(false);
   const [messages, setMessages] = useState([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
   const [drafts, setDrafts] = useState({});
   const [attachments, setAttachments] = useState([]);
   const [preview, setPreview] = useState(null);
@@ -1445,6 +1446,9 @@ export default function ChatWorkspace({ adminMode = false }) {
   };
   const loadMessages = async (id, search = messageQuery, options = {}) => {
     if (!id) return;
+    const showLoadingIndicator = !options.mergeLatest && !options.before;
+    if (showLoadingIndicator) setMessagesLoading(true);
+    try {
     const pane = messagesPaneRef.current;
     const distanceFromBottom = pane ? pane.scrollHeight - pane.scrollTop - pane.clientHeight : Number.POSITIVE_INFINITY;
     const shouldFollowLatest = options.scrollToBottom || distanceFromBottom < 120;
@@ -1489,6 +1493,9 @@ export default function ChatWorkspace({ adminMode = false }) {
         else if (shouldFollowLatest) currentPane.scrollTop = currentPane.scrollHeight;
       }),
     );
+    } finally {
+      if (showLoadingIndicator) setMessagesLoading(false);
+    }
   };
   const loadStories = async () => {
     const rows = await studioClient.chat.stories();
@@ -3383,8 +3390,14 @@ export default function ChatWorkspace({ adminMode = false }) {
                 role="log"
                 aria-label={`Messages with ${conversationName(active, user.id)}`}
                 aria-live="polite"
-                className="relative min-h-0 min-w-0 flex-1 space-y-3 overscroll-contain overflow-x-hidden overflow-y-auto bg-obsidian/35 p-3 [scrollbar-gutter:stable] sm:p-6"
+                className="atelier-chat-canvas relative min-h-0 min-w-0 flex-1 space-y-3 overscroll-contain overflow-x-hidden overflow-y-auto p-3 [scrollbar-gutter:stable] sm:p-6"
               >
+                {messagesLoading && (
+                  <div className="sticky top-0 z-20 mx-auto flex w-fit items-center gap-2 rounded-full border border-brass/15 bg-carbon/95 px-3 py-1.5 text-[10px] uppercase tracking-[0.14em] text-brass shadow-lg backdrop-blur" role="status">
+                    <Loader2 size={12} className="animate-spin" />
+                    Loading messages
+                  </div>
+                )}
                 {nextCursor && !messageQuery && (
                   <button
                     type="button"
@@ -3655,7 +3668,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     </div>
                   );
                 })}
-                {!messages.length && (
+                {!messagesLoading && !messages.length && (
                   <div className="py-16 text-center">
                     <MessageCircle className="mx-auto text-brass/40" />
                     <p className="mt-3 text-sm text-ivory/35">Start the conversation. Messages and files stay with this account.</p>

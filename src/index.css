@@ -112,6 +112,17 @@
     height: 0;
   }
 
+  /* A restrained atelier motif gives the conversation depth without competing with messages. */
+  .atelier-chat-canvas {
+    background-color: rgba(8, 8, 9, 0.72);
+    background-image:
+      radial-gradient(circle at 16px 16px, rgba(201, 162, 88, 0.055) 0 1px, transparent 1.5px),
+      linear-gradient(45deg, transparent 47%, rgba(201, 162, 88, 0.026) 48% 52%, transparent 53%),
+      linear-gradient(-45deg, transparent 47%, rgba(238, 230, 214, 0.018) 48% 52%, transparent 53%);
+    background-position: 0 0, 0 0, 24px 24px;
+    background-size: 32px 32px, 48px 48px, 48px 48px;
+  }
+
   .pointer-accent {
     position: fixed;
     z-index: 9999;
