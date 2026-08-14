@@ -4191,7 +4191,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                   </button>
                 )}
               </div>
-              <footer className="chat-composer-footer relative z-30 shrink-0 bg-transparent p-2 sm:p-3">
+              <footer className={`chat-composer-footer relative z-30 shrink-0 bg-transparent p-2 sm:p-3 ${emojiMenuPosition ? 'chat-composer-footer--emoji-open' : ''}`}>
                 {replyingTo && (
                   <div className="relative mb-2 pr-9">
                     <QuotedMessage
@@ -4541,14 +4541,14 @@ export default function ChatWorkspace({ adminMode = false }) {
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => event.stopPropagation()}
                     style={window.innerWidth >= 1024 ? emojiMenuPosition : undefined}
-                    className="chat-emoji-picker fixed inset-x-0 bottom-[4.65rem] z-[240] h-[min(46dvh,23rem)] overflow-hidden rounded-t-2xl border border-brass/20 bg-carbon shadow-2xl lg:inset-auto lg:h-auto lg:rounded-2xl"
+                    className="chat-emoji-picker fixed inset-x-0 bottom-0 z-[240] h-[min(46dvh,23rem)] overflow-hidden rounded-t-2xl border border-brass/20 bg-carbon shadow-2xl lg:inset-auto lg:h-[27rem] lg:rounded-2xl"
                   >
-                    <div className="grid h-11 grid-cols-3 border-b border-white/10 px-3 lg:hidden" aria-label="Emoji, GIF and sticker choices">
+                    <div className="grid h-11 grid-cols-3 border-b border-white/10 px-3" aria-label="Emoji, GIF and sticker choices">
                       {['emoji', 'gif', 'stickers'].map(tab => (
                         <button key={tab} type="button" onClick={() => { setMobileEmojiTab(tab); if (tab === 'gif' && !gifResults.length) searchGifs(gifQuery); }} className={`border-b-2 text-xs font-semibold capitalize ${mobileEmojiTab === tab ? 'border-brass text-brass' : 'border-transparent text-ivory/50'}`}>{tab === 'stickers' ? 'Stickers' : tab.toUpperCase()}</button>
                       ))}
                     </div>
-                    <div className={mobileEmojiTab === 'emoji' ? 'h-[calc(100%_-_2.75rem)] lg:h-full' : 'hidden lg:block lg:h-full'}>
+                    <div className={mobileEmojiTab === 'emoji' ? 'h-[calc(100%_-_2.75rem)]' : 'hidden'}>
                     <EmojiPicker
                       theme={Theme.DARK}
                       emojiStyle={window.innerWidth >= 1024 ? EmojiStyle.APPLE : EmojiStyle.NATIVE}
@@ -4572,14 +4572,14 @@ export default function ChatWorkspace({ adminMode = false }) {
                     />
                     </div>
                     {mobileEmojiTab === 'gif' && (
-                      <div className="chat-menu-scroll h-[calc(100%_-_2.75rem)] overflow-y-auto p-2 lg:hidden">
+                      <div className="chat-menu-scroll h-[calc(100%_-_2.75rem)] overflow-y-auto p-2">
                         <form onSubmit={event => { event.preventDefault(); searchGifs(gifQuery); }} className="mb-2 flex gap-2"><input value={gifQuery} onChange={event => setGifQuery(event.target.value)} placeholder="Search GIFs" className="h-9 min-w-0 flex-1 rounded-full bg-obsidian px-4 text-sm outline-none" /><button className="rounded-full bg-brass px-4 text-xs text-obsidian">Search</button></form>
                         <div className="grid grid-cols-3 gap-1">{gifResults.map(gif => <button key={gif.id} type="button" onClick={() => { sendGif(gif); setEmojiMenuPosition(null); }} className="aspect-square overflow-hidden rounded-md bg-obsidian"><img src={gif.previewUrl || gif.url} alt={gif.title || 'GIF'} className="h-full w-full object-cover" /></button>)}</div>
                         {!gifConfigured && <p className="p-6 text-center text-xs text-ivory/50">GIF search is not configured yet.</p>}
                       </div>
                     )}
                     {mobileEmojiTab === 'stickers' && (
-                      <div className="chat-menu-scroll grid h-[calc(100%_-_2.75rem)] grid-cols-4 content-start gap-2 overflow-y-auto p-4 lg:hidden">{STICKERS.map(sticker => <button key={sticker} type="button" onClick={() => { sendSticker(sticker); setEmojiMenuPosition(null); }} className="chat-sticker-pop aspect-square rounded-xl bg-white/5 text-4xl hover:bg-brass/10">{sticker}</button>)}</div>
+                      <div className="chat-menu-scroll grid h-[calc(100%_-_2.75rem)] grid-cols-4 content-start gap-2 overflow-y-auto p-4">{STICKERS.map(sticker => <button key={sticker} type="button" onClick={() => { sendSticker(sticker); setEmojiMenuPosition(null); }} className="chat-sticker-pop aspect-square rounded-xl bg-white/5 text-4xl hover:bg-brass/10">{sticker}</button>)}</div>
                     )}
                   </div>, document.body,
                 )}

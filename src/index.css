@@ -545,8 +545,22 @@
   display: block;
   width: max-content;
   max-width: 100%;
-  filter: drop-shadow(0 .2rem .3rem rgb(0 0 0 / .28));
+  opacity: 1;
+  color: #fff;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+  filter: saturate(1.12) contrast(1.04);
   animation: chat-emoji-send 480ms cubic-bezier(.18,.88,.28,1.22) both;
+}
+
+@media (max-width: 1023px) {
+  .chat-composer-footer--emoji-open {
+    position: fixed;
+    inset-inline: 0;
+    bottom: min(46dvh, 23rem);
+    z-index: 245;
+    background: #151516;
+    padding-bottom: .35rem !important;
+  }
 }
 
 .chat-bubble-emoji::before,
