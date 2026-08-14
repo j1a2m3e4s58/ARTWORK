@@ -78,9 +78,28 @@ import {
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const STICKERS = ['🎨', '✨', '🔥', '👏', '💯', '🥳', '😍', '🙌', '🫶', '🌟', '✅', '😂'];
 const MAX_FILE_BYTES = 75 * 1024 * 1024;
-const prepareChatImage = async (file, { square = false } = {}) => {
+const prepareChatImage = async (file, { square = false, camera = false } = {}) => {
   if (!String(file?.type || '').startsWith('image/') || /gif|svg/i.test(file.type)) return file;
-  const bitmap = await createImageBitmap(file);
+  let prepared = file;
+  try {
+    const { default: compressImage } = await import('browser-image-compression');
+    const compressed = await compressImage(file, {
+      maxSizeMB: camera ? 0.7 : 1.15,
+      maxWidthOrHeight: camera ? 1280 : 1600,
+      useWebWorker: true,
+      preserveExif: false,
+      fileType: 'image/jpeg',
+      initialQuality: camera ? 0.7 : 0.78,
+    });
+    const baseName = String(file.name || 'phone-photo').replace(/\.[^.]+$/, '');
+    prepared = new File([compressed], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: file.lastModified || Date.now() });
+  } catch {
+    // Keep the original usable instead of rejecting the whole attachment batch.
+    // This also covers browsers that cannot decode a particular gallery format.
+    prepared = file;
+  }
+  if (!square) return prepared;
+  const bitmap = await createImageBitmap(prepared);
   try {
     const sourceSize = square ? Math.min(bitmap.width, bitmap.height) : null;
     const sourceX = square ? Math.floor((bitmap.width - sourceSize) / 2) : 0;
@@ -96,8 +115,8 @@ const prepareChatImage = async (file, { square = false } = {}) => {
     context.drawImage(bitmap, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.84));
     if (!blob) return file;
-    const baseName = String(file.name || 'camera-photo').replace(/\.[^.]+$/, '');
-    return new File([blob], `${baseName}${square ? '-cropped' : ''}.jpg`, { type: 'image/jpeg', lastModified: file.lastModified || Date.now() });
+    const baseName = String(prepared.name || 'camera-photo').replace(/\.[^.]+$/, '');
+    return new File([blob], `${baseName}-cropped.jpg`, { type: 'image/jpeg', lastModified: prepared.lastModified || Date.now() });
   } finally {
     bitmap.close?.();
   }
@@ -1482,12 +1501,10 @@ export default function ChatWorkspace({ adminMode = false }) {
     document.addEventListener('pointerdown', closePopovers);
     document.addEventListener('keydown', closeWithEscape);
     window.addEventListener('resize', closePopovers);
-    document.addEventListener('scroll', closePopovers, true);
     return () => {
       document.removeEventListener('pointerdown', closePopovers);
       document.removeEventListener('keydown', closeWithEscape);
       window.removeEventListener('resize', closePopovers);
-      document.removeEventListener('scroll', closePopovers, true);
     };
   }, []);
 
@@ -1982,12 +1999,16 @@ export default function ChatWorkspace({ adminMode = false }) {
           const isHeic = /image\/(heic|heif)/i.test(inferMimeType(item)) || /\.(heic|heif)$/i.test(item.name);
           let normalized = item;
           if (isHeic) {
-            const { default: convertHeic } = await import('heic2any');
-            const converted = await convertHeic({ blob: item, toType: 'image/jpeg', quality: 0.84 });
-            const jpeg = Array.isArray(converted) ? converted[0] : converted;
-            normalized = new File([jpeg], item.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg', lastModified: item.lastModified });
+            try {
+              const { default: convertHeic } = await import('heic2any');
+              const converted = await convertHeic({ blob: item, toType: 'image/jpeg', quality: 0.76 });
+              const jpeg = Array.isArray(converted) ? converted[0] : converted;
+              normalized = new File([jpeg], item.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg', lastModified: item.lastModified });
+            } catch {
+              normalized = item;
+            }
           }
-          return String(normalized.type || '').startsWith('image/') ? prepareChatImage(normalized) : normalized;
+          return String(inferMimeType(normalized) || '').startsWith('image/') ? prepareChatImage(normalized, { camera }) : normalized;
         }),
       );
       const additions = normalized.map((item) => ({
@@ -2003,7 +2024,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       setAttachments((current) => [...current, ...additions].slice(0, 10));
       if (selected.length > availableSlots) setError('You can attach up to 10 files to one send.');
     } catch {
-      setError('This phone photo could not be prepared. Try selecting it from Photos again or save it as JPG first.');
+      setError('This photo could not be added. Please close other apps and try once more.');
     }
   };
   const removeAttachment = (id) =>
