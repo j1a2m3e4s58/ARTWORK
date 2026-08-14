@@ -123,6 +123,34 @@
     background-size: 32px 32px, 48px 48px, 48px 48px;
   }
 
+  .chat-bubble {
+    isolation: isolate;
+  }
+
+  .chat-bubble-tail::after {
+    position: absolute;
+    top: 0.7rem;
+    z-index: -1;
+    width: 0.62rem;
+    height: 0.62rem;
+    border: inherit;
+    background: inherit;
+    content: '';
+    transform: rotate(45deg);
+  }
+
+  .chat-bubble-mine.chat-bubble-tail::after {
+    right: -0.32rem;
+    border-bottom: 0;
+    border-left: 0;
+  }
+
+  .chat-bubble-incoming.chat-bubble-tail::after {
+    left: -0.32rem;
+    border-right: 0;
+    border-top: 0;
+  }
+
   .pointer-accent {
     position: fixed;
     z-index: 9999;

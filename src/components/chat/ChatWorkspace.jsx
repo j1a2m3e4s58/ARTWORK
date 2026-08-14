@@ -303,7 +303,7 @@ function VoiceMessagePlayer({ src, name = 'Voice message', knownDuration = 0 }) 
   };
 
   return (
-    <div className="flex w-full min-w-0 max-w-full items-center gap-2 rounded-2xl bg-black/35 px-2.5 py-2 sm:w-[23rem]">
+    <div className="flex w-full min-w-0 max-w-full items-center gap-2 rounded-xl bg-black/30 px-2 py-1.5 sm:w-[20rem]">
       <audio
         ref={audioRef}
         src={src}
@@ -341,14 +341,14 @@ function VoiceMessagePlayer({ src, name = 'Voice message', knownDuration = 0 }) 
       <button
         type="button"
         onClick={togglePlayback}
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian transition-transform active:scale-95"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian transition-transform active:scale-95"
         aria-label={playing ? 'Pause voice note' : 'Play voice note'}
       >
         {playing ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" />}
       </button>
       <div className="min-w-0 flex-1">
-        <div className="relative flex h-9 w-full touch-none items-center overflow-hidden">
-          <div className="flex h-8 w-full items-center justify-between gap-[2px]">
+        <div className="relative flex h-8 w-full touch-none items-center overflow-hidden">
+          <div className="flex h-7 w-full items-center justify-between gap-[2px]">
             {bars.map((height, index) => {
               const barProgress = ((index + 1) / bars.length) * 100;
               const isPlayed = barProgress <= progress;
@@ -388,13 +388,13 @@ function VoiceMessagePlayer({ src, name = 'Voice message', knownDuration = 0 }) 
           <span>{formatAudioTime(duration)}</span>
         </div>
       </div>
-      <span className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brass/10 sm:flex" title={name}>
+      <span className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brass/10 sm:flex" title={name}>
         {listened ? <CheckCheck size={15} className="text-cyan-400" /> : <Mic size={15} className="text-brass" />}
       </span>
       <button
         type="button"
         onClick={cyclePlaybackRate}
-        className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full border border-brass/20 bg-obsidian/70 px-1.5 text-[10px] font-semibold text-brass"
+        className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full border border-brass/20 bg-obsidian/70 px-1.5 text-[10px] font-semibold text-brass"
         aria-label={`Playback speed ${playbackRate} times`}
       >
         {playbackRate}×
@@ -3390,7 +3390,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                 role="log"
                 aria-label={`Messages with ${conversationName(active, user.id)}`}
                 aria-live="polite"
-                className="atelier-chat-canvas relative min-h-0 min-w-0 flex-1 space-y-3 overscroll-contain overflow-x-hidden overflow-y-auto p-3 [scrollbar-gutter:stable] sm:p-6"
+                className="atelier-chat-canvas relative min-h-0 min-w-0 flex-1 overscroll-contain overflow-x-hidden overflow-y-auto p-3 [scrollbar-gutter:stable] sm:p-6"
               >
                 {messagesLoading && (
                   <div className="sticky top-0 z-20 mx-auto flex w-fit items-center gap-2 rounded-full border border-brass/15 bg-carbon/95 px-3 py-1.5 text-[10px] uppercase tracking-[0.14em] text-brass shadow-lg backdrop-blur" role="status">
@@ -3433,9 +3433,17 @@ export default function ChatWorkspace({ adminMode = false }) {
                     {},
                   );
                   const previous = messages[index - 1];
+                  const next = messages[index + 1];
                   const showDate = !previous || new Date(previous.created_date).toDateString() !== new Date(message.created_date).toDateString();
+                  const groupedWithPrevious = !showDate
+                    && previous?.senderId === message.senderId
+                    && Math.abs(new Date(message.created_date).getTime() - new Date(previous.created_date).getTime()) < 5 * 60 * 1000;
+                  const groupedWithNext = next
+                    && next.senderId === message.senderId
+                    && new Date(next.created_date).toDateString() === new Date(message.created_date).toDateString()
+                    && Math.abs(new Date(next.created_date).getTime() - new Date(message.created_date).getTime()) < 5 * 60 * 1000;
                   return (
-                    <div key={message.id} className={`min-w-0 max-w-full ${chatAnimationsEnabled ? 'chat-message-enter' : ''}`}>
+                    <div key={message.id} className={`min-w-0 max-w-full ${groupedWithPrevious ? 'mt-1' : 'mt-3'} ${chatAnimationsEnabled ? 'chat-message-enter' : ''}`}>
                       {showDate && (
                         <div className="my-4 flex items-center gap-3" aria-label={`Messages from ${new Date(message.created_date).toLocaleDateString()}`}>
                           <span className="h-px flex-1 bg-brass/10" />
@@ -3463,7 +3471,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                         )}
                         <article
                           onClick={messageSelectionMode ? () => setSelectedMessageIds(current => current.includes(message.id) ? current.filter(id => id !== message.id) : [...current, message.id]) : undefined}
-                          className={`relative min-w-0 ${messageSelectionMode ? 'cursor-pointer' : ''} ${voiceAttachment ? 'w-fit max-w-[94%] rounded-2xl border px-1.5 py-1 sm:max-w-[25rem]' : 'max-w-[90%] border p-3 sm:max-w-[72%]'} ${mine ? 'border-brass/20 bg-brass/10' : 'border-ivory/10 bg-carbon'}`}
+                          className={`chat-bubble relative min-w-0 rounded-2xl border ${messageSelectionMode ? 'cursor-pointer' : ''} ${voiceAttachment ? 'w-fit max-w-[94%] px-1 py-1 sm:max-w-[22rem]' : 'max-w-[88%] px-3 py-2.5 sm:max-w-[64%] lg:max-w-[58%]'} ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}
                         >
                           {message.replyPreview && <QuotedMessage message={message} />}
                           {message.pending && (
@@ -3596,7 +3604,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                             </p>
                           )}
                           {message.starredBy?.includes(user.id) && <Star size={12} className="absolute right-2 top-2 fill-brass text-brass" aria-label="Starred message" />}
-                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                          <div className="mt-1.5 flex flex-wrap items-end gap-2">
                             {!message.deletedForEveryone && (
                               <div data-chat-popover className="relative flex items-center gap-1">
                                 <button
@@ -3635,7 +3643,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                                 </button>
                               </div>
                             )}
-                            <div className="flex items-center gap-1 text-[10px] text-ivory/30">
+                            <div className="ml-auto flex shrink-0 items-center gap-1 self-end text-[10px] leading-none text-ivory/35">
                               {message.editedAt && <span>edited · </span>}
                               {new Date(message.created_date).toLocaleTimeString([], {
                                 hour: '2-digit',
