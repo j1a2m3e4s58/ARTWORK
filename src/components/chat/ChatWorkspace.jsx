@@ -1237,6 +1237,125 @@ function GifPicker({ query, setQuery, results, loading, configured, busy, onSear
   );
 }
 
+function AttachmentComposer({
+  items,
+  activeId,
+  setActiveId,
+  busy,
+  progress,
+  onAdd,
+  onCaption,
+  onCrop,
+  onRemove,
+  onClose,
+  onSend,
+}) {
+  const activeItem = items.find((item) => item.id === activeId) || items[0];
+  if (!activeItem) return null;
+  const mime = String(activeItem.mime || activeItem.file?.type || '');
+  const isImage = mime.startsWith('image/');
+  const isVideo = mime.startsWith('video/');
+  const isAudio = mime.startsWith('audio/');
+  const isPdf = mime === 'application/pdf' || /\.pdf$/i.test(activeItem.file?.name || '');
+
+  const previewTile = (item) => {
+    const itemMime = String(item.mime || item.file?.type || '');
+    if (itemMime.startsWith('image/')) return <img src={item.previewUrl} alt="" className="h-full w-full object-cover" />;
+    if (itemMime.startsWith('video/')) return <video src={item.previewUrl} muted className="h-full w-full object-cover" />;
+    if (itemMime.startsWith('audio/')) return <Mic size={19} />;
+    return <FileText size={19} />;
+  };
+
+  return createPortal(
+    <section className="fixed inset-0 z-[260] flex min-h-0 flex-col bg-[#101211] text-ivory" role="dialog" aria-modal="true" aria-label="Prepare attachments">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/10 px-3 sm:h-16 sm:px-5">
+        <button type="button" disabled={busy} onClick={onClose} aria-label="Close attachment preview" className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/10 disabled:opacity-40">
+          <X size={22} />
+        </button>
+        <p className="min-w-0 flex-1 truncate text-center text-sm font-semibold">{activeItem.file?.name || 'Attachment preview'}</p>
+        <div className="flex items-center gap-1">
+          {isImage && (
+            <button type="button" disabled={busy} onClick={() => onCrop(activeItem.id)} title="Crop square" className={`flex h-10 items-center gap-2 rounded-full px-3 text-xs ${activeItem.cropped ? 'bg-brass/15 text-brass' : 'hover:bg-white/10'}`}>
+              <Images size={18} />
+              <span className="hidden sm:inline">{activeItem.cropped ? 'Cropped' : 'Crop'}</span>
+            </button>
+          )}
+          <button type="button" disabled={busy} onClick={() => onRemove(activeItem.id)} aria-label="Remove selected attachment" className="flex h-10 w-10 items-center justify-center rounded-full text-red-300 hover:bg-red-400/10 disabled:opacity-40">
+            <Trash2 size={18} />
+          </button>
+        </div>
+      </header>
+
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-3 sm:p-6">
+        {isImage && <img src={activeItem.previewUrl} alt={activeItem.file?.name || 'Selected photo'} className="max-h-full max-w-full object-contain" />}
+        {isVideo && <video key={activeItem.id} src={activeItem.previewUrl} controls playsInline className="max-h-full max-w-full object-contain" />}
+        {isAudio && (
+          <div className="w-full max-w-lg rounded-2xl bg-[#202321] p-6 text-center">
+            <span className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-brass/15 text-brass"><Mic size={34} /></span>
+            <p className="mt-4 break-words text-sm">{activeItem.file?.name}</p>
+            <audio key={activeItem.id} src={activeItem.previewUrl} controls className="mt-5 w-full" />
+          </div>
+        )}
+        {isPdf && <iframe key={activeItem.id} src={activeItem.previewUrl} title={activeItem.file?.name || 'PDF preview'} className="h-full w-full max-w-4xl bg-white" />}
+        {!isImage && !isVideo && !isAudio && !isPdf && (
+          <div className="flex w-full max-w-md flex-col items-center rounded-2xl bg-[#172126] px-6 py-12 text-center">
+            <FileText size={76} className="text-ivory/90" />
+            <p className="mt-6 max-w-full break-words text-base">{activeItem.file?.name || 'Document'}</p>
+            <p className="mt-2 text-sm text-ivory/50">No preview available · {formatBytes(activeItem.file?.size)}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="shrink-0 border-t border-white/10 bg-[#111412] px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-6">
+        <div className="mx-auto flex w-full max-w-3xl items-center rounded-xl bg-[#252826] px-3">
+          <Image size={18} className="shrink-0 text-ivory/45" />
+          <input
+            value={activeItem.caption || ''}
+            disabled={busy}
+            maxLength={1000}
+            onChange={(event) => onCaption(activeItem.id, event.target.value)}
+            placeholder="Add a caption…"
+            className="h-12 min-w-0 flex-1 bg-transparent px-3 text-sm text-ivory outline-none placeholder:text-ivory/40"
+          />
+          <Smile size={19} className="shrink-0 text-ivory/45" />
+        </div>
+
+        <div className="mx-auto mt-3 flex w-full max-w-3xl items-center gap-2">
+          <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {items.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                onClick={() => setActiveId(item.id)}
+                className={`relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border-2 bg-[#202321] ${item.id === activeItem.id ? 'border-brass' : 'border-transparent text-ivory/65'}`}
+                aria-label={`Edit caption for ${item.file?.name || 'attachment'}`}
+              >
+                {previewTile(item)}
+                {item.caption && <span className="absolute bottom-1 right-1 h-2 w-2 rounded-full bg-brass" />}
+              </button>
+            ))}
+            {items.length < 10 && !busy && (
+              <label className="flex h-14 w-14 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-white/20 text-ivory hover:bg-white/5" aria-label="Add more attachments">
+                <Plus size={22} />
+                <input type="file" multiple className="hidden" accept="image/*,video/*,audio/*,.heic,.heif,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onChange={(event) => { onAdd(event.target.files); event.target.value = ''; }} />
+              </label>
+            )}
+          </div>
+          <button type="button" disabled={busy} onClick={onSend} aria-label="Send attachments" className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian shadow-lg disabled:opacity-50">
+            {busy ? <Loader2 size={22} className="animate-spin" /> : <Send size={22} fill="currentColor" />}
+          </button>
+        </div>
+        {busy && (
+          <div className="mx-auto mt-2 h-1 w-full max-w-3xl overflow-hidden rounded-full bg-white/10">
+            <div className="h-full bg-brass transition-all" style={{ width: `${Math.max(...items.map((item) => progress[item.id] || 0), 2)}%` }} />
+          </div>
+        )}
+      </div>
+    </section>,
+    document.body,
+  );
+}
+
 export default function ChatWorkspace({ adminMode = false }) {
   const { user } = useAuth();
   const { confirm, confirmDialog } = useGlassConfirm();
@@ -1250,6 +1369,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [drafts, setDrafts] = useState({});
   const [attachments, setAttachments] = useState([]);
+  const [activeAttachmentId, setActiveAttachmentId] = useState('');
   const [preview, setPreview] = useState(null);
   const [forwardingMessage, setForwardingMessage] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null);
@@ -1750,6 +1870,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
       return [];
     });
+    setActiveAttachmentId('');
     loadMessages(activeId, '', { scrollToBottom: true }).catch((loadError) => setError(loadError.message));
   }, [activeId]);
   useEffect(() => {
@@ -2022,6 +2143,7 @@ export default function ChatWorkspace({ adminMode = false }) {
         camera,
       }));
       setAttachments((current) => [...current, ...additions].slice(0, 10));
+      if (additions[0]) setActiveAttachmentId(additions[0].id);
       if (selected.length > availableSlots) setError('You can attach up to 10 files to one send.');
     } catch {
       setError('This photo could not be added. Please close other apps and try once more.');
@@ -2031,7 +2153,9 @@ export default function ChatWorkspace({ adminMode = false }) {
     setAttachments((current) => {
       const removed = current.find((item) => item.id === id);
       if (removed) URL.revokeObjectURL(removed.previewUrl);
-      return current.filter((item) => item.id !== id);
+      const remaining = current.filter((item) => item.id !== id);
+      setActiveAttachmentId((selected) => selected === id ? (remaining[0]?.id || '') : selected);
+      return remaining;
     });
   const openResourcePicker = async (kind) => {
     setShowAttachmentMenu(false);
@@ -2162,6 +2286,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     setMessages(current => [...current, ...optimisticMessages]);
     setText('');
     setAttachments([]);
+    setActiveAttachmentId('');
     setReplyingTo(null);
     setViewOnce(false);
     window.requestAnimationFrame(() => {
@@ -2287,7 +2412,10 @@ export default function ChatWorkspace({ adminMode = false }) {
         return false;
       }
       setMessages(current => current.filter(message => !optimisticMessages.some(pending => pending.id === message.id)));
-      if (outgoingAttachments.length) setAttachments(outgoingAttachments);
+      if (outgoingAttachments.length) {
+        setAttachments(outgoingAttachments);
+        setActiveAttachmentId(outgoingAttachments[0]?.id || '');
+      }
       setUploadFailed(Boolean(outgoingAttachments.length) && sendError.name !== 'AbortError');
       setError(sendError.name === 'AbortError' ? 'Upload cancelled. Your files are still ready to retry.' : sendError.message);
       return false;
@@ -2800,7 +2928,9 @@ export default function ChatWorkspace({ adminMode = false }) {
     previewUrl,
   });
   const attachRecordedVoice = (voiceFile, previewUrl) => {
-    setAttachments((current) => [...current, createRecordedVoiceAttachment(voiceFile, previewUrl)]);
+    const voiceAttachment = createRecordedVoiceAttachment(voiceFile, previewUrl);
+    setAttachments((current) => [...current, voiceAttachment]);
+    setActiveAttachmentId(voiceAttachment.id);
     setRecording(false);
   };
   const sendRecordedVoice = async (voiceFile, previewUrl) => {
@@ -2812,6 +2942,26 @@ export default function ChatWorkspace({ adminMode = false }) {
   return (
     <>
       {confirmDialog}
+      {attachments.length > 0 && !recording && (
+        <AttachmentComposer
+          items={attachments}
+          activeId={activeAttachmentId}
+          setActiveId={setActiveAttachmentId}
+          busy={busy}
+          progress={uploadProgress}
+          onAdd={chooseFiles}
+          onCaption={(id, caption) => setAttachments((current) => current.map((item) => item.id === id ? { ...item, caption } : item))}
+          onCrop={toggleAttachmentCrop}
+          onRemove={removeAttachment}
+          onClose={() => {
+            attachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+            setAttachments([]);
+            setActiveAttachmentId('');
+            setUploadFailed(false);
+          }}
+          onSend={send}
+        />
+      )}
       <div
         className={`grid min-h-0 max-w-full overflow-hidden bg-carbon lg:grid-cols-[minmax(280px,350px)_minmax(0,1fr)] ${adminMode ? 'h-[clamp(360px,calc(100dvh-13rem),760px)] md:border md:border-brass/15' : 'h-full'}`}
       >
