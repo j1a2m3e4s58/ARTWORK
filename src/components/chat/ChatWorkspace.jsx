@@ -2637,17 +2637,22 @@ export default function ChatWorkspace({ adminMode = false }) {
       >
         <aside className={`${mobileConversationOpen ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col overflow-hidden border-r border-brass/15`}>
           <div className="shrink-0 border-b border-brass/15 p-4">
+            {!adminMode && (
+              <Link
+                to="/"
+                aria-label="Return to the main site"
+                title="Back to the main site"
+                className="mb-3 inline-flex min-h-8 items-center gap-2 rounded-full border border-brass/25 bg-brass/5 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-brass transition hover:border-brass/60 hover:bg-brass hover:text-obsidian focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass/60"
+              >
+                <ArrowLeft size={14} aria-hidden="true" />
+                <span>Main site</span>
+              </Link>
+            )}
             <div className="flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-2">
-                {!adminMode && (
-                  <Link to="/" aria-label="Return to the main site" title="Back to the main site" className="flex h-10 shrink-0 items-center justify-center gap-2 rounded-full border border-brass/30 bg-brass/10 px-3.5 text-brass shadow-lg shadow-black/20 transition hover:border-brass/60 hover:bg-brass hover:text-obsidian">
-                    <ArrowLeft size={17} />
-                    <span className="hidden text-[10px] font-semibold uppercase tracking-wider sm:inline">Main site</span>
-                  </Link>
-                )}
+              <div className="min-w-0">
                 <h2 className="truncate font-display text-2xl text-ivory">{adminMode ? 'Studio conversations' : 'Messages'}</h2>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex shrink-0 items-center gap-1">
                 {canCreateGroups && (
                   <button
                     type="button"
