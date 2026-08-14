@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
@@ -220,7 +220,7 @@ const isVoiceAttachment = (attachment = {}) => {
   return type.startsWith('audio/') || /^voice-message-.*\.(webm|m4a|mp4|ogg|oga|wav|mp3|aac)$/i.test(name);
 };
 
-function VoiceMessagePlayer({ src, name = 'Voice message', knownDuration = 0 }) {
+const VoiceMessagePlayer = memo(function VoiceMessagePlayer({ src, name = 'Voice message', knownDuration = 0 }) {
   const audioRef = useRef(null);
   const animationRef = useRef(null);
   const [playing, setPlaying] = useState(false);
@@ -402,7 +402,7 @@ function VoiceMessagePlayer({ src, name = 'Voice message', knownDuration = 0 }) 
       {playbackError && <span role="alert" className="text-[10px] text-red-300" title={playbackError}>!</span>}
     </div>
   );
-}
+});
 
 const MAX_VOICE_SECONDS = 5 * 60;
 const MAX_VOICE_BYTES = 25 * 1024 * 1024;
@@ -1461,6 +1461,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     if (showLoadingIndicator) setMessagesLoading(true);
     try {
     const pane = messagesPaneRef.current;
+    const previousScrollTop = pane?.scrollTop || 0;
     const distanceFromBottom = pane ? pane.scrollHeight - pane.scrollTop - pane.clientHeight : Number.POSITIVE_INFINITY;
     const shouldFollowLatest = options.scrollToBottom || distanceFromBottom < 120;
     let response;
@@ -1486,11 +1487,13 @@ export default function ChatWorkspace({ adminMode = false }) {
     if (options.filters?.attachmentType) rows = rows.filter(message => messageMatchesAttachmentFilter(message, options.filters.attachmentType));
     if (!search && !options.filters) cacheMessages(user.id, id, encryptedRows).catch(() => {});
     setNextCursor(Array.isArray(response) ? null : response.nextCursor || null);
-    setMessages((current) =>
-      options.mergeLatest
-        ? [...new Map([...current, ...rows].map((item) => [item.id, item])).values()].sort((a, b) => String(a.created_date).localeCompare(String(b.created_date)))
-        : rows,
-    );
+    setMessages((current) => {
+      if (!options.mergeLatest) return rows;
+      const confirmedClientIds = new Set(rows.map((item) => item.clientId).filter(Boolean));
+      const retained = current.filter((item) => !item.pending || !confirmedClientIds.has(item.clientId));
+      return [...new Map([...retained, ...rows].map((item) => [item.id, item])).values()]
+        .sort((a, b) => String(a.created_date).localeCompare(String(b.created_date)));
+    });
     const hasUnreadIncoming = rows.some((message) => message.senderId !== user.id && !(message.readBy || []).includes(user.id));
     if (hasUnreadIncoming) {
       await studioClient.chat.markRead(id);
@@ -1501,7 +1504,8 @@ export default function ChatWorkspace({ adminMode = false }) {
         const currentPane = messagesPaneRef.current;
         if (!currentPane) return;
         if (options.scrollToTop) currentPane.scrollTop = 0;
-        else if (shouldFollowLatest) currentPane.scrollTop = currentPane.scrollHeight;
+        else if (shouldFollowLatest) currentPane.scrollTo({ top: currentPane.scrollHeight, behavior: options.smooth ? 'smooth' : 'auto' });
+        else if (options.mergeLatest) currentPane.scrollTop = previousScrollTop;
       }),
     );
     } finally {
@@ -1663,6 +1667,8 @@ export default function ChatWorkspace({ adminMode = false }) {
     setPreview(null);
     setForwardingMessage(null);
     setError('');
+    setMessages([]);
+    setNextCursor(null);
     setAttachments((current) => {
       current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
       return [];
@@ -2138,7 +2144,7 @@ export default function ChatWorkspace({ adminMode = false }) {
               })),
           });
           return {
-            clientId: crypto.randomUUID?.() || `${Date.now()}-${index}-${Math.random()}`,
+            clientId: `${clientId}-${index}`,
             body: encrypted ? '' : index === 0 ? outgoingText : '',
             ciphertext: encrypted?.ciphertext || '',
             encryption: encrypted ? { algorithm: 'ECDH-P256+AES-256-GCM', version: 1, attachment: 'AES-256-GCM' } : null,
@@ -2162,7 +2168,7 @@ export default function ChatWorkspace({ adminMode = false }) {
         await studioClient.chat.sendBatch(activeId, messages);
       }
       setUploadProgress({});
-      await loadMessages(activeId, '', { scrollToBottom: true });
+      await loadMessages(activeId, '', { mergeLatest: true, scrollToBottom: true, smooth: true });
       await load();
       outgoingAttachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
       return true;
@@ -2271,7 +2277,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       liveLocationWatchesRef.current.delete(message.id);
     }
     await studioClient.chat.updateLiveLocation(message.id, { stop: true });
-    await loadMessages(activeId);
+    await loadMessages(activeId, '', { mergeLatest: true });
   };
   const shareContact = async () => {
     setShowAttachmentMenu(false);
@@ -2327,7 +2333,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   };
   const setForwarding = async (message) => {
     await studioClient.chat.setForwarding(message.id, !message.allowForward);
-    await loadMessages(activeId);
+    await loadMessages(activeId, '', { mergeLatest: true });
   };
   const forwardMessage = async (conversationId) => {
     if (!forwardingMessage) return;
@@ -2346,15 +2352,15 @@ export default function ChatWorkspace({ adminMode = false }) {
   };
   const react = async (message, emoji) => {
     await studioClient.chat.react(message.id, message.reactions?.[user.id] === emoji ? '' : emoji);
-    await loadMessages(activeId);
+    await loadMessages(activeId, '', { mergeLatest: true });
   };
   const starMessage = async (message) => {
     await studioClient.chat.star(message.id, !(message.starredBy || []).includes(user.id));
-    await loadMessages(activeId);
+    await loadMessages(activeId, '', { mergeLatest: true });
   };
   const saveMedia = async message => {
     await studioClient.chat.saveMedia(message.id, !(message.savedMediaBy || []).includes(user.id));
-    await loadMessages(activeId);
+    await loadMessages(activeId, '', { mergeLatest: true });
   };
   const openSavedBrowser = async () => {
     setShowSavedBrowser(true);
@@ -2397,7 +2403,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     try {
       await studioClient.chat.edit(editing.id, editing.body);
       setEditing(null);
-      await loadMessages(activeId);
+      await loadMessages(activeId, '', { mergeLatest: true });
       await load();
     } catch (editError) {
       setError(editError.message);
@@ -2411,7 +2417,6 @@ export default function ChatWorkspace({ adminMode = false }) {
     setMessages(current => current.filter(item => item.id !== message.id));
     try {
       await studioClient.chat.remove(message.id, mode);
-      loadMessages(activeId).catch(() => {});
       load().catch(() => {});
     } catch (removeError) {
       setMessages(previousMessages);
@@ -2471,7 +2476,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       setSelectedMessageIds([]);
       setMessageSelectionMode(false);
       setShowConversationMenu(false);
-      Promise.all([loadMessages(activeId, '', { scrollToBottom: true }), load()]).catch(() => {});
+      load().catch(() => {});
     } catch (clearError) {
       setMessages(previousMessages);
       setError(clearError.message);
@@ -2551,7 +2556,10 @@ export default function ChatWorkspace({ adminMode = false }) {
   };
   const jumpToLatest = () => {
     const pane = messagesPaneRef.current;
-    if (pane) pane.scrollTo({ top: pane.scrollHeight, behavior: 'smooth' });
+    if (pane) {
+      pane.scrollTo({ top: pane.scrollHeight, behavior: 'smooth' });
+      setShowJumpToLatest(false);
+    }
   };
   const enablePush = async () => {
     try {
@@ -3405,9 +3413,12 @@ export default function ChatWorkspace({ adminMode = false }) {
                 className="atelier-chat-canvas relative min-h-0 min-w-0 flex-1 overscroll-contain overflow-x-hidden overflow-y-auto p-3 [scrollbar-gutter:stable] sm:p-6"
               >
                 {messagesLoading && (
-                  <div className="sticky top-0 z-20 mx-auto flex w-fit items-center gap-2 rounded-full border border-brass/15 bg-carbon/95 px-3 py-1.5 text-[10px] uppercase tracking-[0.14em] text-brass shadow-lg backdrop-blur" role="status">
-                    <Loader2 size={12} className="animate-spin" />
-                    Loading messages
+                  <div className="space-y-3 py-3" role="status" aria-label="Loading messages">
+                    {[0, 1, 2, 3, 4].map((row) => (
+                      <div key={row} className={`flex ${row % 2 ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`h-14 animate-pulse rounded-2xl bg-ivory/[0.045] ${row % 3 === 0 ? 'w-[38%]' : 'w-[56%]'}`} />
+                      </div>
+                    ))}
                   </div>
                 )}
                 {nextCursor && !messageQuery && (
@@ -3421,7 +3432,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     Load older messages
                   </button>
                 )}
-                {messages.map((message, index) => {
+                {!messagesLoading && messages.map((message, index) => {
                   const mine = message.senderId === user.id;
                   const attachment = message.attachmentUrl
                     ? {
