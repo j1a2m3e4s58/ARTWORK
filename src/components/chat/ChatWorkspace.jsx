@@ -1339,6 +1339,18 @@ export default function ChatWorkspace({ adminMode = false }) {
     };
   };
   const menuHeight = (desktopMaximum = 440) => Math.min(desktopMaximum, Math.max(280, window.innerHeight * 0.62));
+  const closeFloatingMenus = () => {
+    setShowAttachmentMenu(false);
+    setAttachmentMenuPosition(null);
+    setEmojiMenuPosition(null);
+    setComposerOptionsPosition(null);
+    setShowConversationMenu(false);
+    setConversationMenuPosition(null);
+    setMessageMenuId('');
+    setMessageMenuPosition(null);
+    setReactionPickerId('');
+    setReactionPickerPosition(null);
+  };
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
@@ -1402,12 +1414,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     };
     const closeWithEscape = (event) => {
       if (event.key !== 'Escape') return;
-      setShowAttachmentMenu(false);
-      setShowConversationMenu(false);
-      setMessageMenuId('');
-      setReactionPickerId('');
-      setMessageMenuPosition(null);
-      setReactionPickerPosition(null);
+      closeFloatingMenus();
       setPreview(null);
       setForwardingMessage(null);
       setShopPickerOpen(false);
@@ -3154,6 +3161,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     type="button"
                     onClick={(event) => {
                       const opening = !showConversationMenu;
+                      closeFloatingMenus();
                       setShowConversationMenu(opening);
                       setConversationMenuPosition(opening ? floatingPosition(event.currentTarget, 240, menuHeight(440)) : null);
                     }}
@@ -3163,36 +3171,36 @@ export default function ChatWorkspace({ adminMode = false }) {
                     <MoreVertical size={18} />
                   </button>
                   {showConversationMenu && conversationMenuPosition && createPortal(
-                    <div data-chat-popover style={conversationMenuPosition} className="chat-menu-scroll fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon p-1 shadow-2xl">
+                    <div data-chat-popover style={conversationMenuPosition} className="chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
                       {active.type === 'group' && (
-                        <button type="button" onClick={() => { setShowConversationMenu(false); openGroupSettings(); }} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
-                          <Users size={15} /> Group members
+                        <button type="button" onClick={() => { setShowConversationMenu(false); openGroupSettings(); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
+                          <Users size={14} /> Group info
                         </button>
                       )}
                       {active.type !== 'announcement' && (
                         <>
-                          <button type="button" onClick={() => { setShowConversationMenu(false); beginCall('voice'); }} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
-                            <Phone size={15} /> Voice call
+                          <button type="button" onClick={() => { setShowConversationMenu(false); beginCall('voice'); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
+                            <Phone size={14} /> Voice call
                           </button>
-                          <button type="button" onClick={() => { setShowConversationMenu(false); beginCall('video'); }} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
-                            <Video size={15} /> Video call
+                          <button type="button" onClick={() => { setShowConversationMenu(false); beginCall('video'); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
+                            <Video size={14} /> Video call
                           </button>
-                          <button type="button" onClick={() => { setShowConversationMenu(false); setShowCallHistory(true); }} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
-                            <Timer size={15} /> Call history
+                          <button type="button" onClick={() => { setShowConversationMenu(false); setShowCallHistory(true); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
+                            <Timer size={14} /> Calls
                           </button>
                         </>
                       )}
-                      <button type="button" onClick={() => openChatBrowser('media')} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
-                        <Images size={15} /> Media, links and documents
+                      <button type="button" onClick={() => openChatBrowser('media')} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
+                        <Images size={14} /> Media & files
                       </button>
-                      <button type="button" onClick={exportConversation} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
-                        <Download size={15} /> Export this chat
+                      <button type="button" onClick={exportConversation} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
+                        <Download size={14} /> Export chat
                       </button>
-                      <button type="button" onClick={() => { setMessageSelectionMode(true); setSelectedMessageIds([]); setShowConversationMenu(false); }} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
-                        <CheckCheck size={15} /> Select messages to delete
+                      <button type="button" onClick={() => { setMessageSelectionMode(true); setSelectedMessageIds([]); setShowConversationMenu(false); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
+                        <CheckCheck size={14} /> Select messages
                       </button>
-                      <button type="button" onClick={() => clearConversationMessages(null)} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-red-300 hover:bg-red-400/10">
-                        <Trash2 size={15} /> Clear all messages
+                      <button type="button" onClick={() => clearConversationMessages(null)} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-red-300 hover:bg-red-400/10">
+                        <Trash2 size={14} /> Clear chat
                       </button>
                       <button
                         type="button"
@@ -3202,18 +3210,18 @@ export default function ChatWorkspace({ adminMode = false }) {
                           try { window.localStorage.setItem('atelier-chat-animations', next ? 'on' : 'off'); } catch { /* preference remains active for this visit */ }
                           setShowConversationMenu(false);
                         }}
-                        className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10"
+                        className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10"
                       >
                         {chatAnimationsEnabled ? <Pause size={15} /> : <Play size={15} />}
-                        {chatAnimationsEnabled ? 'Disable animations' : 'Enable animations'}
+                        {chatAnimationsEnabled ? 'Animations off' : 'Animations on'}
                       </button>
-                      <Link to="/account#security" onClick={() => setShowConversationMenu(false)} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
-                        <Lock size={15} /> Devices and account data
+                      <Link to="/account#security" onClick={() => setShowConversationMenu(false)} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
+                        <Lock size={14} /> Devices & data
                       </Link>
                       <button
                         type="button"
                         onClick={() => updateConversation({ muted: !active.muted })}
-                        className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10"
+                        className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10"
                       >
                         {active.muted ? <Bell size={15} /> : <BellOff size={15} />}
                         {active.muted ? 'Unmute alerts' : 'Mute alerts'}
@@ -3221,7 +3229,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                       <button
                         type="button"
                         onClick={() => updateConversation({ favourite: !active.favourite })}
-                        className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10"
+                        className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10"
                       >
                         <Star size={15} className={active.favourite ? 'fill-brass text-brass' : ''} />
                         {active.favourite ? 'Remove favourite' : 'Add to favourites'}
@@ -3229,7 +3237,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                       <button
                         type="button"
                         onClick={() => updateConversation({ pinned: !active.pinned })}
-                        className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10"
+                        className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10"
                       >
                         <Pin size={15} />
                         {active.pinned ? 'Unpin chat' : 'Pin chat'}
@@ -3237,7 +3245,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                       <button
                         type="button"
                         onClick={() => updateConversation({ markUnread: true })}
-                        className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10"
+                        className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10"
                       >
                         <Mail size={15} />
                         Mark as unread
@@ -3245,7 +3253,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                       <button
                         type="button"
                         onClick={() => updateConversation({ archived: !active.archived })}
-                        className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10"
+                        className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10"
                       >
                         <Archive size={15} />
                         {active.archived ? 'Restore chat' : 'Archive chat'}
@@ -3254,7 +3262,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                         <button
                           type="button"
                           onClick={() => updateConversation({ blocked: !active.blockedByMe })}
-                          className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-red-300 hover:bg-red-400/10"
+                          className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-red-300 hover:bg-red-400/10"
                         >
                           <Ban size={15} />
                           {active.blockedByMe ? 'Unblock person' : 'Block person'}
@@ -3267,7 +3275,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                             setReporting(true);
                             setShowConversationMenu(false);
                           }}
-                          className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-red-300 hover:bg-red-400/10"
+                          className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-red-300 hover:bg-red-400/10"
                         >
                           <Flag size={15} />
                           Report conversation
@@ -3623,9 +3631,9 @@ export default function ChatWorkspace({ adminMode = false }) {
                                   type="button"
                                   onClick={(event) => {
                                     const opening = reactionPickerId !== message.id;
+                                    closeFloatingMenus();
                                     setReactionPickerId(opening ? message.id : '');
                                     setReactionPickerPosition(opening ? floatingPosition(event.currentTarget, 238, 60) : null);
-                                    setMessageMenuId('');
                                   }}
                                   title="React"
                                   className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"
@@ -3636,9 +3644,9 @@ export default function ChatWorkspace({ adminMode = false }) {
                                   type="button"
                                   onClick={(event) => {
                                     const opening = messageMenuId !== message.id;
+                                    closeFloatingMenus();
                                     setMessageMenuId(opening ? message.id : '');
                                     setMessageMenuPosition(opening ? floatingPosition(event.currentTarget, 220, 190) : null);
-                                    setReactionPickerId('');
                                   }}
                                   title="Message options"
                                   className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"
@@ -3810,9 +3818,8 @@ export default function ChatWorkspace({ adminMode = false }) {
                       disabled={active.blocked || (active.type === 'announcement' && !adminMode)}
                       onClick={(event) => {
                         const opening = !showAttachmentMenu;
+                        closeFloatingMenus();
                         setShowAttachmentMenu(opening);
-                        setEmojiMenuPosition(null);
-                        setComposerOptionsPosition(null);
                         setAttachmentMenuPosition(opening ? floatingPosition(event.currentTarget, 260, menuHeight(420)) : null);
                       }}
                       className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ivory/55 transition hover:bg-white/5 hover:text-brass disabled:cursor-not-allowed disabled:opacity-40"
@@ -3822,20 +3829,17 @@ export default function ChatWorkspace({ adminMode = false }) {
                       <Paperclip size={17} />
                     </button>
                     {showAttachmentMenu && attachmentMenuPosition && createPortal(
-                      <div data-chat-popover style={attachmentMenuPosition} className="chat-menu-scroll fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon p-1 shadow-2xl">
+                      <div data-chat-popover style={attachmentMenuPosition} className="chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
                         <button
                           type="button"
                           onClick={() => {
                             setShowAttachmentMenu(false);
                             photosInputRef.current?.click();
                           }}
-                          className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"
+                          className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10"
                         >
-                          <Image size={17} className="text-sky-400" />
-                          <span>
-                            <b className="block font-medium">Photos & videos</b>
-                            <small className="text-ivory/35">Choose one or several</small>
-                          </span>
+                          <Image size={15} className="text-sky-400" />
+                          <span>Photos & video</span>
                         </button>
                         <button
                           type="button"
@@ -3843,13 +3847,10 @@ export default function ChatWorkspace({ adminMode = false }) {
                             setShowAttachmentMenu(false);
                             documentsInputRef.current?.click();
                           }}
-                          className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"
+                          className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10"
                         >
-                          <FileText size={17} className="text-purple-400" />
-                          <span>
-                            <b className="block font-medium">Documents</b>
-                            <small className="text-ivory/35">PDF, Word, Excel, slides or ZIP</small>
-                          </span>
+                          <FileText size={15} className="text-purple-400" />
+                          <span>Documents</span>
                         </button>
                         <button
                           type="button"
@@ -3857,79 +3858,52 @@ export default function ChatWorkspace({ adminMode = false }) {
                             setShowAttachmentMenu(false);
                             audioInputRef.current?.click();
                           }}
-                          className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"
+                          className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10"
                         >
-                          <Mic size={17} className="text-orange-400" />
-                          <span>
-                            <b className="block font-medium">Audio</b>
-                            <small className="text-ivory/35">Choose an audio recording</small>
-                          </span>
+                          <Mic size={15} className="text-orange-400" />
+                          <span>Audio</span>
                         </button>
-                        <button type="button" onClick={openGifPicker} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10">
+                        <button type="button" onClick={openGifPicker} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10">
                           <span className="flex h-[18px] min-w-[27px] items-center justify-center rounded-sm bg-gradient-to-r from-fuchsia-500 via-cyan-400 to-emerald-400 px-1 text-[8px] font-bold tracking-wide text-black">
                             GIF
                           </span>
-                          <span>
-                            <b className="block font-medium">GIFs</b>
-                            <small className="text-ivory/35">Search and send with GIPHY</small>
-                          </span>
+                          <span>GIFs</span>
                         </button>
-                        <button type="button" onClick={() => { setShowAttachmentMenu(false); setShowStickerPicker(true); }} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10">
-                          <span className="text-xl">✨</span>
-                          <span>
-                            <b className="block font-medium">Stickers</b>
-                            <small className="text-ivory/35">Send a large animated sticker</small>
-                          </span>
+                        <button type="button" onClick={() => { setShowAttachmentMenu(false); setShowStickerPicker(true); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10">
+                          <span className="text-base">✨</span>
+                          <span>Stickers</span>
                         </button>
-                        <button type="button" onClick={() => shareLocation(false)} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10">
-                          <MapPin size={17} className="text-green-400" />
-                          <span>
-                            <b className="block font-medium">Current location</b>
-                            <small className="text-ivory/35">Share one accurate map pin</small>
-                          </span>
+                        <button type="button" onClick={() => shareLocation(false)} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10">
+                          <MapPin size={15} className="text-green-400" />
+                          <span>Location</span>
                         </button>
-                        <button type="button" onClick={() => shareLocation(true)} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10">
-                          <MapPin size={17} className="animate-pulse text-emerald-300" />
-                          <span>
-                            <b className="block font-medium">Live location</b>
-                            <small className="text-ivory/35">Update your position for one hour</small>
-                          </span>
+                        <button type="button" onClick={() => shareLocation(true)} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10">
+                          <MapPin size={15} className="animate-pulse text-emerald-300" />
+                          <span>Live location</span>
                         </button>
-                        <button type="button" onClick={shareContact} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10">
-                          <Contact size={17} className="text-cyan-400" />
-                          <span>
-                            <b className="block font-medium">Contact</b>
-                            <small className="text-ivory/35">Share a name and phone number</small>
-                          </span>
+                        <button type="button" onClick={shareContact} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10">
+                          <Contact size={15} className="text-cyan-400" />
+                          <span>Contact</span>
                         </button>
-                        <button type="button" onClick={openShopPicker} className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10">
-                          <ShoppingBag size={17} className="text-brass" />
-                          <span>
-                            <b className="block font-medium">Art Shop items</b>
-                            <small className="text-ivory/35">Share items for discussion</small>
-                          </span>
+                        <button type="button" onClick={openShopPicker} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10">
+                          <ShoppingBag size={15} className="text-brass" />
+                          <span>Art Shop</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => openResourcePicker('gallery')}
-                          className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"
+                          className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10"
                         >
-                          <Images size={17} className="text-emerald-400" />
-                          <span>
-                            <b className="block font-medium">Gallery artworks</b>
-                            <small className="text-ivory/35">Share finished works</small>
-                          </span>
+                          <Images size={15} className="text-emerald-400" />
+                          <span>Gallery</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => openResourcePicker('films')}
-                          className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"
+                          className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10"
                         >
-                          <Clapperboard size={17} className="text-violet-400" />
-                          <span>
-                            <b className="block font-medium">Art Films</b>
-                            <small className="text-ivory/35">Share a studio film</small>
-                          </span>
+                          <Clapperboard size={15} className="text-violet-400" />
+                          <span>Art Films</span>
                         </button>
                       </div>, document.body,
                     )}
@@ -3972,9 +3946,9 @@ export default function ChatWorkspace({ adminMode = false }) {
                       type="button"
                       disabled={active.blocked || (active.type === 'announcement' && !adminMode)}
                       onClick={(event) => {
-                        setEmojiMenuPosition((current) => current ? null : floatingPosition(event.currentTarget, 286, 76));
-                        setComposerOptionsPosition(null);
-                        setShowAttachmentMenu(false);
+                        const opening = !emojiMenuPosition;
+                        closeFloatingMenus();
+                        setEmojiMenuPosition(opening ? floatingPosition(event.currentTarget, 286, 76) : null);
                       }}
                       className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ivory/55 transition hover:bg-white/5 hover:text-brass disabled:opacity-40"
                       aria-label="Choose an emoji"
@@ -4013,9 +3987,9 @@ export default function ChatWorkspace({ adminMode = false }) {
                     <button
                       type="button"
                       onClick={(event) => {
-                        setComposerOptionsPosition((current) => current ? null : floatingPosition(event.currentTarget, 250, 168));
-                        setEmojiMenuPosition(null);
-                        setShowAttachmentMenu(false);
+                        const opening = !composerOptionsPosition;
+                        closeFloatingMenus();
+                        setComposerOptionsPosition(opening ? floatingPosition(event.currentTarget, 250, 168) : null);
                       }}
                       className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition hover:bg-white/5 ${viewOnce || disappearAfter ? 'text-brass' : 'text-ivory/45'}`}
                       aria-label="Open message options"
@@ -4192,7 +4166,7 @@ export default function ChatWorkspace({ adminMode = false }) {
             setMessageMenuPosition(null);
           };
           return createPortal(
-            <div data-chat-popover style={messageMenuPosition} className="chat-menu-scroll fixed z-[220] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon p-1 shadow-2xl">
+            <div data-chat-popover style={messageMenuPosition} className="chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[220] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
               {mine && message.body && !message.ciphertext && (
                 <button
                   type="button"
@@ -4200,7 +4174,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     setEditing({ id: message.id, body: message.body });
                     closeMenu();
                   }}
-                  className="flex min-h-11 w-full items-center gap-2 px-3 text-left text-sm text-ivory/70 hover:bg-brass/10"
+                  className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10"
                 >
                   <Pencil size={14} />
                   Edit message

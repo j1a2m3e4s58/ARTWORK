@@ -112,6 +112,22 @@
     height: 0;
   }
 
+  /* Fade the menu edges so hidden overflow is discoverable without a visible rail. */
+  .chat-menu-fade {
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+    padding-block: 10px;
+  }
+
+  .chat-menu-compact > :is(button, a) {
+    min-height: 2.5rem;
+    gap: 0.625rem;
+    border-radius: 0.5rem;
+    padding-inline: 0.625rem;
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
   /* A restrained atelier motif gives the conversation depth without competing with messages. */
   .atelier-chat-canvas {
     background-color: rgba(8, 8, 9, 0.72);
