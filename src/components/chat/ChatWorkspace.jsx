@@ -1335,6 +1335,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       maxHeight,
     };
   };
+  const menuHeight = (desktopMaximum = 440) => Math.min(desktopMaximum, Math.max(280, window.innerHeight * 0.62));
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
@@ -3138,7 +3139,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     onClick={(event) => {
                       const opening = !showConversationMenu;
                       setShowConversationMenu(opening);
-                      setConversationMenuPosition(opening ? floatingPosition(event.currentTarget, 240, Math.min(620, window.innerHeight - 24)) : null);
+                      setConversationMenuPosition(opening ? floatingPosition(event.currentTarget, 240, menuHeight(440)) : null);
                     }}
                     className="flex h-10 w-10 items-center justify-center text-ivory/55 hover:text-brass"
                     aria-label="Conversation options"
@@ -3146,7 +3147,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     <MoreVertical size={18} />
                   </button>
                   {showConversationMenu && conversationMenuPosition && createPortal(
-                    <div data-chat-popover style={conversationMenuPosition} className="fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon p-1 shadow-2xl [scrollbar-gutter:stable]">
+                    <div data-chat-popover style={conversationMenuPosition} className="chat-menu-scroll fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon p-1 shadow-2xl">
                       {active.type === 'group' && (
                         <button type="button" onClick={() => { setShowConversationMenu(false); openGroupSettings(); }} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
                           <Users size={15} /> Group members
@@ -3780,7 +3781,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                       onClick={(event) => {
                         const opening = !showAttachmentMenu;
                         setShowAttachmentMenu(opening);
-                        setAttachmentMenuPosition(opening ? floatingPosition(event.currentTarget, 260, Math.min(600, window.innerHeight - 24)) : null);
+                        setAttachmentMenuPosition(opening ? floatingPosition(event.currentTarget, 260, menuHeight(420)) : null);
                       }}
                       className="flex h-11 w-11 shrink-0 items-center justify-center border border-brass/20 text-brass disabled:cursor-not-allowed disabled:opacity-40"
                       title="Add an attachment"
@@ -3789,7 +3790,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                       <Paperclip size={17} />
                     </button>
                     {showAttachmentMenu && attachmentMenuPosition && createPortal(
-                      <div data-chat-popover style={attachmentMenuPosition} className="fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon p-1 shadow-2xl [scrollbar-gutter:stable]">
+                      <div data-chat-popover style={attachmentMenuPosition} className="chat-menu-scroll fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon p-1 shadow-2xl">
                         <button
                           type="button"
                           onClick={() => {
@@ -4104,7 +4105,7 @@ export default function ChatWorkspace({ adminMode = false }) {
             setMessageMenuPosition(null);
           };
           return createPortal(
-            <div data-chat-popover style={messageMenuPosition} className="fixed z-[220] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon p-1 shadow-2xl [scrollbar-gutter:stable]">
+            <div data-chat-popover style={messageMenuPosition} className="chat-menu-scroll fixed z-[220] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon p-1 shadow-2xl">
               {mine && message.body && !message.ciphertext && (
                 <button
                   type="button"
