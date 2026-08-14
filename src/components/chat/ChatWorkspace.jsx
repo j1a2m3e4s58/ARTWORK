@@ -1207,6 +1207,8 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [showAnnouncement, setShowAnnouncement] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [attachmentMenuPosition, setAttachmentMenuPosition] = useState(null);
+  const [emojiMenuPosition, setEmojiMenuPosition] = useState(null);
+  const [composerOptionsPosition, setComposerOptionsPosition] = useState(null);
   const [shopPickerOpen, setShopPickerOpen] = useState(false);
   const [resourceKind, setResourceKind] = useState('shop');
   const [shopProducts, setShopProducts] = useState([]);
@@ -1390,6 +1392,8 @@ export default function ChatWorkspace({ adminMode = false }) {
     const closePopovers = (event) => {
       if (event.target?.closest?.('[data-chat-popover]')) return;
       setShowAttachmentMenu(false);
+      setEmojiMenuPosition(null);
+      setComposerOptionsPosition(null);
       setShowConversationMenu(false);
       setMessageMenuId('');
       setReactionPickerId('');
@@ -3693,7 +3697,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                   </button>
                 )}
               </div>
-              <footer className="shrink-0 border-t border-brass/15 bg-carbon p-2.5 sm:p-3">
+              <footer className="relative z-30 shrink-0 border-t border-brass/15 bg-carbon/95 p-2.5 shadow-[0_-10px_30px_rgba(0,0,0,0.18)] backdrop-blur sm:p-3">
                 {replyingTo && (
                   <div className="relative mb-2 pr-9">
                     <QuotedMessage
@@ -3719,7 +3723,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                   </div>
                 )}
                 {attachments.length > 0 && (
-                  <div className="mb-2 min-w-0 max-w-full overflow-hidden border border-brass/15 bg-obsidian p-2">
+                  <div className="mb-2 min-w-0 max-w-full overflow-hidden rounded-2xl border border-brass/15 bg-obsidian p-2">
                     <div className="flex max-h-52 max-w-full gap-2 overflow-x-auto overscroll-contain pb-1 [scrollbar-gutter:stable]">
                       {attachments.map((item) => (
                         <div key={item.id} className="relative w-40 shrink-0 border border-brass/10 bg-carbon p-2">
@@ -3799,7 +3803,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     Retry failed upload
                   </button>
                 )}
-                <div className={`grid items-end gap-2 ${recording ? 'grid-cols-[auto_minmax(0,1fr)] md:grid-cols-1' : 'grid-cols-[auto_minmax(0,1fr)_auto]'}`}>
+                <div className="flex min-w-0 items-end gap-0.5 rounded-[1.55rem] border border-brass/20 bg-obsidian p-1 shadow-inner">
                   <div data-chat-popover className={`relative ${recording ? 'md:hidden' : ''}`}>
                     <button
                       type="button"
@@ -3807,9 +3811,11 @@ export default function ChatWorkspace({ adminMode = false }) {
                       onClick={(event) => {
                         const opening = !showAttachmentMenu;
                         setShowAttachmentMenu(opening);
+                        setEmojiMenuPosition(null);
+                        setComposerOptionsPosition(null);
                         setAttachmentMenuPosition(opening ? floatingPosition(event.currentTarget, 260, menuHeight(420)) : null);
                       }}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center border border-brass/20 text-brass disabled:cursor-not-allowed disabled:opacity-40"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ivory/55 transition hover:bg-white/5 hover:text-brass disabled:cursor-not-allowed disabled:opacity-40"
                       title="Add an attachment"
                       aria-label="Open attachment menu"
                     >
@@ -3961,6 +3967,23 @@ export default function ChatWorkspace({ adminMode = false }) {
                       }}
                     />
                   </div>
+                  {!recording && (
+                    <button
+                      type="button"
+                      disabled={active.blocked || (active.type === 'announcement' && !adminMode)}
+                      onClick={(event) => {
+                        setEmojiMenuPosition((current) => current ? null : floatingPosition(event.currentTarget, 286, 76));
+                        setComposerOptionsPosition(null);
+                        setShowAttachmentMenu(false);
+                      }}
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ivory/55 transition hover:bg-white/5 hover:text-brass disabled:opacity-40"
+                      aria-label="Choose an emoji"
+                      title="Emoji"
+                      data-chat-popover
+                    >
+                      <Smile size={18} />
+                    </button>
+                  )}
                   {recording ? (
                     <VoiceNoteRecorder
                       onCancel={cancelRecording}
@@ -3981,16 +4004,32 @@ export default function ChatWorkspace({ adminMode = false }) {
                           send();
                         }
                       }}
-                      rows={2}
+                      rows={1}
                       placeholder={active.type === 'announcement' && !adminMode ? 'Community Updates is read-only for members' : 'Write a message…'}
-                      className="min-w-0 flex-1 resize-none rounded-2xl border border-brass/20 bg-obsidian px-4 py-3 text-sm text-ivory outline-none disabled:opacity-50"
+                      className="max-h-24 min-h-10 min-w-0 flex-1 resize-none bg-transparent px-2 py-2.5 text-sm leading-5 text-ivory outline-none placeholder:text-ivory/35 disabled:opacity-50"
                     />
+                  )}
+                  {!recording && (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        setComposerOptionsPosition((current) => current ? null : floatingPosition(event.currentTarget, 250, 168));
+                        setEmojiMenuPosition(null);
+                        setShowAttachmentMenu(false);
+                      }}
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition hover:bg-white/5 ${viewOnce || disappearAfter ? 'text-brass' : 'text-ivory/45'}`}
+                      aria-label="Open message options"
+                      title="Message options"
+                      data-chat-popover
+                    >
+                      <Timer size={17} />
+                    </button>
                   )}
                   {!recording && (text.trim() || attachments.length) ? (
                     <button
                       disabled={busy || active.blocked || (active.type === 'announcement' && !adminMode)}
                       onClick={send}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian disabled:opacity-40"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian transition-transform active:scale-95 disabled:opacity-40"
                       aria-label="Send message"
                     >
                       {busy ? <Loader2 className="animate-spin" size={17} /> : <Send size={17} />}
@@ -4002,33 +4041,55 @@ export default function ChatWorkspace({ adminMode = false }) {
                       onClick={toggleRecording}
                       title="Record voice message"
                       aria-label="Record voice message"
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-brass/20 bg-brass text-obsidian disabled:opacity-40"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brass text-obsidian transition-transform active:scale-95 disabled:opacity-40"
                     >
                       <Mic size={18} />
                     </button>
                   ) : null}
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wider">
-                  <button
-                    type="button"
-                    disabled={!attachments.length}
-                    onClick={() => setViewOnce((value) => !value)}
-                    className={`flex min-h-8 items-center gap-1.5 border px-3 disabled:opacity-30 ${viewOnce ? 'border-brass bg-brass/10 text-brass' : 'border-brass/15 text-ivory/40'}`}
-                  >
-                    <Eye size={12} />
-                    View once
-                  </button>
-                  <label className="flex min-h-8 items-center gap-2 border border-brass/15 px-3 text-ivory/40">
-                    <Timer size={12} />
-                    <span>Disappear</span>
-                    <select value={disappearAfter} onChange={(event) => setDisappearAfter(Number(event.target.value))} className="bg-carbon text-brass outline-none">
-                      <option value="0">Off</option>
-                      <option value="86400">24 hours</option>
-                      <option value="604800">7 days</option>
-                      <option value="7776000">90 days</option>
-                    </select>
-                  </label>
-                </div>
+                {emojiMenuPosition && createPortal(
+                  <div data-chat-popover style={emojiMenuPosition} className="fixed z-[240] flex items-center justify-center gap-1 rounded-2xl border border-brass/20 bg-carbon p-2 shadow-2xl">
+                    {REACTIONS.map((emoji) => (
+                      <button
+                        type="button"
+                        key={emoji}
+                        onClick={() => {
+                          updateTyping(`${text}${emoji}`);
+                          setEmojiMenuPosition(null);
+                          window.requestAnimationFrame(() => composerRef.current?.focus());
+                        }}
+                        className="flex h-9 w-9 items-center justify-center rounded-full text-lg transition hover:bg-brass/10"
+                        aria-label={`Add ${emoji}`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>, document.body,
+                )}
+                {composerOptionsPosition && createPortal(
+                  <div data-chat-popover style={composerOptionsPosition} className="fixed z-[240] overflow-hidden rounded-2xl border border-brass/20 bg-carbon p-2 text-xs shadow-2xl">
+                    <button
+                      type="button"
+                      disabled={!attachments.length}
+                      onClick={() => setViewOnce((value) => !value)}
+                      className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left disabled:opacity-30 ${viewOnce ? 'bg-brass/10 text-brass' : 'text-ivory/65 hover:bg-white/5'}`}
+                    >
+                      <Eye size={16} />
+                      <span className="flex-1">View once</span>
+                      <span>{viewOnce ? 'On' : 'Off'}</span>
+                    </button>
+                    <label className="mt-1 flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-ivory/65 hover:bg-white/5">
+                      <Timer size={16} />
+                      <span className="flex-1">Disappear</span>
+                      <select value={disappearAfter} onChange={(event) => setDisappearAfter(Number(event.target.value))} className="max-w-24 bg-carbon text-right text-brass outline-none">
+                        <option value="0">Off</option>
+                        <option value="86400">24 hours</option>
+                        <option value="604800">7 days</option>
+                        <option value="7776000">90 days</option>
+                      </select>
+                    </label>
+                  </div>, document.body,
+                )}
               </footer>
             </>
           ) : (
