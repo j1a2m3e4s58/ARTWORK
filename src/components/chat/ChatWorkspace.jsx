@@ -821,8 +821,30 @@ function VoiceNoteRecorder({ onCancel, onReady, onSend, viewOnce, onViewOnceChan
   );
 }
 
-function QuotedMessage({ message }) {
-  const media = message?.replyMediaPreview;
+const replyContent = (message) => {
+  if (!message) return { label: 'Original message', media: null };
+  const attachment = message.decryptedAttachment || (message.attachmentUrl ? {
+    type: message.attachmentType,
+    name: message.attachmentName,
+    url: message.attachmentUrl,
+  } : null);
+  const type = String(attachment?.type || '').toLowerCase();
+  if (message.body) return { label: message.body, media: attachment };
+  if (message.sticker) return { label: `${message.sticker} Sticker`, media: null };
+  if (message.sharedLocation) return { label: message.sharedLocation.liveUntil ? 'Live location' : 'Location', media: null };
+  if (message.sharedContact) return { label: `Contact: ${message.sharedContact.name || 'Contact'}`, media: null };
+  if (message.sharedPoll) return { label: `Poll: ${message.sharedPoll.question || 'Poll'}`, media: null };
+  if (message.sharedEvent) return { label: `Event: ${message.sharedEvent.title || 'Event'}`, media: null };
+  if (type.startsWith('audio/')) return { label: 'Voice message', media: attachment };
+  if (type.startsWith('image/')) return { label: 'Photo', media: attachment };
+  if (type.startsWith('video/')) return { label: 'Video', media: attachment };
+  if (attachment) return { label: attachment.name && attachment.name !== 'encrypted-attachment.bin' ? attachment.name : 'Document', media: attachment };
+  return { label: message.replyPreview || 'Original message', media: message.replyMediaPreview || null };
+};
+
+function QuotedMessage({ message, target, senderName = 'Reply', onActivate }) {
+  const resolved = replyContent(target);
+  const media = resolved.media || message?.replyMediaPreview;
   const mediaType = String(media?.type || '').toLowerCase();
   const label = mediaType.startsWith('audio/')
     ? 'Voice message'
@@ -830,9 +852,12 @@ function QuotedMessage({ message }) {
       ? 'Photo'
       : mediaType.startsWith('video/')
         ? 'Video'
-        : media?.name || message?.replyPreview || 'Message';
+        : mediaType.startsWith('application/vnd.reigns.encrypted') || /encrypted-attachment\.bin/i.test(String(media?.name || ''))
+          ? 'Attachment'
+          : media?.name || message?.replyPreview || 'Message';
+  const Wrapper = onActivate ? 'button' : 'div';
   return (
-    <div className="mb-2 flex min-w-0 items-center gap-2 overflow-hidden rounded-r-md border-l-4 border-brass bg-black/25 p-2 text-xs text-ivory/55">
+    <Wrapper type={onActivate ? 'button' : undefined} onClick={onActivate} className={`mb-2 flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-r-md border-l-4 border-brass bg-black/25 p-2 text-left text-xs text-ivory/55 ${onActivate ? 'cursor-pointer transition hover:bg-black/40' : ''}`}>
       {mediaType.startsWith('image/') && media?.url && <img src={media.url} alt="Replied image" className="h-11 w-11 shrink-0 rounded object-cover" />}
       {mediaType.startsWith('video/') && (
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded bg-black/40 text-brass">
@@ -850,10 +875,10 @@ function QuotedMessage({ message }) {
         </span>
       )}
       <span className="min-w-0 flex-1">
-        <b className="block text-[10px] uppercase tracking-wider text-brass">Reply</b>
-        <span className="block truncate">{message?.replyPreview && !mediaType.startsWith('audio/') ? message.replyPreview : label}</span>
+        <b className="block truncate text-[10px] font-semibold text-brass">{senderName}</b>
+        <span className="block truncate">{target ? resolved.label : (message?.replyPreview && !/encrypted-attachment\.bin/i.test(message.replyPreview) ? message.replyPreview : label)}</span>
       </span>
-    </div>
+    </Wrapper>
   );
 }
 
@@ -1209,6 +1234,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [preview, setPreview] = useState(null);
   const [forwardingMessage, setForwardingMessage] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState('');
   const [query, setQuery] = useState('');
   const [messageQuery, setMessageQuery] = useState('');
   const [messageSearchFilters, setMessageSearchFilters] = useState({ senderId: '', attachmentType: '', from: '', to: '' });
@@ -2102,12 +2128,14 @@ export default function ChatWorkspace({ adminMode = false }) {
         body: String(item.caption || '').trim() || (index === 0 ? outgoingText : ''), attachmentUrl: item.previewUrl,
         attachmentName: item.file.name, attachmentType: item.mime || item.file.type || 'application/octet-stream',
         attachmentBytes: item.file.size, voiceDurationSeconds: Number(item.file.voiceDurationSeconds) || 0,
+        replyToId: index === 0 ? replyingTo?.id || null : null,
         pending: true, pendingLocalAttachment: true, pendingUploadItemId: item.id,
         deliveredAt: null, readBy: [user.id], reactions: {}, created_date: new Date().toISOString(),
       }))
       : [{
         id: optimisticId, clientId, conversationId: activeId, senderId: user.id,
         body: outgoingText, deliveredAt: null, readBy: [user.id], reactions: {},
+        replyToId: replyingTo?.id || null,
         pending: true, created_date: new Date().toISOString(),
       }];
     setMessages(current => [...current, ...optimisticMessages]);
@@ -2642,6 +2670,29 @@ export default function ChatWorkspace({ adminMode = false }) {
       pane.scrollTo({ top: pane.scrollHeight, behavior: 'smooth' });
       setShowJumpToLatest(false);
     }
+  };
+  const jumpToRepliedMessage = async (messageId) => {
+    if (!messageId) return;
+    let target = messages.find(item => item.id === messageId);
+    if (!target) {
+      try {
+        const [resolved] = await decryptMessageRows([await studioClient.chat.message(messageId)], user.id);
+        target = resolved;
+        setMessages(current => [...current, resolved]
+          .filter((item, index, rows) => rows.findIndex(candidate => candidate.id === item.id) === index)
+          .sort((left, right) => new Date(left.created_date) - new Date(right.created_date)));
+      } catch (jumpError) {
+        setError(jumpError.message || 'The original message is no longer available.');
+        return;
+      }
+    }
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      const element = document.querySelector(`[data-chat-message-id="${CSS.escape(messageId)}"]`);
+      if (!element) return;
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightedMessageId(messageId);
+      window.setTimeout(() => setHighlightedMessageId(current => current === messageId ? '' : current), 1800);
+    }));
   };
   const enablePush = async () => {
     try {
@@ -3552,8 +3603,16 @@ export default function ChatWorkspace({ adminMode = false }) {
                     && next.senderId === message.senderId
                     && new Date(next.created_date).toDateString() === new Date(message.created_date).toDateString()
                     && Math.abs(new Date(next.created_date).getTime() - new Date(message.created_date).getTime()) < 5 * 60 * 1000;
+                  const replyTarget = message.replyToId ? messages.find(item => item.id === message.replyToId) : null;
+                  const replySenderName = replyTarget?.senderId === user.id
+                    ? 'You'
+                    : active?.participants?.find(person => person.id === replyTarget?.senderId)?.name || 'Original message';
                   return (
-                    <div key={message.id} className={`min-w-0 max-w-full ${groupedWithPrevious ? 'mt-1' : 'mt-3'} ${chatAnimationsEnabled ? 'chat-message-enter' : ''}`}>
+                    <div
+                      key={message.id}
+                      data-chat-message-id={message.id}
+                      className={`min-w-0 max-w-full rounded-xl transition-[background-color,box-shadow] duration-500 ${groupedWithPrevious ? 'mt-1' : 'mt-3'} ${chatAnimationsEnabled ? 'chat-message-enter' : ''} ${highlightedMessageId === message.id ? 'bg-brass/10 shadow-[0_0_0_1px_rgba(200,164,91,0.35)]' : ''}`}
+                    >
                       {showDate && (
                         <div className="my-4 flex items-center gap-3" aria-label={`Messages from ${new Date(message.created_date).toLocaleDateString()}`}>
                           <span className="h-px flex-1 bg-brass/10" />
@@ -3581,9 +3640,16 @@ export default function ChatWorkspace({ adminMode = false }) {
                         )}
                         <article
                           onClick={messageSelectionMode ? () => setSelectedMessageIds(current => current.includes(message.id) ? current.filter(id => id !== message.id) : [...current, message.id]) : undefined}
-                          className={`chat-bubble relative min-w-0 rounded-2xl border ${messageSelectionMode ? 'cursor-pointer' : ''} ${voiceAttachment ? 'w-fit max-w-[94%] px-1 py-1 sm:max-w-[22rem]' : 'max-w-[88%] px-3 py-2.5 sm:max-w-[64%] lg:max-w-[58%]'} ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}
+                          className={`chat-bubble relative min-w-0 rounded-xl border ${messageSelectionMode ? 'cursor-pointer' : ''} ${voiceAttachment ? 'w-fit max-w-[92%] px-1 py-1 sm:max-w-[20rem]' : 'w-fit max-w-[86%] px-2.5 py-1.5 sm:max-w-[28rem]'} ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}
                         >
-                          {message.replyPreview && <QuotedMessage message={message} />}
+                          {message.replyToId && (
+                            <QuotedMessage
+                              message={message}
+                              target={replyTarget}
+                              senderName={replySenderName}
+                              onActivate={() => jumpToRepliedMessage(message.replyToId)}
+                            />
+                          )}
                           {message.pending && (
                             <div className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-wider text-brass/70" role="status">
                               <span className={chatAnimationsEnabled ? 'chat-sending-dot' : ''} />
@@ -3623,7 +3689,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                               </div>
                             </div>
                           ) : (
-                            message.body && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm leading-6 text-ivory/75">{message.body}</p>
+                            message.body && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm leading-5 text-ivory/80">{message.body}</p>
                           )}
                           {message.sticker && <div className="chat-sticker-pop py-2 text-center text-7xl" role="img" aria-label="Sticker">{message.sticker}</div>}
                           {message.encryptionError && (
@@ -3829,16 +3895,9 @@ export default function ChatWorkspace({ adminMode = false }) {
                 {replyingTo && (
                   <div className="relative mb-2 pr-9">
                     <QuotedMessage
-                      message={{
-                        replyPreview: replyingTo.body || replyingTo.attachmentName || 'Message',
-                        replyMediaPreview: replyingTo.attachmentUrl
-                          ? {
-                              type: replyingTo.attachmentType,
-                              name: replyingTo.attachmentName,
-                              url: replyingTo.attachmentUrl,
-                            }
-                          : null,
-                      }}
+                      message={{}}
+                      target={replyingTo}
+                      senderName={replyingTo.senderId === user.id ? 'You' : active?.participants?.find(person => person.id === replyingTo.senderId)?.name || 'Reply'}
                     />
                     <button
                       type="button"

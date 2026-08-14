@@ -2446,6 +2446,15 @@ app.get('/api/chat/conversations/:id/messages', requireVerifiedUser, (req, res) 
   res.json({ items, nextCursor: eligible.length > items.length && items[0] ? `${items[0].created_date}|${items[0].id}` : null });
 });
 
+app.get('/api/chat/messages/:id', requireVerifiedUser, (req, res) => {
+  const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!message) return res.status(404).json({ error: 'The original message is no longer available.' });
+  const conversation = db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+  if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'The original message is no longer available.' });
+  if (message.deletedFor?.includes(req.user.id)) return res.status(404).json({ error: 'The original message is no longer available.' });
+  res.json(message);
+});
+
 app.get('/api/chat/conversations/:id/resources', requireVerifiedUser, (req, res) => {
   const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
   if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });

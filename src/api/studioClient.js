@@ -243,6 +243,7 @@ export const studioClient = {
       }
       return request(`/api/chat/conversations/${encodeURIComponent(id)}/messages?${params}`);
     },
+    message: messageId => request(`/api/chat/messages/${encodeURIComponent(messageId)}`),
     resources: id => request(`/api/chat/conversations/${encodeURIComponent(id)}/resources`),
     exportConversation: id => request(`/api/chat/conversations/${encodeURIComponent(id)}/export`),
     send: (id, data) => request(`/api/chat/conversations/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify(data) }),
