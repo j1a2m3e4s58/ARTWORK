@@ -288,6 +288,19 @@ const VoiceMessagePlayer = memo(function VoiceMessagePlayer({ src, name = 'Voice
     return false;
   };
 
+  const discoverStreamingDuration = (player) => {
+    if (!player || (Number.isFinite(player.duration) && player.duration > 0) || player.readyState < 1) return;
+    const originalTime = Number.isFinite(player.currentTime) ? player.currentTime : 0;
+    const restore = () => {
+      const discovered = Number(player.duration);
+      if (Number.isFinite(discovered) && discovered > 0) setDuration(discovered);
+      try { player.currentTime = originalTime; } catch { /* The browser will restore it when playable. */ }
+      player.removeEventListener('timeupdate', restore);
+    };
+    player.addEventListener('timeupdate', restore, { once: true });
+    try { player.currentTime = Number.MAX_SAFE_INTEGER; } catch { restore(); }
+  };
+
   useEffect(() => {
     setPlaying(false);
     setCurrent(0);
@@ -354,14 +367,17 @@ const VoiceMessagePlayer = memo(function VoiceMessagePlayer({ src, name = 'Voice
       <audio
         ref={audioRef}
         src={src}
-        preload="metadata"
+        preload="auto"
         onLoadedMetadata={(event) => {
           const player = event.currentTarget;
-          // Some mobile browsers report Infinity/NaN for MediaRecorder WebM
-          // files. Use the recorded duration instead of forcing a huge seek,
-          // which can make the conversation viewport jump.
-          if (!synchronizeDuration(player)) setDuration(Math.max(0, Number(knownDuration) || 0));
+          if (!synchronizeDuration(player)) {
+            setDuration(Math.max(0, Number(knownDuration) || 0));
+            discoverStreamingDuration(player);
+          }
           setCurrent(event.currentTarget.currentTime || 0);
+        }}
+        onCanPlay={(event) => {
+          if (!synchronizeDuration(event.currentTarget)) discoverStreamingDuration(event.currentTarget);
         }}
         onDurationChange={(event) => synchronizeDuration(event.currentTarget)}
         onTimeUpdate={(event) => {
@@ -1237,6 +1253,95 @@ function GifPicker({ query, setQuery, results, loading, configured, busy, onSear
   );
 }
 
+function CameraCapture({ onCapture, onClose, onError }) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const closeRef = useRef(onClose);
+  const errorRef = useRef(onError);
+  const [starting, setStarting] = useState(true);
+  const [capturing, setCapturing] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const open = async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error('Your browser does not support direct camera capture.');
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 } },
+          audio: false,
+        });
+        if (!mounted) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+      } catch (cameraError) {
+        const denied = /denied|permission|notallowed/i.test(String(cameraError?.name || cameraError?.message));
+        errorRef.current(denied ? 'Camera permission is blocked. Allow camera access in your browser settings and try again.' : (cameraError.message || 'The camera could not start on this phone.'));
+        closeRef.current();
+      } finally {
+        if (mounted) setStarting(false);
+      }
+    };
+    open();
+    return () => {
+      mounted = false;
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    };
+  }, []);
+
+  const takePhoto = async () => {
+    const video = videoRef.current;
+    if (!video?.videoWidth || capturing) return;
+    setCapturing(true);
+    try {
+      const scale = Math.min(1, 1280 / video.videoWidth);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+      canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+      const context = canvas.getContext('2d', { alpha: false, desynchronized: true });
+      if (!context) throw new Error('This phone could not prepare the camera image. Close other apps and retry.');
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.72));
+      canvas.width = 1;
+      canvas.height = 1;
+      if (!blob) throw new Error('The photo could not be saved. Free some phone storage and try again.');
+      const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+      await onCapture(file);
+      onClose();
+    } catch (captureError) {
+      onError(captureError.message || 'The photo could not be prepared. Close other apps or free storage, then retry.');
+    } finally {
+      setCapturing(false);
+    }
+  };
+
+  return createPortal(
+    <section className="fixed inset-0 z-[280] flex flex-col bg-black text-white" role="dialog" aria-modal="true" aria-label="Camera">
+      <header className="flex h-14 shrink-0 items-center justify-between px-3">
+        <button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50" aria-label="Close camera"><X size={23} /></button>
+        <span className="text-sm font-semibold">Camera</span>
+        <span className="h-10 w-10" />
+      </header>
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <video ref={videoRef} muted playsInline autoPlay className="h-full w-full object-cover" />
+        {starting && <div className="absolute inset-0 flex items-center justify-center bg-black"><Loader2 className="animate-spin" size={28} /></div>}
+      </div>
+      <footer className="flex h-24 shrink-0 items-center justify-center pb-[env(safe-area-inset-bottom)]">
+        <button type="button" disabled={starting || capturing} onClick={takePhoto} className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-white/25 disabled:opacity-40" aria-label="Take photo">
+          {capturing ? <Loader2 className="animate-spin" /> : <span className="h-12 w-12 rounded-full bg-white" />}
+        </button>
+      </footer>
+    </section>,
+    document.body,
+  );
+}
+
 function AttachmentComposer({
   items,
   activeId,
@@ -1400,6 +1505,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [pushState, setPushState] = useState('unknown');
   const [showAnnouncement, setShowAnnouncement] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [showCameraCapture, setShowCameraCapture] = useState(false);
   const [structuredComposer, setStructuredComposer] = useState(null);
   const [attachmentMenuPosition, setAttachmentMenuPosition] = useState(null);
   const [emojiMenuPosition, setEmojiMenuPosition] = useState(null);
@@ -1620,11 +1726,9 @@ export default function ChatWorkspace({ adminMode = false }) {
     };
     document.addEventListener('pointerdown', closePopovers);
     document.addEventListener('keydown', closeWithEscape);
-    window.addEventListener('resize', closePopovers);
     return () => {
       document.removeEventListener('pointerdown', closePopovers);
       document.removeEventListener('keydown', closeWithEscape);
-      window.removeEventListener('resize', closePopovers);
     };
   }, []);
 
@@ -2129,7 +2233,9 @@ export default function ChatWorkspace({ adminMode = false }) {
               normalized = item;
             }
           }
-          return String(inferMimeType(normalized) || '').startsWith('image/') ? prepareChatImage(normalized, { camera }) : normalized;
+          if (!String(inferMimeType(normalized) || '').startsWith('image/')) return normalized;
+          if (camera && normalized.type === 'image/jpeg' && normalized.size <= 1.2 * 1024 * 1024) return normalized;
+          return prepareChatImage(normalized, { camera });
         }),
       );
       const additions = normalized.map((item) => ({
@@ -2942,6 +3048,13 @@ export default function ChatWorkspace({ adminMode = false }) {
   return (
     <>
       {confirmDialog}
+      {showCameraCapture && (
+        <CameraCapture
+          onClose={() => setShowCameraCapture(false)}
+          onError={setError}
+          onCapture={(file) => chooseFiles([file], { camera: true })}
+        />
+      )}
       {attachments.length > 0 && !recording && (
         <AttachmentComposer
           items={attachments}
@@ -4205,7 +4318,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                           <Image size={15} className="text-sky-400" />
                           <span>Photos & video</span>
                         </button>
-                        <button type="button" onClick={() => { setShowAttachmentMenu(false); cameraInputRef.current?.click(); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10 lg:hidden">
+                        <button type="button" onClick={() => { setShowAttachmentMenu(false); setAttachmentMenuPosition(null); setShowCameraCapture(true); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10 lg:hidden">
                           <Camera size={15} className="text-pink-400" /><span>Camera</span>
                         </button>
                         <button
@@ -4406,7 +4519,13 @@ export default function ChatWorkspace({ adminMode = false }) {
                   ) : null}
                 </div>
                 {emojiMenuPosition && createPortal(
-                  <div data-chat-popover style={emojiMenuPosition} className="chat-emoji-picker fixed z-[240] overflow-hidden rounded-2xl border border-brass/20 bg-carbon shadow-2xl">
+                  <div
+                    data-chat-popover
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                    style={emojiMenuPosition}
+                    className="chat-emoji-picker fixed z-[240] overflow-hidden rounded-2xl border border-brass/20 bg-carbon shadow-2xl"
+                  >
                     <EmojiPicker
                       theme={Theme.DARK}
                       emojiStyle={EmojiStyle.NATIVE}
