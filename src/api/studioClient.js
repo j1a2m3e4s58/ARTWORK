@@ -256,10 +256,11 @@ export const studioClient = {
     react: (messageId, emoji) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/reaction`, { method: 'POST', body: JSON.stringify({ emoji }) }),
     votePoll: (messageId, optionIndex) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/poll-vote`, { method: 'POST', body: JSON.stringify({ optionIndex }) }),
     star: (messageId, starred) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/star`, { method: 'PATCH', body: JSON.stringify({ starred }) }),
+    pin: (messageId, pinned) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/pin`, { method: 'PATCH', body: JSON.stringify({ pinned }) }),
     saveMedia: (messageId, saved) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/save-media`, { method: 'PATCH', body: JSON.stringify({ saved }) }),
     savedItems: () => request('/api/chat/saved-items'),
     updateLiveLocation: (messageId, data) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/location`, { method: 'PATCH', body: JSON.stringify(data) }),
-    edit: (messageId, body) => request(`/api/chat/messages/${encodeURIComponent(messageId)}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
+    edit: (messageId, data) => request(`/api/chat/messages/${encodeURIComponent(messageId)}`, { method: 'PATCH', body: JSON.stringify(typeof data === 'string' ? { body: data } : data) }),
     remove: (messageId, mode = 'me') => request(`/api/chat/messages/${encodeURIComponent(messageId)}?mode=${encodeURIComponent(mode)}`, { method: 'DELETE' }),
     clearMessages: (conversationId, messageIds = null) => request(`/api/chat/conversations/${encodeURIComponent(conversationId)}/messages`, {
       method: 'DELETE', body: JSON.stringify({ messageIds }),

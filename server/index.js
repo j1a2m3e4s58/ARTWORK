@@ -2681,6 +2681,19 @@ app.patch('/api/chat/messages/:id/star', requireVerifiedUser, mutationLimiter, a
   res.json(message);
 });
 
+app.patch('/api/chat/messages/:id/pin', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at);
+  const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
+  if (!message || !conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Message not found.' });
+  message.pinned = req.body.pinned !== false;
+  message.pinnedAt = message.pinned ? now() : null;
+  message.pinnedBy = message.pinned ? req.user.id : null;
+  message.updated_date = now();
+  await save();
+  emitChatEvent(conversation.participantIds, 'message', { conversationId: conversation.id, messageId: message.id });
+  res.json(message);
+});
+
 app.patch('/api/chat/messages/:id/save-media', requireVerifiedUser, mutationLimiter, async (req, res) => {
   const message = db.data.ChatMessage.find(item => item.id === req.params.id && !item.deleted_at && item.attachmentUrl);
   const conversation = message && db.data.ChatConversation.find(item => item.id === message.conversationId && !item.deleted_at);
@@ -3228,10 +3241,15 @@ app.patch('/api/chat/messages/:id', requireVerifiedUser, mutationLimiter, async 
   if (!message || !conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Message not found.' });
   if (message.senderId !== req.user.id) return res.status(403).json({ error: 'You can only edit your own messages.' });
   if (message.deletedForEveryone) return res.status(400).json({ error: 'A deleted message cannot be edited.' });
-  if (Date.now() - new Date(message.created_date).getTime() > 15 * 60_000) return res.status(400).json({ error: 'Messages can be edited for 15 minutes after sending.' });
+  if (Date.now() - new Date(message.created_date).getTime() > 2 * 60_000) return res.status(400).json({ error: 'Messages can be edited for 2 minutes after sending.' });
   const body = String(req.body.body || '').trim().slice(0, 10_000);
-  if (!body && !message.attachmentUrl) return res.status(400).json({ error: 'The message cannot be empty.' });
-  message.body = body;
+  const ciphertext = req.body.ciphertext && typeof req.body.ciphertext === 'object' ? req.body.ciphertext : null;
+  if (!body && !ciphertext && !message.attachmentUrl) return res.status(400).json({ error: 'The message cannot be empty.' });
+  message.body = ciphertext ? '' : body;
+  if (ciphertext) {
+    message.ciphertext = ciphertext;
+    message.encryption = { algorithm: 'ECDH-P256+AES-256-GCM', version: 1 };
+  }
   message.editedAt = now();
   message.updated_date = now();
   refreshConversationSummary(conversation);

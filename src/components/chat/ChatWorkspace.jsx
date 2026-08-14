@@ -1529,6 +1529,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [structuredComposer, setStructuredComposer] = useState(null);
   const [attachmentMenuPosition, setAttachmentMenuPosition] = useState(null);
   const [emojiMenuPosition, setEmojiMenuPosition] = useState(null);
+  const [mobileEmojiTab, setMobileEmojiTab] = useState('emoji');
   const [emojiReactionTarget, setEmojiReactionTarget] = useState('');
   const [composerOptionsPosition, setComposerOptionsPosition] = useState(null);
   const [shopPickerOpen, setShopPickerOpen] = useState(false);
@@ -2743,6 +2744,10 @@ export default function ChatWorkspace({ adminMode = false }) {
     await studioClient.chat.star(message.id, !(message.starredBy || []).includes(user.id));
     await loadMessages(activeId, '', { mergeLatest: true });
   };
+  const pinMessage = async message => {
+    const updated = await studioClient.chat.pin(message.id, !message.pinned);
+    setMessages(current => current.map(item => item.id === message.id ? { ...item, ...updated } : item));
+  };
   const saveMedia = async message => {
     await studioClient.chat.saveMedia(message.id, !(message.savedMediaBy || []).includes(user.id));
     await loadMessages(activeId, '', { mergeLatest: true });
@@ -2786,7 +2791,12 @@ export default function ChatWorkspace({ adminMode = false }) {
     if (!editing?.body?.trim()) return;
     setBusy(true);
     try {
-      await studioClient.chat.edit(editing.id, editing.body);
+      let payload = { body: editing.body };
+      if (editing.encrypted) {
+        const ciphertext = await encryptChatText(studioClient, { body: editing.body, participantIds: active?.participantIds || [], userId: user.id });
+        payload = { body: '', ciphertext };
+      }
+      await studioClient.chat.edit(editing.id, payload);
       setEditing(null);
       await loadMessages(activeId, '', { mergeLatest: true });
       await load();
@@ -4091,6 +4101,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                             </p>
                           )}
                           {message.starredBy?.includes(user.id) && <Star size={12} className="absolute right-2 top-2 fill-brass text-brass" aria-label="Starred message" />}
+                          {message.pinned && <Pin size={12} className="absolute right-7 top-2 fill-brass text-brass" aria-label="Pinned message" />}
                           <div className="mt-1.5 flex flex-wrap items-end gap-2">
                             {!message.deletedForEveryone && (
                               <div data-chat-popover className="relative flex items-center gap-1">
@@ -4450,6 +4461,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                       onClick={(event) => {
                         const opening = !emojiMenuPosition;
                         closeFloatingMenus();
+                        setMobileEmojiTab('emoji');
                         setEmojiMenuPosition(opening ? floatingPosition(event.currentTarget, 360, menuHeight(430)) : null);
                       }}
                       className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ivory/55 transition hover:bg-white/5 hover:text-brass disabled:opacity-40"
@@ -4529,26 +4541,19 @@ export default function ChatWorkspace({ adminMode = false }) {
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => event.stopPropagation()}
                     style={window.innerWidth >= 1024 ? emojiMenuPosition : undefined}
-                    className="chat-emoji-picker fixed inset-x-0 bottom-0 z-[240] h-[min(68dvh,34rem)] overflow-hidden rounded-t-3xl border border-brass/20 bg-carbon shadow-2xl lg:inset-auto lg:rounded-2xl"
+                    className="chat-emoji-picker fixed inset-x-0 bottom-[4.65rem] z-[240] h-[min(46dvh,23rem)] overflow-hidden rounded-t-2xl border border-brass/20 bg-carbon shadow-2xl lg:inset-auto lg:h-auto lg:rounded-2xl"
                   >
-                    <div className="flex h-12 items-center justify-center gap-1 border-b border-white/10 px-3 lg:hidden" aria-label="Emoji and GIF choices">
-                      <button type="button" className="h-9 min-w-24 rounded-full bg-brass/15 px-5 text-xs font-semibold text-brass">Emoji</button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEmojiMenuPosition(null);
-                          openGifPicker();
-                        }}
-                        className="h-9 min-w-24 rounded-full px-5 text-xs font-semibold text-ivory/60 hover:bg-white/5 hover:text-ivory"
-                      >
-                        GIF
-                      </button>
+                    <div className="grid h-11 grid-cols-3 border-b border-white/10 px-3 lg:hidden" aria-label="Emoji, GIF and sticker choices">
+                      {['emoji', 'gif', 'stickers'].map(tab => (
+                        <button key={tab} type="button" onClick={() => { setMobileEmojiTab(tab); if (tab === 'gif' && !gifResults.length) searchGifs(gifQuery); }} className={`border-b-2 text-xs font-semibold capitalize ${mobileEmojiTab === tab ? 'border-brass text-brass' : 'border-transparent text-ivory/50'}`}>{tab === 'stickers' ? 'Stickers' : tab.toUpperCase()}</button>
+                      ))}
                     </div>
+                    <div className={mobileEmojiTab === 'emoji' ? 'h-[calc(100%_-_2.75rem)] lg:h-full' : 'hidden lg:block lg:h-full'}>
                     <EmojiPicker
                       theme={Theme.DARK}
                       emojiStyle={window.innerWidth >= 1024 ? EmojiStyle.APPLE : EmojiStyle.NATIVE}
                       width="100%"
-                      height={window.innerWidth >= 1024 ? '100%' : 'calc(100% - 3rem)'}
+                      height="100%"
                       lazyLoadEmojis
                       previewConfig={{ showPreview: false }}
                       skinTonesDisabled={false}
@@ -4565,6 +4570,17 @@ export default function ChatWorkspace({ adminMode = false }) {
                         }
                       }}
                     />
+                    </div>
+                    {mobileEmojiTab === 'gif' && (
+                      <div className="chat-menu-scroll h-[calc(100%_-_2.75rem)] overflow-y-auto p-2 lg:hidden">
+                        <form onSubmit={event => { event.preventDefault(); searchGifs(gifQuery); }} className="mb-2 flex gap-2"><input value={gifQuery} onChange={event => setGifQuery(event.target.value)} placeholder="Search GIFs" className="h-9 min-w-0 flex-1 rounded-full bg-obsidian px-4 text-sm outline-none" /><button className="rounded-full bg-brass px-4 text-xs text-obsidian">Search</button></form>
+                        <div className="grid grid-cols-3 gap-1">{gifResults.map(gif => <button key={gif.id} type="button" onClick={() => { sendGif(gif); setEmojiMenuPosition(null); }} className="aspect-square overflow-hidden rounded-md bg-obsidian"><img src={gif.previewUrl || gif.url} alt={gif.title || 'GIF'} className="h-full w-full object-cover" /></button>)}</div>
+                        {!gifConfigured && <p className="p-6 text-center text-xs text-ivory/50">GIF search is not configured yet.</p>}
+                      </div>
+                    )}
+                    {mobileEmojiTab === 'stickers' && (
+                      <div className="chat-menu-scroll grid h-[calc(100%_-_2.75rem)] grid-cols-4 content-start gap-2 overflow-y-auto p-4 lg:hidden">{STICKERS.map(sticker => <button key={sticker} type="button" onClick={() => { sendSticker(sticker); setEmojiMenuPosition(null); }} className="chat-sticker-pop aspect-square rounded-xl bg-white/5 text-4xl hover:bg-brass/10">{sticker}</button>)}</div>
+                    )}
                   </div>, document.body,
                 )}
                 {composerOptionsPosition && createPortal(
@@ -4702,17 +4718,18 @@ export default function ChatWorkspace({ adminMode = false }) {
           const message = messages.find((item) => item.id === messageMenuId);
           if (!message) return null;
           const mine = message.senderId === user.id;
+          const canEdit = mine && message.body && Date.now() - new Date(message.created_date).getTime() <= 2 * 60_000;
           const closeMenu = () => {
             setMessageMenuId('');
             setMessageMenuPosition(null);
           };
           return createPortal(
             <div data-chat-popover style={messageMenuPosition} className="chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[220] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
-              {mine && message.body && !message.ciphertext && (
+              {canEdit && (
                 <button
                   type="button"
                   onClick={() => {
-                    setEditing({ id: message.id, body: message.body });
+                    setEditing({ id: message.id, body: message.body, encrypted: Boolean(message.ciphertext) });
                     closeMenu();
                   }}
                   className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10"
@@ -4745,6 +4762,14 @@ export default function ChatWorkspace({ adminMode = false }) {
                   {message.savedMediaBy?.includes(user.id) ? 'Remove from saved media' : 'Save media'}
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => { pinMessage(message); closeMenu(); }}
+                className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10"
+              >
+                <Pin size={14} className={message.pinned ? 'fill-brass text-brass' : ''} />
+                {message.pinned ? 'Unpin message' : 'Pin message'}
+              </button>
               {!message.ciphertext && (message.allowForward || ['admin', 'editor', 'support'].includes(user.role)) && (
                 <button
                   type="button"
