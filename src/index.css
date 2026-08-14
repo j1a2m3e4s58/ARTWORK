@@ -493,6 +493,18 @@
   }
 }
 
+.chat-emoji-picker .EmojiPickerReact {
+  --epr-bg-color: #151516;
+  --epr-category-label-bg-color: #151516;
+  --epr-hover-bg-color: rgb(200 164 91 / 0.12);
+  --epr-focus-bg-color: rgb(200 164 91 / 0.16);
+  --epr-highlight-color: #c8a45b;
+  --epr-search-input-bg-color: #09090a;
+  --epr-search-input-text-color: #f9f6f0;
+  border: 0;
+  font-family: Inter, sans-serif;
+}
+
 /* Keep secondary copy comfortably above WCAG AA contrast on the studio's dark surfaces. */
 :is(
   [class*="text-ivory/2"],

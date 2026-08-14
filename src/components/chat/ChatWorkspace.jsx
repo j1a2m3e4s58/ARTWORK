@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
+import EmojiPicker, { EmojiStyle, Theme } from 'emoji-picker-react';
 import {
   Archive,
   BarChart3,
@@ -77,6 +78,30 @@ import {
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const STICKERS = ['🎨', '✨', '🔥', '👏', '💯', '🥳', '😍', '🙌', '🫶', '🌟', '✅', '😂'];
 const MAX_FILE_BYTES = 75 * 1024 * 1024;
+const prepareChatImage = async (file, { square = false } = {}) => {
+  if (!String(file?.type || '').startsWith('image/') || /gif|svg/i.test(file.type)) return file;
+  const bitmap = await createImageBitmap(file);
+  try {
+    const sourceSize = square ? Math.min(bitmap.width, bitmap.height) : null;
+    const sourceX = square ? Math.floor((bitmap.width - sourceSize) / 2) : 0;
+    const sourceY = square ? Math.floor((bitmap.height - sourceSize) / 2) : 0;
+    const sourceWidth = square ? sourceSize : bitmap.width;
+    const sourceHeight = square ? sourceSize : bitmap.height;
+    const scale = Math.min(1, 2048 / Math.max(sourceWidth, sourceHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) return file;
+    context.drawImage(bitmap, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.84));
+    if (!blob) return file;
+    const baseName = String(file.name || 'camera-photo').replace(/\.[^.]+$/, '');
+    return new File([blob], `${baseName}${square ? '-cropped' : ''}.jpg`, { type: 'image/jpeg', lastModified: file.lastModified || Date.now() });
+  } finally {
+    bitmap.close?.();
+  }
+};
 const urlsInMessage = value => [...new Set(String(value || '').match(/https?:\/\/[^\s<>()]+/gi) || [])];
 let notificationAudioContext;
 const playReignsMessageSound = () => {
@@ -1213,6 +1238,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [structuredComposer, setStructuredComposer] = useState(null);
   const [attachmentMenuPosition, setAttachmentMenuPosition] = useState(null);
   const [emojiMenuPosition, setEmojiMenuPosition] = useState(null);
+  const [emojiReactionTarget, setEmojiReactionTarget] = useState('');
   const [composerOptionsPosition, setComposerOptionsPosition] = useState(null);
   const [shopPickerOpen, setShopPickerOpen] = useState(false);
   const [resourceKind, setResourceKind] = useState('shop');
@@ -1349,6 +1375,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     setShowAttachmentMenu(false);
     setAttachmentMenuPosition(null);
     setEmojiMenuPosition(null);
+    setEmojiReactionTarget('');
     setComposerOptionsPosition(null);
     setShowConversationMenu(false);
     setShowConversationMore(false);
@@ -1916,7 +1943,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       setError(startError.message);
     }
   };
-  const chooseFiles = async (selectedFiles) => {
+  const chooseFiles = async (selectedFiles, { camera = false } = {}) => {
     setError('');
     const selected = [...(selectedFiles || [])];
     if (!selected.length) return;
@@ -1927,22 +1954,25 @@ export default function ChatWorkspace({ adminMode = false }) {
       const normalized = await Promise.all(
         selected.slice(0, availableSlots).map(async (item) => {
           const isHeic = /image\/(heic|heif)/i.test(inferMimeType(item)) || /\.(heic|heif)$/i.test(item.name);
-          if (!isHeic) return item;
-          const { default: convertHeic } = await import('heic2any');
-          const converted = await convertHeic({
-            blob: item,
-            toType: 'image/jpeg',
-            quality: 0.9,
-          });
-          const jpeg = Array.isArray(converted) ? converted[0] : converted;
-          return new File([jpeg], item.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg', lastModified: item.lastModified });
+          let normalized = item;
+          if (isHeic) {
+            const { default: convertHeic } = await import('heic2any');
+            const converted = await convertHeic({ blob: item, toType: 'image/jpeg', quality: 0.84 });
+            const jpeg = Array.isArray(converted) ? converted[0] : converted;
+            normalized = new File([jpeg], item.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg', lastModified: item.lastModified });
+          }
+          return String(normalized.type || '').startsWith('image/') ? prepareChatImage(normalized) : normalized;
         }),
       );
       const additions = normalized.map((item) => ({
         id: `${Date.now()}-${crypto.randomUUID?.() || Math.random()}`,
         file: item,
+        uncroppedFile: item,
         mime: inferMimeType(item),
         previewUrl: URL.createObjectURL(item),
+        caption: '',
+        cropped: false,
+        camera,
       }));
       setAttachments((current) => [...current, ...additions].slice(0, 10));
       if (selected.length > availableSlots) setError('You can attach up to 10 files to one send.');
@@ -2069,7 +2099,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     const optimisticMessages = outgoingAttachments.length
       ? outgoingAttachments.map((item, index) => ({
         id: `${optimisticId}-${index}`, clientId: `${clientId}-${index}`, conversationId: activeId, senderId: user.id,
-        body: index === 0 ? outgoingText : '', attachmentUrl: item.previewUrl,
+        body: String(item.caption || '').trim() || (index === 0 ? outgoingText : ''), attachmentUrl: item.previewUrl,
         attachmentName: item.file.name, attachmentType: item.mime || item.file.type || 'application/octet-stream',
         attachmentBytes: item.file.size, voiceDurationSeconds: Number(item.file.voiceDurationSeconds) || 0,
         pending: true, pendingLocalAttachment: true, pendingUploadItemId: item.id,
@@ -2129,7 +2159,7 @@ export default function ChatWorkspace({ adminMode = false }) {
             encrypted = shouldEncrypt
               ? await encryptChatAttachment(studioClient, {
                 file: originalFile,
-                body: index === 0 ? outgoingText : '',
+                body: String(item.caption || '').trim() || (index === 0 ? outgoingText : ''),
                 participantIds: active?.participantIds || [],
                 userId: user.id,
               })
@@ -2152,7 +2182,7 @@ export default function ChatWorkspace({ adminMode = false }) {
           });
           return {
             clientId: `${clientId}-${index}`,
-            body: encrypted ? '' : index === 0 ? outgoingText : '',
+            body: encrypted ? '' : String(item.caption || '').trim() || (index === 0 ? outgoingText : ''),
             ciphertext: encrypted?.ciphertext || '',
             encryption: encrypted ? { algorithm: 'ECDH-P256+AES-256-GCM', version: 1, attachment: 'AES-256-GCM' } : null,
             deliverySecurity,
@@ -2275,6 +2305,22 @@ export default function ChatWorkspace({ adminMode = false }) {
       },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 },
     );
+  };
+  const toggleAttachmentCrop = async (id) => {
+    const target = attachments.find(item => item.id === id);
+    if (!target || !String(target.mime || '').startsWith('image/')) return;
+    try {
+      const nextCropped = !target.cropped;
+      const nextFile = nextCropped ? await prepareChatImage(target.uncroppedFile || target.file, { square: true }) : (target.uncroppedFile || target.file);
+      const nextPreviewUrl = URL.createObjectURL(nextFile);
+      setAttachments(current => current.map(item => {
+        if (item.id !== id) return item;
+        URL.revokeObjectURL(item.previewUrl);
+        return { ...item, file: nextFile, mime: nextFile.type, previewUrl: nextPreviewUrl, cropped: nextCropped };
+      }));
+    } catch {
+      setError('This photo could not be cropped on this device. You can still send the prepared photo.');
+    }
   };
   const stopLiveLocation = async message => {
     const activeWatch = liveLocationWatchesRef.current.get(message.id);
@@ -3819,6 +3865,19 @@ export default function ChatWorkspace({ adminMode = false }) {
                             }}
                             onOpen={setPreview}
                           />
+                          {String(item.mime || '').startsWith('image/') && (
+                            <button type="button" disabled={busy} onClick={() => toggleAttachmentCrop(item.id)} className={`mt-2 w-full rounded-lg border px-2 py-1.5 text-[10px] font-semibold ${item.cropped ? 'border-brass bg-brass/10 text-brass' : 'border-brass/15 text-ivory/55'}`}>
+                              {item.cropped ? 'Square crop applied' : 'Crop square'}
+                            </button>
+                          )}
+                          <input
+                            value={item.caption || ''}
+                            disabled={busy}
+                            maxLength={1000}
+                            onChange={event => setAttachments(current => current.map(attachment => attachment.id === item.id ? { ...attachment, caption: event.target.value } : attachment))}
+                            placeholder="Add a caption…"
+                            className="mt-2 min-h-9 w-full rounded-lg border border-brass/15 bg-obsidian px-2 text-xs text-ivory outline-none placeholder:text-ivory/35 focus:border-brass"
+                          />
                           <button
                             type="button"
                             disabled={busy}
@@ -4031,7 +4090,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                       accept="image/*"
                       capture="environment"
                       onChange={(event) => {
-                        chooseFiles(event.target.files);
+                        chooseFiles(event.target.files, { camera: true });
                         event.target.value = '';
                       }}
                     />
@@ -4043,7 +4102,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                       onClick={(event) => {
                         const opening = !emojiMenuPosition;
                         closeFloatingMenus();
-                        setEmojiMenuPosition(opening ? floatingPosition(event.currentTarget, 286, 76) : null);
+                        setEmojiMenuPosition(opening ? floatingPosition(event.currentTarget, 360, menuHeight(430)) : null);
                       }}
                       className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ivory/55 transition hover:bg-white/5 hover:text-brass disabled:opacity-40"
                       aria-label="Choose an emoji"
@@ -4117,22 +4176,28 @@ export default function ChatWorkspace({ adminMode = false }) {
                   ) : null}
                 </div>
                 {emojiMenuPosition && createPortal(
-                  <div data-chat-popover style={emojiMenuPosition} className="fixed z-[240] flex items-center justify-center gap-1 rounded-2xl border border-brass/20 bg-carbon p-2 shadow-2xl">
-                    {REACTIONS.map((emoji) => (
-                      <button
-                        type="button"
-                        key={emoji}
-                        onClick={() => {
-                          updateTyping(`${text}${emoji}`);
+                  <div data-chat-popover style={emojiMenuPosition} className="chat-emoji-picker fixed z-[240] overflow-hidden rounded-2xl border border-brass/20 bg-carbon shadow-2xl">
+                    <EmojiPicker
+                      theme={Theme.DARK}
+                      emojiStyle={EmojiStyle.NATIVE}
+                      width="100%"
+                      height="100%"
+                      lazyLoadEmojis
+                      previewConfig={{ showPreview: false }}
+                      skinTonesDisabled={false}
+                      searchPlaceHolder="Search emoji"
+                      onEmojiClick={({ emoji }) => {
+                        if (emojiReactionTarget) {
+                          const message = messages.find(item => item.id === emojiReactionTarget);
+                          if (message) react(message, emoji);
+                          setEmojiReactionTarget('');
                           setEmojiMenuPosition(null);
+                        } else {
+                          updateTyping(`${text}${emoji}`);
                           window.requestAnimationFrame(() => composerRef.current?.focus());
-                        }}
-                        className="flex h-9 w-9 items-center justify-center rounded-full text-lg transition hover:bg-brass/10"
-                        aria-label={`Add ${emoji}`}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
+                        }
+                      }}
+                    />
                   </div>, document.body,
                 )}
                 {composerOptionsPosition && createPortal(
@@ -4247,6 +4312,20 @@ export default function ChatWorkspace({ adminMode = false }) {
                 {emoji}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={(event) => {
+                const targetId = reactionPickerId;
+                setReactionPickerId('');
+                setReactionPickerPosition(null);
+                setEmojiReactionTarget(targetId);
+                setEmojiMenuPosition(floatingPosition(event.currentTarget, 360, menuHeight(430)));
+              }}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-ivory/70 hover:bg-brass/10"
+              aria-label="Choose another emoji"
+            >
+              <Plus size={17} />
+            </button>
           </div>,
           document.body,
         )}
