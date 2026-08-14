@@ -501,8 +501,28 @@
   --epr-highlight-color: #c8a45b;
   --epr-search-input-bg-color: #09090a;
   --epr-search-input-text-color: #f9f6f0;
+  --epr-header-padding: 0.45rem 0.65rem;
+  --epr-category-label-height: 0px;
   border: 0;
   font-family: Inter, sans-serif;
+}
+
+.chat-emoji-picker .epr-category-nav {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.45rem 0.4rem;
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+}
+
+.chat-emoji-picker .epr-emoji-category-label {
+  height: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.chat-emoji-picker .epr-body {
+  min-height: 0;
 }
 
 /* Keep secondary copy comfortably above WCAG AA contrast on the studio's dark surfaces. */
