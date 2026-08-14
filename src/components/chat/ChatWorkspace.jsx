@@ -3237,16 +3237,16 @@ export default function ChatWorkspace({ adminMode = false }) {
                       <button type="button" onClick={() => openChatBrowser('media')} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
                         <Images size={14} /> Media & files
                       </button>
-                      <button type="button" onClick={() => setShowConversationMore(current => !current)} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs font-semibold text-brass hover:bg-brass/10">
-                        <MoreVertical size={14} /> {showConversationMore ? 'Fewer options' : 'More'}
-                      </button>
-                      {showConversationMore && <>
                       <button type="button" onClick={exportConversation} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
                         <Download size={14} /> Export chat
                       </button>
                       <button type="button" onClick={() => { setMessageSelectionMode(true); setSelectedMessageIds([]); setShowConversationMenu(false); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
                         <CheckCheck size={14} /> Select messages
                       </button>
+                      <button type="button" onClick={() => setShowConversationMore(current => !current)} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs font-semibold text-brass hover:bg-brass/10">
+                        <MoreVertical size={14} /> {showConversationMore ? 'Fewer options' : 'More'}
+                      </button>
+                      {showConversationMore && <>
                       <button type="button" onClick={() => clearConversationMessages(null)} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-red-300 hover:bg-red-400/10">
                         <Trash2 size={14} /> Clear chat
                       </button>
@@ -3916,7 +3916,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                           <Image size={15} className="text-sky-400" />
                           <span>Photos & video</span>
                         </button>
-                        <button type="button" onClick={() => { setShowAttachmentMenu(false); cameraInputRef.current?.click(); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10">
+                        <button type="button" onClick={() => { setShowAttachmentMenu(false); cameraInputRef.current?.click(); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10 lg:hidden">
                           <Camera size={15} className="text-pink-400" /><span>Camera</span>
                         </button>
                         <button
@@ -4028,7 +4028,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                       ref={cameraInputRef}
                       type="file"
                       className="hidden"
-                      accept="image/*,video/*"
+                      accept="image/*"
                       capture="environment"
                       onChange={(event) => {
                         chooseFiles(event.target.files);
