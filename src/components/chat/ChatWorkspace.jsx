@@ -78,6 +78,11 @@ import {
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const STICKERS = ['🎨', '✨', '🔥', '👏', '💯', '🥳', '😍', '🙌', '🫶', '🌟', '✅', '😂'];
 const MAX_FILE_BYTES = 75 * 1024 * 1024;
+const isEmojiOnlyMessage = value => {
+  const text = String(value || '').trim();
+  if (!text || text.length > 48 || !/\p{Extended_Pictographic}/u.test(text)) return false;
+  return text.replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\u200d\ufe0e\ufe0f\s]/gu, '') === '';
+};
 const prepareChatImage = async (file, { square = false, camera = false } = {}) => {
   if (!String(file?.type || '').startsWith('image/') || /gif|svg/i.test(file.type)) return file;
   let prepared = file;
@@ -3157,22 +3162,6 @@ export default function ChatWorkspace({ adminMode = false }) {
             {isIos && !isInstalledIos && (
               <p className="mt-2 text-[10px] leading-4 text-brass/70">iPhone alerts: Share → Add to Home Screen, then open the installed app and tap the bell.</p>
             )}
-            <div className="mt-3 flex gap-3 overflow-x-auto pb-1" aria-label="24-hour status updates">
-              <button type="button" onClick={() => setShowStoryComposer(true)} className="flex w-14 shrink-0 flex-col items-center gap-1 text-[10px] text-ivory/50">
-                <span className="flex h-11 w-11 items-center justify-center rounded-full border border-dashed border-brass/50 bg-brass/5 text-brass"><Plus size={17} /></span>
-                My status
-              </button>
-              {stories.map(story => (
-                <button type="button" key={story.id} onClick={() => openStory(story)} className="flex w-14 shrink-0 flex-col items-center gap-1 text-[10px] text-ivory/50">
-                  <span className={`flex h-11 w-11 overflow-hidden rounded-full border-2 p-0.5 ${story.viewed ? 'border-ivory/20' : 'border-green-400'}`}>
-                    <span className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-brass/10 text-xs text-brass">
-                      {story.mediaUrl && story.mediaType?.startsWith('image/') ? <img src={story.mediaUrl} alt="" className="h-full w-full object-cover" /> : initials(story.author?.name)}
-                    </span>
-                  </span>
-                  <span className="w-full truncate">{story.mine ? 'You' : story.author?.name}</span>
-                </button>
-              ))}
-            </div>
             <label className="mt-4 flex h-11 items-center gap-2 border border-brass/15 bg-obsidian px-3 text-ivory/55">
               <Search size={15} />
               <input
@@ -3885,6 +3874,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                       }
                     : null;
                   const voiceAttachment = isVoiceAttachment(attachment || {});
+                  const emojiOnly = !attachment && !message.sticker && !message.richMedia && isEmojiOnlyMessage(message.body);
                   const groupedReactions = Object.values(message.reactions || {}).reduce(
                     (result, emoji) => ({
                       ...result,
@@ -3939,7 +3929,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                         )}
                         <article
                           onClick={messageSelectionMode ? () => setSelectedMessageIds(current => current.includes(message.id) ? current.filter(id => id !== message.id) : [...current, message.id]) : undefined}
-                          className={`chat-bubble relative min-w-0 rounded-xl border ${messageSelectionMode ? 'cursor-pointer' : ''} ${voiceAttachment ? 'w-fit max-w-[92%] px-1 py-1 sm:max-w-[20rem]' : 'w-fit max-w-[86%] px-2.5 py-1.5 sm:max-w-[28rem]'} ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}
+                          className={`chat-bubble relative min-w-0 ${messageSelectionMode ? 'cursor-pointer' : ''} ${emojiOnly ? 'chat-bubble-emoji w-fit max-w-[86%] border-0 bg-transparent px-1 py-0' : `rounded-xl border ${voiceAttachment ? 'w-fit max-w-[92%] px-1 py-1 sm:max-w-[20rem]' : 'w-fit max-w-[86%] px-2.5 py-1.5 sm:max-w-[28rem]'} ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}`}
                         >
                           {message.replyToId && (
                             <QuotedMessage
@@ -3988,7 +3978,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                               </div>
                             </div>
                           ) : (
-                            message.body && <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm leading-5 text-ivory/80">{message.body}</p>
+                            message.body && <p className={emojiOnly ? 'chat-emoji-only whitespace-pre-wrap text-[3.35rem] leading-none' : 'whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm leading-5 text-ivory/80'}>{message.body}</p>
                           )}
                           {message.sticker && <div className="chat-sticker-pop py-2 text-center text-7xl" role="img" aria-label="Sticker">{message.sticker}</div>}
                           {message.encryptionError && (
@@ -4541,11 +4531,24 @@ export default function ChatWorkspace({ adminMode = false }) {
                     style={window.innerWidth >= 1024 ? emojiMenuPosition : undefined}
                     className="chat-emoji-picker fixed inset-x-0 bottom-0 z-[240] h-[min(68dvh,34rem)] overflow-hidden rounded-t-3xl border border-brass/20 bg-carbon shadow-2xl lg:inset-auto lg:rounded-2xl"
                   >
+                    <div className="flex h-12 items-center justify-center gap-1 border-b border-white/10 px-3 lg:hidden" aria-label="Emoji and GIF choices">
+                      <button type="button" className="h-9 min-w-24 rounded-full bg-brass/15 px-5 text-xs font-semibold text-brass">Emoji</button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEmojiMenuPosition(null);
+                          openGifPicker();
+                        }}
+                        className="h-9 min-w-24 rounded-full px-5 text-xs font-semibold text-ivory/60 hover:bg-white/5 hover:text-ivory"
+                      >
+                        GIF
+                      </button>
+                    </div>
                     <EmojiPicker
                       theme={Theme.DARK}
-                      emojiStyle={EmojiStyle.NATIVE}
+                      emojiStyle={window.innerWidth >= 1024 ? EmojiStyle.APPLE : EmojiStyle.NATIVE}
                       width="100%"
-                      height="100%"
+                      height={window.innerWidth >= 1024 ? '100%' : 'calc(100% - 3rem)'}
                       lazyLoadEmojis
                       previewConfig={{ showPreview: false }}
                       skinTonesDisabled={false}

@@ -534,6 +534,29 @@
   70% { transform: translateY(-3px) scale(1.08); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+@keyframes chat-emoji-send {
+  0% { opacity: 0; transform: translateY(.7rem) scale(.45) rotate(-7deg); }
+  62% { opacity: 1; transform: translateY(-.12rem) scale(1.13) rotate(2deg); }
+  100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+}
+
+.chat-emoji-only {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  filter: drop-shadow(0 .2rem .3rem rgb(0 0 0 / .28));
+  animation: chat-emoji-send 480ms cubic-bezier(.18,.88,.28,1.22) both;
+}
+
+.chat-bubble-emoji::before,
+.chat-bubble-emoji::after {
+  display: none !important;
+}
+
+.chat-bubble-emoji > div:last-child {
+  border-radius: 999px;
+}
 .chat-message-enter { animation: chat-message-enter 220ms cubic-bezier(.2,.8,.2,1) both; }
 .chat-sending-dot {
   width: .45rem;
@@ -556,7 +579,7 @@
 .chat-sticker-pop { animation: chat-sticker-pop 520ms cubic-bezier(.2,.9,.25,1.2) both; }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-reaction-pop, .chat-sticker-pop, .chat-message-enter, .chat-sending-dot { animation: none; }
+  .chat-reaction-pop, .chat-sticker-pop, .chat-message-enter, .chat-sending-dot, .chat-emoji-only { animation: none; }
 }
 /* Emoji sheets keep touch/mouse scrolling while hiding platform scrollbars. */
 .chat-emoji-picker .epr-body,
