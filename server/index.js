@@ -3281,6 +3281,28 @@ app.delete('/api/chat/messages/:id', requireVerifiedUser, mutationLimiter, async
   res.json({ success: true });
 });
 
+app.delete('/api/chat/conversations/:id/messages', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const conversation = db.data.ChatConversation.find(item => item.id === req.params.id && !item.deleted_at);
+  if (!conversation || !chatMember(conversation, req.user)) return res.status(404).json({ error: 'Conversation not found.' });
+  const requestedIds = Array.isArray(req.body?.messageIds)
+    ? new Set(req.body.messageIds.map(id => String(id)).filter(Boolean).slice(0, 500))
+    : null;
+  const targets = db.data.ChatMessage.filter(message => (
+    message.conversationId === conversation.id
+    && !message.deleted_at
+    && (!requestedIds || requestedIds.has(message.id))
+    && chatMessageVisibleTo(message, req.user)
+  ));
+  targets.forEach(message => {
+    message.hiddenFor = [...new Set([...(message.hiddenFor || []), req.user.id])];
+    message.updated_date = now();
+  });
+  refreshConversationSummary(conversation);
+  await save();
+  emitChatEvent([req.user.id], 'conversation', { conversationId: conversation.id, cleared: targets.length });
+  res.json({ success: true, cleared: targets.length });
+});
+
 app.get('/api/entities/:name', async (req, res) => {
   const { name } = req.params;
   if (!Array.isArray(db.data[name])) return res.status(404).json({ error: 'Unknown entity.' });

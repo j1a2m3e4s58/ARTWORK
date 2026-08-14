@@ -55,6 +55,7 @@ import {
 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
+import useGlassConfirm from '@/hooks/useGlassConfirm';
 import CallOverlay from '@/components/chat/CallOverlay';
 import {
   cacheConversations,
@@ -1166,6 +1167,7 @@ function GifPicker({ query, setQuery, results, loading, configured, busy, onSear
 
 export default function ChatWorkspace({ adminMode = false }) {
   const { user } = useAuth();
+  const { confirm, confirmDialog } = useGlassConfirm();
   const isIos = typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
   const isInstalledIos = typeof navigator !== 'undefined' && navigator.standalone === true;
   const [conversations, setConversations] = useState([]);
@@ -1187,6 +1189,8 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [conversationFilter, setConversationFilter] = useState('all');
   const [queuedCount, setQueuedCount] = useState(0);
   const [showConversationMenu, setShowConversationMenu] = useState(false);
+  const [messageSelectionMode, setMessageSelectionMode] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState([]);
   const [editing, setEditing] = useState(null);
   const [messageMenuId, setMessageMenuId] = useState('');
   const [reactionPickerId, setReactionPickerId] = useState('');
@@ -1613,6 +1617,8 @@ export default function ChatWorkspace({ adminMode = false }) {
   }, []);
   useEffect(() => {
     activeIdRef.current = activeId;
+    setMessageSelectionMode(false);
+    setSelectedMessageIds([]);
     setMessageQuery('');
     setSearchingMessages(false);
     setReplyingTo(null);
@@ -2401,9 +2407,35 @@ export default function ChatWorkspace({ adminMode = false }) {
       setSearchBusy(false);
     }
   };
+  const clearConversationMessages = async messageIds => {
+    const selectedCount = messageIds?.length || 0;
+    const approved = await confirm({
+      title: selectedCount ? `Delete ${selectedCount} selected message${selectedCount === 1 ? '' : 's'}?` : 'Clear this chat?',
+      description: selectedCount
+        ? 'The selected messages will be removed from your view. Other participants will keep their copies.'
+        : 'Every message in this conversation will be removed from your view. Other participants will keep their copies.',
+      confirmLabel: selectedCount ? 'Delete selected' : 'Clear chat',
+    });
+    if (!approved) return;
+    setBusy(true);
+    setError('');
+    try {
+      await studioClient.chat.clearMessages(activeId, selectedCount ? messageIds : null);
+      setSelectedMessageIds([]);
+      setMessageSelectionMode(false);
+      setShowConversationMenu(false);
+      await Promise.all([loadMessages(activeId, '', { scrollToBottom: true }), load()]);
+    } catch (clearError) {
+      setError(clearError.message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const openChatBrowser = async (tab = 'media') => {
     if (!activeId) return;
     setShowConversationMenu(false);
+    setMessageSelectionMode(false);
+    setSelectedMessageIds([]);
     setChatBrowserTab(tab);
     setShowChatBrowser(true);
     setChatBrowserBusy(true);
@@ -2569,6 +2601,7 @@ export default function ChatWorkspace({ adminMode = false }) {
 
   return (
     <>
+      {confirmDialog}
       <div
         className={`grid min-h-0 max-w-full overflow-hidden bg-carbon md:border md:border-brass/15 lg:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] ${adminMode ? 'h-[clamp(360px,calc(100dvh-13rem),760px)]' : 'h-full'}`}
       >
@@ -3104,6 +3137,12 @@ export default function ChatWorkspace({ adminMode = false }) {
                       <button type="button" onClick={exportConversation} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
                         <Download size={15} /> Export this chat
                       </button>
+                      <button type="button" onClick={() => { setMessageSelectionMode(true); setSelectedMessageIds([]); setShowConversationMenu(false); }} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
+                        <CheckCheck size={15} /> Select messages to delete
+                      </button>
+                      <button type="button" onClick={() => clearConversationMessages(null)} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-red-300 hover:bg-red-400/10">
+                        <Trash2 size={15} /> Clear all messages
+                      </button>
                       <Link to="/account#security" onClick={() => setShowConversationMenu(false)} className="flex min-h-11 w-full items-center gap-3 px-3 text-left text-sm text-ivory/65 hover:bg-brass/10">
                         <Lock size={15} /> Devices and account data
                       </Link>
@@ -3193,8 +3232,14 @@ export default function ChatWorkspace({ adminMode = false }) {
                   <select value={messageSearchFilters.attachmentType} onChange={event => setMessageSearchFilters(value => ({ ...value, attachmentType: event.target.value }))} className="h-10 border border-brass/15 bg-obsidian px-2 text-xs text-ivory outline-none">
                     <option value="">Any type</option><option value="media">Photo, video or audio</option><option value="document">Document</option><option value="link">Link</option>
                   </select>
-                  <input type="date" aria-label="From date" value={messageSearchFilters.from} onChange={event => setMessageSearchFilters(value => ({ ...value, from: event.target.value }))} className="h-10 border border-brass/15 bg-obsidian px-2 text-xs text-ivory [color-scheme:dark]" />
-                  <input type="date" aria-label="To date" value={messageSearchFilters.to} onChange={event => setMessageSearchFilters(value => ({ ...value, to: event.target.value }))} className="h-10 border border-brass/15 bg-obsidian px-2 text-xs text-ivory [color-scheme:dark]" />
+                  <label className="grid h-10 w-full min-w-0 grid-cols-[4.25rem_minmax(0,1fr)] items-center border border-brass/15 bg-obsidian px-2 text-xs text-ivory/45">
+                    <span>From date</span>
+                    <input type="date" aria-label="From date" value={messageSearchFilters.from} onChange={event => setMessageSearchFilters(value => ({ ...value, from: event.target.value }))} className="h-9 w-full min-w-0 bg-transparent text-xs text-ivory outline-none [color-scheme:dark]" />
+                  </label>
+                  <label className="grid h-10 w-full min-w-0 grid-cols-[4.25rem_minmax(0,1fr)] items-center border border-brass/15 bg-obsidian px-2 text-xs text-ivory/45">
+                    <span>To date</span>
+                    <input type="date" aria-label="To date" value={messageSearchFilters.to} onChange={event => setMessageSearchFilters(value => ({ ...value, to: event.target.value }))} className="h-9 w-full min-w-0 bg-transparent text-xs text-ivory outline-none [color-scheme:dark]" />
+                  </label>
                   <button disabled={searchBusy} className="h-10 border border-brass/20 px-3 text-xs text-brass disabled:opacity-40">
                     {searchBusy ? 'Searching…' : 'Search'}
                   </button>
@@ -3216,6 +3261,16 @@ export default function ChatWorkspace({ adminMode = false }) {
                 <p role="alert" className="border-b border-red-400/20 bg-red-400/5 p-3 text-xs text-red-300">
                   {error}
                 </p>
+              )}
+              {messageSelectionMode && (
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-brass/15 bg-brass/5 px-3 py-2">
+                  <span className="text-xs text-ivory/60">{selectedMessageIds.length ? `${selectedMessageIds.length} selected` : 'Tap messages to select them'}</span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setSelectedMessageIds(messages.map(message => message.id))} className="min-h-9 border border-brass/20 px-3 text-xs text-brass">Select all</button>
+                    <button type="button" disabled={!selectedMessageIds.length || busy} onClick={() => clearConversationMessages(selectedMessageIds)} className="min-h-9 border border-red-300/20 px-3 text-xs text-red-200 disabled:opacity-40">Delete selected</button>
+                    <button type="button" onClick={() => { setMessageSelectionMode(false); setSelectedMessageIds([]); }} className="flex h-9 w-9 items-center justify-center border border-brass/20 text-ivory/50" aria-label="Cancel message selection"><X size={15} /></button>
+                  </div>
+                </div>
               )}
               {securityNotice && (
                 <div className="flex items-center justify-between gap-3 border-b border-amber-400/20 bg-amber-400/5 p-3 text-xs text-amber-100">
@@ -3328,8 +3383,22 @@ export default function ChatWorkspace({ adminMode = false }) {
                           <span className="h-px flex-1 bg-brass/10" />
                         </div>
                       )}
-                      <div className={`group flex min-w-0 max-w-full ${mine ? 'justify-end' : 'justify-start'}`}>
-                        <article className={`relative min-w-0 ${voiceAttachment ? 'w-fit max-w-[94%] rounded-2xl border px-1.5 py-1 sm:max-w-[25rem]' : 'max-w-[90%] border p-3 sm:max-w-[72%]'} ${mine ? 'border-brass/20 bg-brass/10' : 'border-ivory/10 bg-carbon'}`}>
+                      <div className={`group flex min-w-0 max-w-full items-center gap-2 ${mine ? 'justify-end' : 'justify-start'}`}>
+                        {messageSelectionMode && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMessageIds(current => current.includes(message.id) ? current.filter(id => id !== message.id) : [...current, message.id])}
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition ${selectedMessageIds.includes(message.id) ? 'border-brass bg-brass text-obsidian' : 'border-brass/30 text-transparent hover:border-brass/60'}`}
+                            aria-label={`${selectedMessageIds.includes(message.id) ? 'Deselect' : 'Select'} message`}
+                            aria-pressed={selectedMessageIds.includes(message.id)}
+                          >
+                            <Check size={15} />
+                          </button>
+                        )}
+                        <article
+                          onClick={messageSelectionMode ? () => setSelectedMessageIds(current => current.includes(message.id) ? current.filter(id => id !== message.id) : [...current, message.id]) : undefined}
+                          className={`relative min-w-0 ${messageSelectionMode ? 'cursor-pointer' : ''} ${voiceAttachment ? 'w-fit max-w-[94%] rounded-2xl border px-1.5 py-1 sm:max-w-[25rem]' : 'max-w-[90%] border p-3 sm:max-w-[72%]'} ${mine ? 'border-brass/20 bg-brass/10' : 'border-ivory/10 bg-carbon'}`}
+                        >
                           {message.replyPreview && <QuotedMessage message={message} />}
                           {message.deletedForEveryone ? (
                             <div className="flex items-center gap-3">

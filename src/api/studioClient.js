@@ -259,6 +259,9 @@ export const studioClient = {
     updateLiveLocation: (messageId, data) => request(`/api/chat/messages/${encodeURIComponent(messageId)}/location`, { method: 'PATCH', body: JSON.stringify(data) }),
     edit: (messageId, body) => request(`/api/chat/messages/${encodeURIComponent(messageId)}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
     remove: (messageId, mode = 'me') => request(`/api/chat/messages/${encodeURIComponent(messageId)}?mode=${encodeURIComponent(mode)}`, { method: 'DELETE' }),
+    clearMessages: (conversationId, messageIds = null) => request(`/api/chat/conversations/${encodeURIComponent(conversationId)}/messages`, {
+      method: 'DELETE', body: JSON.stringify({ messageIds }),
+    }),
     typing: (id, typing) => request(`/api/chat/conversations/${encodeURIComponent(id)}/typing`, { method: 'POST', body: JSON.stringify({ typing }) }),
     settings: (id, data) => request(`/api/chat/conversations/${encodeURIComponent(id)}/settings`, { method: 'PATCH', body: JSON.stringify(data) }),
     announce: data => request('/api/chat/announcements', { method: 'POST', body: JSON.stringify(data) }),

@@ -434,6 +434,16 @@ test('API keeps public reads open while blocking unverified customer mutations',
     });
     assert.equal(privatePreviewResponse.status, 400, 'Link previews must reject private-network targets.');
 
+    const clearSelectedResponse = await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, {
+      method: 'DELETE', headers: securedHeaders, body: JSON.stringify({ messageIds: [contactMessage.id] }),
+    });
+    assert.equal(clearSelectedResponse.status, 200);
+    assert.equal((await clearSelectedResponse.json()).cleared, 1);
+    const adminMessagesAfterClear = await (await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, { headers: { Cookie: adminCookieHeader } })).json();
+    assert.equal(adminMessagesAfterClear.some(item => item.id === contactMessage.id), false, 'Cleared messages should disappear only from the requesting account.');
+    const customerMessagesAfterClear = await (await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, { headers: { Cookie: cookieHeader } })).json();
+    assert.equal(customerMessagesAfterClear.some(item => item.id === contactMessage.id), true, 'Clearing a chat must preserve the other participant\'s copy.');
+
     const deleteResponse = await fetch(`${baseUrl}/api/chat/messages/${chatMessage.id}?mode=everyone`, { method: 'DELETE', headers: securedHeaders });
     assert.equal(deleteResponse.status, 200);
     const adminMessagesAfterDelete = await (await fetch(`${baseUrl}/api/chat/conversations/${conversation.id}/messages`, { headers: { Cookie: adminCookieHeader } })).json();
