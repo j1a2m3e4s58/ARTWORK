@@ -378,8 +378,12 @@ for (const name of collectionNames) {
 
 let writeQueue = Promise.resolve();
 export const save = () => {
-  writeQueue = writeQueue.then(() => db.write());
-  return writeQueue;
+  // Keep one failed optimistic write from poisoning every later request in this
+  // process. Callers still receive the original error, but the next mutation
+  // gets a fresh chance to write after PostgreSQL has reloaded its snapshot.
+  const write = writeQueue.catch(() => {}).then(() => db.write());
+  writeQueue = write.catch(() => {});
+  return write;
 };
 export const newId = () => crypto.randomUUID();
 export const now = () => new Date().toISOString();

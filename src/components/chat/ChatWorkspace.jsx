@@ -1611,6 +1611,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const initializedSelectionRef = useRef(false);
   const typingLastSentRef = useRef({ value: false, at: 0 });
   const activeIdRef = useRef('');
+  const latestRefreshRef = useRef('');
   const text = drafts[activeId] || '';
   const queueKey = `reigns-chat-outbox:${user?.id || 'guest'}`;
   const resourceCopy = {
@@ -1834,6 +1835,15 @@ export default function ChatWorkspace({ adminMode = false }) {
       if (showLoadingIndicator) setMessagesLoading(false);
     }
   };
+  const refreshLatestMessages = async (id, options = {}) => {
+    if (!id || latestRefreshRef.current === id) return;
+    latestRefreshRef.current = id;
+    try {
+      await loadMessages(id, '', { mergeLatest: true, ...options });
+    } finally {
+      if (latestRefreshRef.current === id) latestRefreshRef.current = '';
+    }
+  };
   const loadStories = async () => {
     const rows = await studioClient.chat.stories();
     setStories(rows.sort((a, b) => String(a.created_date).localeCompare(String(b.created_date))));
@@ -1916,7 +1926,7 @@ export default function ChatWorkspace({ adminMode = false }) {
         .then(() => setConnectionState('connected'))
         .catch(() => setConnectionState('offline'));
       studioClient.chat.heartbeat().catch(() => {});
-      if (activeId) loadMessages(activeId, '', { mergeLatest: true }).catch(() => setConnectionState('offline'));
+      if (activeId) refreshLatestMessages(activeId).catch(() => setConnectionState('offline'));
     }, 15_000);
     return () => window.clearInterval(timer);
   }, [activeId]);
@@ -1930,7 +1940,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       setConnectionState('connected');
       const payload = JSON.parse(event.data || '{}');
       load().catch(() => setConnectionState('offline'));
-      if (payload.conversationId === activeIdRef.current) loadMessages(payload.conversationId, '', { mergeLatest: true }).catch(() => setConnectionState('offline'));
+      if (payload.conversationId === activeIdRef.current) refreshLatestMessages(payload.conversationId).catch(() => setConnectionState('offline'));
       window.dispatchEvent(new Event('atelier:refresh-badge'));
     };
     const receiveMessage = (event) => {
@@ -2331,13 +2341,36 @@ export default function ChatWorkspace({ adminMode = false }) {
     if (!gifResults.length) searchGifs('art reactions');
   };
   const sendGif = async (gif) => {
-    if (!gif?.url || !activeId || busy) return;
-    setBusy(true);
+    if (!gif?.url || !activeId) return;
     setError('');
+    const clientId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+    const optimisticId = `pending-${clientId}`;
+    const sentAt = new Date().toISOString();
+    setMessages(current => [...current, {
+      id: optimisticId,
+      clientId,
+      conversationId: activeId,
+      senderId: user.id,
+      body: '',
+      attachmentUrl: gif.url,
+      attachmentName: gif.title || 'GIF',
+      attachmentType: 'image/gif',
+      attachmentBytes: 0,
+      pending: true,
+      deliveredAt: null,
+      readBy: [user.id],
+      reactions: {},
+      created_date: sentAt,
+    }]);
+    setGifPickerOpen(false);
+    window.requestAnimationFrame(() => {
+      const pane = messagesPaneRef.current;
+      if (pane) pane.scrollTo({ top: pane.scrollHeight, behavior: 'smooth' });
+    });
     try {
       const imported = await studioClient.chat.importGif(gif.id);
       await studioClient.chat.send(activeId, {
-        clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+        clientId,
         body: '',
         attachmentUrl: imported.file_url,
         attachmentName: imported.media?.filename || gif.title || 'GIF',
@@ -2345,13 +2378,13 @@ export default function ChatWorkspace({ adminMode = false }) {
         attachmentBytes: imported.media?.bytes || 0,
         allowForward: true,
       });
-      setGifPickerOpen(false);
-      await loadMessages(activeId, '', { scrollToBottom: true });
-      await load();
+      refreshLatestMessages(activeId, { scrollToBottom: true, smooth: true }).catch(() => {});
+      load().catch(() => {});
     } catch (sendError) {
+      setMessages(current => current.map(message => message.id === optimisticId
+        ? { ...message, pending: false, failed: true }
+        : message));
       setError(sendError.message);
-    } finally {
-      setBusy(false);
     }
   };
   const sendShopSelection = async () => {

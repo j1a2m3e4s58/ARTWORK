@@ -2802,11 +2802,37 @@ app.put('/api/chat/keys', requireVerifiedUser, mutationLimiter, async (req, res)
   const signedPreKey = String(req.body.signedPreKey || '').trim().slice(0, 4096);
   const signature = String(req.body.signature || '').trim().slice(0, 4096);
   if (!deviceId || !identityKey || !signedPreKey || !signature) return res.status(400).json({ error: 'Device ID, identity key, signed pre-key, and signature are required.' });
-  let bundle = db.data.ChatKeyBundle.find(item => item.userId === req.user.id && item.deviceId === deviceId && !item.deleted_at);
   const oneTimePreKeys = Array.isArray(req.body.oneTimePreKeys) ? req.body.oneTimePreKeys.slice(0, 100).map(value => String(value).slice(0, 4096)) : [];
-  if (!bundle) { bundle = { id: newId(), userId: req.user.id, deviceId, created_date: now() }; db.data.ChatKeyBundle.push(bundle); }
-  Object.assign(bundle, { identityKey, signedPreKey, signature, algorithm: 'ECDSA-P256+ECDH-P256+AES-GCM', oneTimePreKeys, lastSeenAt: now(), updated_date: now() });
-  await save(); res.json({ success: true, keyId: bundle.id, oneTimePreKeyCount: oneTimePreKeys.length });
+  const bundleValuesMatch = bundle => bundle
+    && bundle.identityKey === identityKey
+    && bundle.signedPreKey === signedPreKey
+    && bundle.signature === signature
+    && JSON.stringify(bundle.oneTimePreKeys || []) === JSON.stringify(oneTimePreKeys);
+  const updateBundle = () => {
+    let bundle = db.data.ChatKeyBundle.find(item => item.userId === req.user.id && item.deviceId === deviceId && !item.deleted_at);
+    if (bundleValuesMatch(bundle)) return { bundle, changed: false };
+    if (!bundle) {
+      bundle = { id: newId(), userId: req.user.id, deviceId, created_date: now() };
+      db.data.ChatKeyBundle.push(bundle);
+    }
+    Object.assign(bundle, {
+      identityKey, signedPreKey, signature, algorithm: 'ECDSA-P256+ECDH-P256+AES-GCM',
+      oneTimePreKeys, lastSeenAt: now(), updated_date: now(),
+    });
+    return { bundle, changed: true };
+  };
+  let result = updateBundle();
+  try {
+    if (result.changed) await save();
+  } catch (error) {
+    // A second browser or Render instance can publish the same device at the
+    // same moment. db.write() refreshes its snapshot on a conflict; apply the
+    // requested bundle once more to that fresh state and retry safely.
+    if (error.status !== 409) throw error;
+    result = updateBundle();
+    if (result.changed) await save();
+  }
+  res.json({ success: true, keyId: result.bundle.id, oneTimePreKeyCount: oneTimePreKeys.length });
 });
 
 app.get('/api/chat/keys/:userId', requireVerifiedUser, async (req, res) => {
