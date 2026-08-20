@@ -78,6 +78,9 @@ import {
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const STICKERS = ['🎨', '✨', '🔥', '👏', '💯', '🥳', '😍', '🙌', '🫶', '🌟', '✅', '😂'];
 const MAX_FILE_BYTES = 75 * 1024 * 1024;
+// Share in-flight work across refreshes so the same attachment is not downloaded
+// and decrypted more than once while its message remains on screen.
+const attachmentDecryptions = new Map();
 const isEmojiOnlyMessage = value => {
   const text = String(value || '').trim();
   if (!text || text.length > 48 || !/\p{Extended_Pictographic}/u.test(text)) return false;
@@ -930,13 +933,21 @@ function EncryptedAttachmentPreview({ attachment, compact, onOpen }) {
     let objectUrl = '';
     setResolved(null);
     setFailure('');
-    fetch(attachment.url, { credentials: 'include', signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error('The encrypted attachment could not be downloaded.');
-        return response.blob();
-      })
-      .then((blob) => decryptChatAttachment(blob, attachment.encryptedMetadata))
+    const decryptionKey = `${attachment.messageId}:${attachment.url}:${attachment.encryptedMetadata?.key || ''}:${attachment.encryptedMetadata?.iv || ''}`;
+    let decrypting = attachmentDecryptions.get(decryptionKey);
+    if (!decrypting) {
+      decrypting = fetch(attachment.url, { credentials: 'include', cache: 'force-cache' })
+        .then((response) => {
+          if (!response.ok) throw new Error('The encrypted attachment could not be downloaded.');
+          return response.blob();
+        })
+        .then((blob) => decryptChatAttachment(blob, attachment.encryptedMetadata))
+        .finally(() => attachmentDecryptions.delete(decryptionKey));
+      attachmentDecryptions.set(decryptionKey, decrypting);
+    }
+    decrypting
       .then((blob) => {
+        if (controller.signal.aborted) return;
         objectUrl = URL.createObjectURL(blob);
         setResolved({
           ...attachment,
@@ -955,7 +966,8 @@ function EncryptedAttachmentPreview({ attachment, compact, onOpen }) {
     };
   }, [attachment.messageId, attachment.url, attachment.encryptedMetadata?.key, attachment.encryptedMetadata?.iv]);
   if (failure) return <p className="mt-2 border border-red-500/20 bg-red-950/20 p-3 text-xs text-red-200">{failure}</p>;
-  if (!resolved) return <p className="mt-2 flex items-center gap-2 border border-brass/15 bg-obsidian p-3 text-xs text-ivory/45"><Loader2 size={14} className="animate-spin" /> Decrypting attachment…</p>;
+  // Technical preparation stays invisible; customers see only the finished item.
+  if (!resolved) return <span className="sr-only" role="status" aria-live="polite">Preparing attachment</span>;
   return <AttachmentPreview attachment={resolved} compact={compact} onOpen={onOpen} />;
 }
 
