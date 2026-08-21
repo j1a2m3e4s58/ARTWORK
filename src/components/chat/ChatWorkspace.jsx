@@ -25,6 +25,7 @@ import {
   Forward,
   Image,
   Images,
+  Info,
   Loader2,
   Lock,
   Pause,
@@ -1584,6 +1585,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [selectedMessageIds, setSelectedMessageIds] = useState([]);
   const [editing, setEditing] = useState(null);
   const [messageMenuId, setMessageMenuId] = useState('');
+  const [messageInfo, setMessageInfo] = useState(null);
   const [reactionPickerId, setReactionPickerId] = useState('');
   const [messageMenuPosition, setMessageMenuPosition] = useState(null);
   const [reactionPickerPosition, setReactionPickerPosition] = useState(null);
@@ -1664,7 +1666,11 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [unreadMarker, setUnreadMarker] = useState(null);
+  const [swipeReply, setSwipeReply] = useState(null);
   const messagesPaneRef = useRef(null);
+  const messagesRef = useRef([]);
+  const swipeReplyRef = useRef(null);
   const attachmentsRef = useRef([]);
   const uploadAbortRef = useRef(null);
   const storyUploadAbortRef = useRef(null);
@@ -1706,6 +1712,9 @@ export default function ChatWorkspace({ adminMode = false }) {
       ...current,
       [activeId]: typeof value === 'function' ? value(current[activeId] || '') : value,
     }));
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
   const floatingPosition = (element, preferredWidth, preferredHeight) => {
     const rect = element.getBoundingClientRect();
     const gutter = 12;
@@ -1876,6 +1885,20 @@ export default function ChatWorkspace({ adminMode = false }) {
     }
     if (options.filters?.attachmentType) rows = rows.filter(message => messageMatchesAttachmentFilter(message, options.filters.attachmentType));
     if (!search && !options.filters) cacheMessages(user.id, id, encryptedRows).catch(() => {});
+    const unreadIncoming = rows.filter((message) => message.senderId !== user.id && !(message.readBy || []).includes(user.id));
+    const shouldRevealUnread = !options.mergeLatest && !options.before && !search && !options.filters && unreadIncoming.length > 0;
+    if (shouldRevealUnread) {
+      setUnreadMarker({ conversationId: id, messageId: unreadIncoming[0].id, count: unreadIncoming.length });
+    } else if (options.mergeLatest && !shouldFollowLatest) {
+      const knownIds = new Set(messagesRef.current.map((message) => message.id));
+      const newlyArrived = unreadIncoming.filter((message) => !knownIds.has(message.id));
+      if (newlyArrived.length) {
+        setUnreadMarker((current) => current?.conversationId === id
+          ? { ...current, count: current.count + newlyArrived.length }
+          : { conversationId: id, messageId: newlyArrived[0].id, count: newlyArrived.length });
+        setShowJumpToLatest(true);
+      }
+    }
     setNextCursor(Array.isArray(response) ? null : response.nextCursor || null);
     setMessages((current) => {
       if (!options.mergeLatest) return rows;
@@ -1884,7 +1907,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       return [...new Map([...retained, ...rows].map((item) => [item.id, item])).values()]
         .sort((a, b) => String(a.created_date).localeCompare(String(b.created_date)));
     });
-    const hasUnreadIncoming = rows.some((message) => message.senderId !== user.id && !(message.readBy || []).includes(user.id));
+    const hasUnreadIncoming = unreadIncoming.length > 0;
     if (hasUnreadIncoming) {
       await studioClient.chat.markRead(id);
       window.dispatchEvent(new CustomEvent('atelier:refresh-badge'));
@@ -1893,7 +1916,9 @@ export default function ChatWorkspace({ adminMode = false }) {
       window.requestAnimationFrame(() => {
         const currentPane = messagesPaneRef.current;
         if (!currentPane) return;
-        if (options.scrollToTop) currentPane.scrollTop = 0;
+        if (shouldRevealUnread) {
+          document.querySelector(`[data-chat-message-id="${CSS.escape(unreadIncoming[0].id)}"]`)?.scrollIntoView({ block: 'start' });
+        } else if (options.scrollToTop) currentPane.scrollTop = 0;
         else if (shouldFollowLatest) currentPane.scrollTo({ top: currentPane.scrollHeight, behavior: options.smooth ? 'smooth' : 'auto' });
         else if (options.mergeLatest) currentPane.scrollTop = previousScrollTop;
       }),
@@ -2061,11 +2086,14 @@ export default function ChatWorkspace({ adminMode = false }) {
     setReplyingTo(null);
     setEditing(null);
     setMessageMenuId('');
+    setMessageInfo(null);
     setReactionPickerId('');
     setShowConversationMenu(false);
     setPreview(null);
     setForwardingMessage(null);
     setError('');
+    setUnreadMarker(null);
+    setSwipeReply(null);
     setMessages([]);
     setNextCursor(null);
     setAttachments((current) => {
@@ -3019,6 +3047,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const removeMessage = async (message, mode) => {
     const previousMessages = messages;
     setMessageMenuId('');
+    setMessageInfo(null);
     setMessages(current => current.filter(item => item.id !== message.id));
     try {
       await studioClient.chat.remove(message.id, mode);
@@ -3076,6 +3105,8 @@ export default function ChatWorkspace({ adminMode = false }) {
     setMessages(current => selectedCount ? current.filter(message => !selectedIds.has(message.id)) : []);
     setBusy(true);
     setError('');
+    setUnreadMarker(null);
+    setSwipeReply(null);
     try {
       await studioClient.chat.clearMessages(activeId, selectedCount ? messageIds : null);
       setSelectedMessageIds([]);
@@ -3164,7 +3195,59 @@ export default function ChatWorkspace({ adminMode = false }) {
     if (pane) {
       pane.scrollTo({ top: pane.scrollHeight, behavior: 'smooth' });
       setShowJumpToLatest(false);
+      setUnreadMarker(null);
     }
+  };
+  const startMessageSwipe = (event, message) => {
+    if (
+      messageSelectionMode
+      || event.pointerType === 'mouse'
+      || window.matchMedia('(min-width: 768px)').matches
+      || event.target.closest('button, a, input, textarea, audio, video')
+    ) return;
+    swipeReplyRef.current = {
+      id: message.id,
+      message,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      axis: '',
+      offset: 0,
+    };
+  };
+  const moveMessageSwipe = (event) => {
+    const gesture = swipeReplyRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - gesture.startX;
+    const deltaY = event.clientY - gesture.startY;
+    if (!gesture.axis && Math.max(Math.abs(deltaX), Math.abs(deltaY)) > 8) {
+      gesture.axis = deltaX > 0 && Math.abs(deltaX) > Math.abs(deltaY) * 1.15 ? 'horizontal' : 'vertical';
+      if (gesture.axis === 'horizontal') event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
+    if (gesture.axis !== 'horizontal') return;
+    event.preventDefault();
+    gesture.offset = Math.min(72, Math.max(0, deltaX));
+    setSwipeReply({ id: gesture.id, offset: gesture.offset });
+  };
+  const finishMessageSwipe = (event) => {
+    const gesture = swipeReplyRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (gesture.axis === 'horizontal' && gesture.offset >= 52) {
+      setReplyingTo(gesture.message);
+      setEditing(null);
+      navigator.vibrate?.(12);
+      window.setTimeout(() => composerRef.current?.focus(), 80);
+    }
+    try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch { /* Pointer capture is optional. */ }
+    swipeReplyRef.current = null;
+    setSwipeReply(null);
+  };
+  const cancelMessageSwipe = (event) => {
+    const gesture = swipeReplyRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch { /* Pointer capture is optional. */ }
+    swipeReplyRef.current = null;
+    setSwipeReply(null);
   };
   const jumpToRepliedMessage = async (messageId) => {
     if (!messageId) return;
@@ -4119,7 +4202,8 @@ export default function ChatWorkspace({ adminMode = false }) {
                   );
                   const previous = messages[index - 1];
                   const next = messages[index + 1];
-                  const showDate = !previous || new Date(previous.created_date).toDateString() !== new Date(message.created_date).toDateString();
+                   const showDate = !previous || new Date(previous.created_date).toDateString() !== new Date(message.created_date).toDateString();
+                   const showUnreadDivider = unreadMarker?.conversationId === activeId && unreadMarker.messageId === message.id;
                   const groupedWithPrevious = !showDate
                     && previous?.senderId === message.senderId
                     && Math.abs(new Date(message.created_date).getTime() - new Date(previous.created_date).getTime()) < 5 * 60 * 1000;
@@ -4150,6 +4234,15 @@ export default function ChatWorkspace({ adminMode = false }) {
                           <span className="h-px flex-1 bg-brass/10" />
                         </div>
                       )}
+                      {showUnreadDivider && (
+                        <div className="chat-unread-divider my-4 flex items-center gap-3" role="separator" aria-label={`${unreadMarker.count} unread message${unreadMarker.count === 1 ? '' : 's'}`}>
+                          <span className="h-px flex-1 bg-brass/20" />
+                          <span className="rounded-full border border-brass/25 bg-carbon/95 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-brass shadow-lg">
+                            {unreadMarker.count} unread message{unreadMarker.count === 1 ? '' : 's'}
+                          </span>
+                          <span className="h-px flex-1 bg-brass/20" />
+                        </div>
+                      )}
                       <div className={`group flex min-w-0 max-w-full items-center gap-2 ${mine ? 'justify-end' : 'justify-start'}`}>
                         {messageSelectionMode && (
                           <button
@@ -4164,8 +4257,23 @@ export default function ChatWorkspace({ adminMode = false }) {
                         )}
                         <article
                           onClick={messageSelectionMode ? () => setSelectedMessageIds(current => current.includes(message.id) ? current.filter(id => id !== message.id) : [...current, message.id]) : undefined}
+                          onPointerDown={(event) => startMessageSwipe(event, message)}
+                          onPointerMove={moveMessageSwipe}
+                          onPointerUp={finishMessageSwipe}
+                          onPointerCancel={cancelMessageSwipe}
+                          style={{
+                            touchAction: 'pan-y',
+                            transform: swipeReply?.id === message.id ? `translate3d(${swipeReply.offset}px, 0, 0)` : undefined,
+                          }}
                           className={`chat-bubble relative min-w-0 ${compactTextOnly ? 'chat-bubble-text-only' : ''} ${messageSelectionMode ? 'cursor-pointer' : ''} ${emojiOnly ? 'chat-bubble-emoji w-fit max-w-[86%] border-0 bg-transparent px-1 py-0' : bareAttachment ? 'chat-bubble-media w-fit max-w-[86%] border-0 bg-transparent p-0 sm:max-w-[28rem]' : `rounded-xl border ${voiceAttachment ? 'w-fit max-w-[92%] px-1 py-1 sm:max-w-[20rem]' : `w-fit max-w-[86%] ${compactTextOnly ? 'px-2.5 py-1' : 'px-2.5 py-1.5'} sm:max-w-[28rem]`} ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}`}
                         >
+                          <span
+                            aria-hidden="true"
+                            className="pointer-events-none absolute -left-8 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-brass text-obsidian shadow-lg transition-opacity"
+                            style={{ opacity: swipeReply?.id === message.id ? Math.min(1, swipeReply.offset / 48) : 0 }}
+                          >
+                            <Reply size={14} />
+                          </span>
                           {message.replyToId && (
                             <QuotedMessage
                               message={message}
@@ -4357,7 +4465,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                                     const opening = messageMenuId !== message.id;
                                     closeFloatingMenus();
                                     setMessageMenuId(opening ? message.id : '');
-                                    setMessageMenuPosition(opening ? floatingPosition(event.currentTarget, 220, 190) : null);
+                                    setMessageMenuPosition(opening ? floatingPosition(event.currentTarget, 220, 320) : null);
                                   }}
                                   title="Message options"
                                   className="flex h-7 w-7 items-center justify-center text-ivory/30 hover:text-brass"
@@ -4413,6 +4521,11 @@ export default function ChatWorkspace({ adminMode = false }) {
                   >
                     <ArrowDown size={14} />
                     Latest
+                    {unreadMarker?.conversationId === activeId && unreadMarker.count > 0 && (
+                      <span className="flex min-w-5 items-center justify-center rounded-full bg-brass px-1.5 py-0.5 text-[10px] font-bold text-obsidian">
+                        {unreadMarker.count > 99 ? '99+' : unreadMarker.count}
+                      </span>
+                    )}
                   </button>
                 )}
               </div>
@@ -4956,9 +5069,20 @@ export default function ChatWorkspace({ adminMode = false }) {
             setMessageMenuId('');
             setMessageMenuPosition(null);
           };
-          return createPortal(
-            <div data-chat-popover style={messageMenuPosition} className="chat-popover-enter chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[220] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
-              {canEdit && (
+           return createPortal(
+             <div data-chat-popover style={messageMenuPosition} className="chat-popover-enter chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[220] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setMessageInfo(message);
+                  closeMenu();
+                }}
+                className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10"
+              >
+                <Info size={14} />
+                Message info
+              </button>
+               {canEdit && (
                 <button
                   type="button"
                   onClick={() => {
@@ -5043,7 +5167,78 @@ export default function ChatWorkspace({ adminMode = false }) {
             </div>,
             document.body,
           );
-        })()}
+         })()}
+      {messageInfo && createPortal((() => {
+        const sender = messageInfo.senderId === user.id
+          ? user
+          : active?.participants?.find((person) => person.id === messageInfo.senderId);
+        const participantMap = new Map((active?.participants || []).map((person) => [person.id, person]));
+        participantMap.set(user.id, user);
+        const readBy = (messageInfo.readBy || []).map((id) => participantMap.get(id)?.name || 'Conversation member');
+        const attachmentName = messageInfo.decryptedAttachment?.name || messageInfo.attachmentName;
+        const previewText = messageInfo.deletedForEveryone
+          ? 'This message was deleted'
+          : messageInfo.body || (messageInfo.sticker ? `Sticker ${messageInfo.sticker}` : attachmentName || (messageInfo.richMedia?.title) || 'Message');
+        const formatInfoTime = (value) => value
+          ? new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+          : '';
+        const statusRows = [
+          { label: 'Sent', value: formatInfoTime(messageInfo.created_date), icon: <Check size={17} /> },
+          { label: 'Delivered', value: formatInfoTime(messageInfo.deliveredAt), icon: <CheckCheck size={17} /> },
+          { label: 'Read', value: formatInfoTime(messageInfo.readAt), icon: <CheckCheck size={17} className={messageInfo.readAt ? 'text-sky-400' : ''} /> },
+        ];
+        return (
+          <div
+            className="fixed inset-0 z-[270] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="message-info-title"
+            onMouseDown={(event) => event.target === event.currentTarget && setMessageInfo(null)}
+          >
+            <section className="chat-info-sheet w-full overflow-hidden rounded-t-3xl border border-brass/20 bg-carbon shadow-2xl sm:max-w-md sm:rounded-2xl">
+              <header className="flex items-center justify-between border-b border-brass/15 px-5 py-4">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-brass">Conversation details</p>
+                  <h3 id="message-info-title" className="font-display text-2xl text-ivory">Message info</h3>
+                </div>
+                <button type="button" onClick={() => setMessageInfo(null)} className="flex h-10 w-10 items-center justify-center rounded-full text-ivory/60 hover:bg-white/5" aria-label="Close message info">
+                  <X size={18} />
+                </button>
+              </header>
+              <div className="max-h-[72dvh] overflow-y-auto p-4 sm:p-5">
+                <div className="rounded-2xl border border-brass/15 bg-obsidian/80 p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-brass">{sender?.name || 'Conversation member'}</p>
+                  <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm leading-5 text-ivory/75">{previewText}</p>
+                  {attachmentName && <p className="mt-2 truncate text-[11px] text-ivory/40">{attachmentName}{formatBytes(messageInfo.attachmentBytes) ? ` · ${formatBytes(messageInfo.attachmentBytes)}` : ''}</p>}
+                </div>
+                <div className="mt-4 divide-y divide-brass/10 rounded-2xl border border-brass/15 bg-obsidian/45">
+                  {statusRows.map((row) => (
+                    <div key={row.label} className="flex min-h-16 items-center gap-3 px-4 py-3">
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${row.value ? 'bg-brass/10 text-brass' : 'bg-white/[0.035] text-ivory/25'}`}>{row.icon}</span>
+                      <span className="min-w-0 flex-1">
+                        <b className="block text-sm text-ivory/80">{row.label}</b>
+                        <small className="block truncate text-ivory/40">{row.value || (row.label === 'Sent' ? 'Pending' : `Not ${row.label.toLowerCase()} yet`)}</small>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {readBy.length > 0 && (
+                  <div className="mt-4 rounded-2xl border border-brass/15 p-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-brass">Read by</p>
+                    <p className="mt-2 text-sm text-ivory/65">{readBy.join(', ')}</p>
+                  </div>
+                )}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {messageInfo.editedAt && <span className="rounded-full bg-white/5 px-3 py-1 text-[10px] text-ivory/50">Edited {formatInfoTime(messageInfo.editedAt)}</span>}
+                  {messageInfo.pinned && <span className="rounded-full bg-brass/10 px-3 py-1 text-[10px] text-brass">Pinned</span>}
+                  {messageInfo.starredBy?.includes(user.id) && <span className="rounded-full bg-brass/10 px-3 py-1 text-[10px] text-brass">Starred</span>}
+                  {messageInfo.expiresAt && <span className="rounded-full bg-white/5 px-3 py-1 text-[10px] text-ivory/50">Disappears {formatInfoTime(messageInfo.expiresAt)}</span>}
+                </div>
+              </div>
+            </section>
+          </div>
+        );
+      })(), document.body)}
       <PreviewOverlay attachment={preview} onClose={() => setPreview(null)} />
       {gifPickerOpen && (
         <GifPicker
