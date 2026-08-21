@@ -76,6 +76,7 @@ import {
   readSyncCursor,
   writeSyncCursor,
 } from '@/lib/chatSecure';
+import { listOutbox, patchOutbox, putOutbox, removeOutbox } from '@/lib/chatOutbox';
 
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const STICKERS = ['🎨', '✨', '🔥', '👏', '💯', '🥳', '😍', '🙌', '🫶', '🌟', '✅', '😂'];
@@ -86,6 +87,7 @@ const gifSearchMemoryCache = new Map();
 // reconciled. This prevents a GIF from flashing blank or changing size when
 // the optimistic row is replaced by the server response.
 const gifDisplaySources = new Map();
+const outboxPreviewSources = new Map();
 const readGifSearchCache = query => {
   const key = String(query || '').trim().toLowerCase();
   if (!key) return null;
@@ -1575,6 +1577,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [showArchived, setShowArchived] = useState(false);
   const [conversationFilter, setConversationFilter] = useState('all');
   const [queuedCount, setQueuedCount] = useState(0);
+  const [outboxItems, setOutboxItems] = useState([]);
   const [showConversationMenu, setShowConversationMenu] = useState(false);
   const [showConversationMore, setShowConversationMore] = useState(false);
   const [conversationMenuPosition, setConversationMenuPosition] = useState(null);
@@ -1684,10 +1687,12 @@ export default function ChatWorkspace({ adminMode = false }) {
   const typingTimerRef = useRef(null);
   const initializedSelectionRef = useRef(false);
   const typingLastSentRef = useRef({ value: false, at: 0 });
+  const outboxSenderRef = useRef(null);
+  const outboxFlushRef = useRef(false);
   const activeIdRef = useRef('');
   const latestRefreshRef = useRef('');
   const text = drafts[activeId] || '';
-  const queueKey = `reigns-chat-outbox:${user?.id || 'guest'}`;
+  const draftKey = `reigns-chat-drafts:${user?.id || 'guest'}`;
   const resourceCopy = {
     shop: {
       eyebrow: 'Share for negotiation',
@@ -1713,6 +1718,17 @@ export default function ChatWorkspace({ adminMode = false }) {
       ...current,
       [activeId]: typeof value === 'function' ? value(current[activeId] || '') : value,
     }));
+  useEffect(() => {
+    if (!user?.id) return;
+    try { setDrafts(JSON.parse(window.localStorage.getItem(draftKey) || '{}')); } catch { setDrafts({}); }
+  }, [draftKey, user?.id]);
+  useEffect(() => {
+    if (!user?.id) return;
+    const timer = window.setTimeout(() => {
+      try { window.localStorage.setItem(draftKey, JSON.stringify(drafts)); } catch { /* Draft persistence is best effort. */ }
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [draftKey, drafts, user?.id]);
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
@@ -1758,47 +1774,92 @@ export default function ChatWorkspace({ adminMode = false }) {
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
-  useEffect(() => {
-    const readQueue = () => {
-      try {
-        return JSON.parse(window.localStorage.getItem(queueKey) || '[]');
-      } catch {
-        return [];
-      }
-    };
-    const flushQueue = async () => {
-      if (!navigator.onLine) return;
-      const pending = readQueue();
-      if (!pending.length) return setQueuedCount(0);
-      const remaining = [];
-      for (const item of pending) {
+  const refreshOutbox = async () => {
+    if (!user?.id) return [];
+    const rows = await listOutbox(user.id);
+    setOutboxItems(rows);
+    setQueuedCount(rows.length);
+    return rows;
+  };
+  const flushOutbox = async (onlyClientId = '') => {
+    if (!navigator.onLine || outboxFlushRef.current || !outboxSenderRef.current) return;
+    outboxFlushRef.current = true;
+    try {
+      const rows = (await listOutbox(user.id)).filter(item => !onlyClientId || item.clientId === onlyClientId);
+      for (const item of rows) {
         try {
-          let payload = item.payload;
-          if (item.encryptBody) {
-            const ciphertext = await encryptChatText(studioClient, {
-              body: item.payload.body,
-              participantIds: item.participantIds,
-              userId: user.id,
-            });
-            payload = { ...item.payload, body: '', ciphertext, encryption: { algorithm: 'ECDH-P256+AES-256-GCM', version: 1 } };
+          await patchOutbox(user.id, item.clientId, { status: 'sending', lastError: '' });
+          setMessages(current => current.map(message => message.clientId === item.clientId || message.clientId?.startsWith(`${item.clientId}-`)
+            ? { ...message, pending: true, failed: false }
+            : message));
+          await outboxSenderRef.current(item);
+          await removeOutbox(user.id, item.clientId);
+        } catch (sendError) {
+          const attempts = Number(item.attempts || 0) + 1;
+          await patchOutbox(user.id, item.clientId, { status: 'failed', attempts, lastError: String(sendError?.message || 'Message could not be sent.') });
+          setMessages(current => current.map(message => message.clientId === item.clientId || message.clientId?.startsWith(`${item.clientId}-`)
+            ? { ...message, pending: false, failed: true, sendError: String(sendError?.message || '') }
+            : message));
+          if (navigator.onLine && attempts < 4) {
+            window.setTimeout(() => flushOutbox(item.clientId), Math.min(30000, 2500 * (2 ** attempts)));
           }
-          await studioClient.chat.send(item.conversationId, payload);
-        } catch {
-          remaining.push(item);
         }
       }
-      window.localStorage.setItem(queueKey, JSON.stringify(remaining));
-      setQueuedCount(remaining.length);
-      if (!remaining.length) {
-        load().catch(() => {});
-        if (activeIdRef.current) loadMessages(activeIdRef.current, '', { mergeLatest: true }).catch(() => {});
-      }
-    };
-    setQueuedCount(readQueue().length);
-    window.addEventListener('online', flushQueue);
-    flushQueue();
-    return () => window.removeEventListener('online', flushQueue);
-  }, [queueKey]);
+      await refreshOutbox();
+      if (activeIdRef.current) await loadMessages(activeIdRef.current, '', { mergeLatest: true }).catch(() => {});
+      load().catch(() => {});
+    } finally {
+      outboxFlushRef.current = false;
+    }
+  };
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    let cancelled = false;
+    refreshOutbox().then(() => {
+      if (!cancelled && navigator.onLine) window.setTimeout(() => flushOutbox(), 0);
+    });
+    const reconnect = () => flushOutbox();
+    window.addEventListener('online', reconnect);
+    return () => { cancelled = true; window.removeEventListener('online', reconnect); };
+  }, [user?.id]);
+  useEffect(() => {
+    if (!activeId) return;
+    const queued = outboxItems.filter(item => item.conversationId === activeId);
+    if (!queued.length) return;
+    setMessages(current => {
+      const existingClientIds = new Set(current.map(message => message.clientId).filter(Boolean));
+      const additions = queued.flatMap(item => {
+        if (item.kind === 'attachments') {
+          return (item.attachments || []).map((attachment, index) => {
+            const itemClientId = `${item.clientId}-${index}`;
+            if (existingClientIds.has(itemClientId)) return null;
+            const previewKey = `${item.clientId}:${index}`;
+            if (!outboxPreviewSources.has(previewKey) && attachment.file instanceof Blob) {
+              outboxPreviewSources.set(previewKey, URL.createObjectURL(attachment.file));
+            }
+            return {
+              id: `pending-${itemClientId}`, clientId: itemClientId, conversationId: item.conversationId, senderId: user.id,
+              body: attachment.caption || (index === 0 ? item.body : ''), attachmentUrl: outboxPreviewSources.get(previewKey) || '',
+              attachmentName: attachment.file?.name || 'Attachment', attachmentType: attachment.mime || attachment.file?.type || '',
+              attachmentBytes: attachment.file?.size || 0, voiceDurationSeconds: attachment.voiceDurationSeconds || 0,
+              replyToId: index === 0 ? item.replyToId : null, pending: item.status !== 'failed', failed: item.status === 'failed',
+              pendingLocalAttachment: true, reactions: {}, readBy: [user.id], created_date: item.createdAt,
+            };
+          }).filter(Boolean);
+        }
+        if (existingClientIds.has(item.clientId)) return [];
+        return [{
+          id: `pending-${item.clientId}`, clientId: item.clientId, conversationId: item.conversationId, senderId: user.id,
+          body: item.kind === 'text' ? item.body : '', attachmentUrl: item.kind === 'gif' ? item.gif?.previewUrl || item.gif?.url : '',
+          attachmentName: item.kind === 'gif' ? item.gif?.title || 'GIF' : '', attachmentType: item.kind === 'gif' ? 'image/gif' : '',
+          pending: item.status !== 'failed', failed: item.status === 'failed', pendingLocalAttachment: item.kind === 'gif',
+          suppressPendingIndicator: item.kind === 'gif', replyToId: item.replyToId || null,
+          reactions: {}, readBy: [user.id], created_date: item.createdAt,
+        }];
+      });
+      return additions.length ? [...current, ...additions] : current;
+    });
+  }, [activeId, outboxItems, user.id]);
   useEffect(() => {
     if (adminMode) return undefined;
     document.documentElement.classList.toggle('messages-conversation-open', mobileConversationOpen);
@@ -1904,7 +1965,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     setMessages((current) => {
       if (!options.mergeLatest) return rows;
       const confirmedClientIds = new Set(rows.map((item) => item.clientId).filter(Boolean));
-      const retained = current.filter((item) => !item.pending || !confirmedClientIds.has(item.clientId));
+      const retained = current.filter((item) => !(String(item.id || '').startsWith('pending-') && confirmedClientIds.has(item.clientId)));
       return [...new Map([...retained, ...rows].map((item) => [item.id, item])).values()]
         .sort((a, b) => String(a.created_date).localeCompare(String(b.created_date)));
     });
@@ -2542,6 +2603,16 @@ export default function ChatWorkspace({ adminMode = false }) {
       reactions: {},
       created_date: sentAt,
     }]);
+    await putOutbox({
+      clientId,
+      userId: user.id,
+      conversationId: activeId,
+      kind: 'gif',
+      gif: { id: gif.id, url: gif.url, previewUrl: gif.previewUrl || gif.url, title: gif.title || 'GIF' },
+      status: 'sending',
+      createdAt: sentAt,
+    });
+    refreshOutbox().catch(() => {});
     setGifPickerOpen(false);
     window.requestAnimationFrame(() => {
       const pane = messagesPaneRef.current;
@@ -2570,13 +2641,17 @@ export default function ChatWorkspace({ adminMode = false }) {
             suppressPendingIndicator: true,
           }
         : message));
+      await removeOutbox(user.id, clientId);
+      refreshOutbox().catch(() => {});
       refreshLatestMessages(activeId, { scrollToBottom: true, smooth: true }).catch(() => {});
       load().catch(() => {});
     } catch (sendError) {
+      await patchOutbox(user.id, clientId, { status: 'failed', lastError: String(sendError.message || 'GIF could not be sent.') });
+      refreshOutbox().catch(() => {});
       setMessages(current => current.map(message => message.id === optimisticId
-        ? { ...message, pending: false, failed: true }
+        ? { ...message, pending: false, failed: true, sendError: String(sendError.message || '') }
         : message));
-      setError(sendError.message);
+      setError(navigator.onLine ? 'GIF not sent. Tap retry on the message.' : 'You are offline. The GIF will send after reconnection.');
     }
   };
   useEffect(() => {
@@ -2658,6 +2733,29 @@ export default function ChatWorkspace({ adminMode = false }) {
         pending: true, created_date: new Date().toISOString(),
       }];
     setMessages(current => [...current, ...optimisticMessages]);
+    const outboxJob = {
+      clientId,
+      userId: user.id,
+      conversationId: activeId,
+      kind: outgoingAttachments.length ? 'attachments' : 'text',
+      body: outgoingText,
+      attachments: outgoingAttachments.map(item => ({
+        id: item.id,
+        file: item.file,
+        caption: String(item.caption || ''),
+        mime: item.mime || item.file.type || 'application/octet-stream',
+        voiceDurationSeconds: Number(item.file.voiceDurationSeconds) || 0,
+      })),
+      participantIds: active?.participantIds || [],
+      conversationType: active?.type || 'direct',
+      replyToId: replyingTo?.id || null,
+      viewOnce,
+      disappearAfter,
+      status: 'sending',
+      createdAt: new Date().toISOString(),
+    };
+    await putOutbox(outboxJob);
+    refreshOutbox().catch(() => {});
     setText('');
     setAttachments([]);
     setActiveAttachmentId('');
@@ -2753,50 +2851,117 @@ export default function ChatWorkspace({ adminMode = false }) {
         await studioClient.chat.sendBatch(activeId, messages);
       }
       setUploadProgress({});
+      await removeOutbox(user.id, clientId);
+      refreshOutbox().catch(() => {});
       await loadMessages(activeId, '', { mergeLatest: true, scrollToBottom: true, smooth: true });
       await load();
       outgoingAttachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
       return true;
     } catch (sendError) {
-      if (!outgoingAttachments.length && (!navigator.onLine || /fetch|network|offline/i.test(String(sendError.message)))) {
-        const queued = {
-          conversationId: activeId,
-          encryptBody: active?.type !== 'announcement',
-          participantIds: active?.participantIds || [],
-          payload: {
-            clientId: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-            body: outgoingText,
-            replyToId: replyingTo?.id || null,
-            allowForward: false,
-          },
-          queuedAt: new Date().toISOString(),
-        };
-        let pending = [];
-        try {
-          pending = JSON.parse(window.localStorage.getItem(queueKey) || '[]');
-        } catch {
-          /* start a clean queue */
-        }
-        pending.push(queued);
-        window.localStorage.setItem(queueKey, JSON.stringify(pending.slice(-100)));
-        setQueuedCount(pending.length);
-        setText('');
-        setReplyingTo(null);
-        setError('You are offline. This message is queued and will send automatically when the connection returns.');
-        return false;
-      }
-      setMessages(current => current.filter(message => !optimisticMessages.some(pending => pending.id === message.id)));
-      if (outgoingAttachments.length) {
-        setAttachments(outgoingAttachments);
-        setActiveAttachmentId(outgoingAttachments[0]?.id || '');
-      }
+      await patchOutbox(user.id, clientId, { status: 'failed', lastError: String(sendError.message || 'Message could not be sent.') });
+      refreshOutbox().catch(() => {});
+      setMessages(current => current.map(message => optimisticMessages.some(pending => pending.id === message.id)
+        ? { ...message, pending: false, failed: true, sendError: String(sendError.message || '') }
+        : message));
       setUploadFailed(Boolean(outgoingAttachments.length) && sendError.name !== 'AbortError');
-      setError(sendError.name === 'AbortError' ? 'Upload cancelled. Your files are still ready to retry.' : sendError.message);
+      setError(sendError.name === 'AbortError'
+        ? 'Upload cancelled. Tap retry when you are ready.'
+        : navigator.onLine
+          ? 'Message not sent. Tap retry on the message.'
+          : 'You are offline. The message will send automatically after reconnection.');
       return false;
     } finally {
       setBusy(false);
       uploadAbortRef.current = null;
     }
+  };
+  const deliverQueuedOutbox = async (item) => {
+    if (item.kind === 'gif') {
+      const imported = await studioClient.chat.importGif(item.gif.id);
+      gifDisplaySources.set(item.clientId, item.gif.previewUrl || item.gif.url || imported.file_url);
+      return studioClient.chat.send(item.conversationId, {
+        clientId: item.clientId,
+        body: '',
+        attachmentUrl: imported.file_url,
+        attachmentName: imported.media?.filename || item.gif.title || 'GIF',
+        attachmentType: imported.media?.mime || 'image/gif',
+        attachmentBytes: imported.media?.bytes || 0,
+        allowForward: true,
+      });
+    }
+    if (item.kind === 'text') {
+      const shouldEncrypt = item.conversationType !== 'announcement';
+      let ciphertext = '';
+      let deliverySecurity = shouldEncrypt ? 'end-to-end-encrypted' : 'standard';
+      if (shouldEncrypt) {
+        try {
+          ciphertext = await encryptChatText(studioClient, { body: item.body, participantIds: item.participantIds || [], userId: user.id });
+        } catch (encryptionError) {
+          if (!/not enabled encrypted messaging|no verified recipient devices/i.test(String(encryptionError.message || ''))) throw encryptionError;
+          deliverySecurity = 'account-protected';
+        }
+      }
+      return studioClient.chat.send(item.conversationId, {
+        clientId: item.clientId,
+        body: ciphertext ? '' : item.body,
+        ciphertext,
+        encryption: ciphertext ? { algorithm: 'ECDH-P256+AES-256-GCM', version: 1 } : null,
+        deliverySecurity,
+        replyToId: item.replyToId || null,
+        expiresInSeconds: item.disappearAfter || 0,
+        allowForward: false,
+      });
+    }
+    if (item.kind === 'attachments') {
+      const payloads = await mapWithConcurrency(item.attachments || [], 2, async (attachment, index) => {
+        const file = attachment.file;
+        if (!(file instanceof Blob)) throw new Error('The queued file is no longer available on this device.');
+        const originalType = attachment.mime || file.type || 'application/octet-stream';
+        const originalFile = file instanceof File && file.type === originalType
+          ? file
+          : new File([file], file.name || `attachment-${index + 1}`, { type: originalType, lastModified: file.lastModified || Date.now() });
+        const caption = String(attachment.caption || '').trim() || (index === 0 ? item.body : '');
+        const shouldEncrypt = item.conversationType !== 'announcement';
+        let encrypted = null;
+        let deliverySecurity = shouldEncrypt ? 'end-to-end-encrypted' : 'standard';
+        try {
+          encrypted = shouldEncrypt
+            ? await encryptChatAttachment(studioClient, { file: originalFile, body: caption, participantIds: item.participantIds || [], userId: user.id })
+            : null;
+        } catch (encryptionError) {
+          if (!/not enabled encrypted messaging|no verified recipient devices/i.test(String(encryptionError.message || ''))) throw encryptionError;
+          deliverySecurity = 'account-protected';
+        }
+        const uploadFile = encrypted?.file || originalFile;
+        const uploaded = await studioClient.integrations.Core.UploadFileProgress({ file: uploadFile, purpose: 'chat-attachment' });
+        return {
+          clientId: `${item.clientId}-${index}`,
+          body: encrypted ? '' : caption,
+          ciphertext: encrypted?.ciphertext || '',
+          encryption: encrypted ? { algorithm: 'ECDH-P256+AES-256-GCM', version: 1, attachment: 'AES-256-GCM' } : null,
+          deliverySecurity,
+          attachmentUrl: uploaded.file_url,
+          attachmentName: encrypted ? 'encrypted-attachment.bin' : originalFile.name,
+          attachmentType: encrypted ? 'application/vnd.reigns.encrypted' : uploaded.media?.mime || originalType,
+          attachmentBytes: uploadFile.size,
+          voiceDurationSeconds: isVoiceAttachment({ name: originalFile.name, type: originalType }) ? attachment.voiceDurationSeconds || 0 : 0,
+          replyToId: index === 0 ? item.replyToId || null : null,
+          viewOnce: Boolean(item.viewOnce),
+          expiresInSeconds: item.disappearAfter || 0,
+          allowForward: false,
+        };
+      });
+      return studioClient.chat.sendBatch(item.conversationId, payloads);
+    }
+    throw new Error('This queued message type is not supported.');
+  };
+  outboxSenderRef.current = deliverQueuedOutbox;
+  const retryOutboxMessage = async (message) => {
+    const rootClientId = outboxItems.find(item => message.clientId === item.clientId || message.clientId?.startsWith(`${item.clientId}-`))?.clientId || '';
+    if (!rootClientId) return;
+    await patchOutbox(user.id, rootClientId, { status: 'queued', lastError: '' });
+    await refreshOutbox();
+    flushOutbox(rootClientId);
   };
   const send = () => sendOutgoing();
   const shareLocation = (live = false) => {
@@ -4341,7 +4506,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                             touchAction: 'pan-y',
                             transform: swipeReply?.id === message.id ? `translate3d(${swipeReply.offset}px, 0, 0)` : undefined,
                           }}
-                          className={`chat-bubble relative min-w-0 ${compactTextOnly ? 'chat-bubble-text-only' : ''} ${messageSelectionMode ? 'cursor-pointer' : ''} ${emojiOnly ? 'chat-bubble-emoji w-fit max-w-[86%] border-0 bg-transparent px-1 py-0' : bareAttachment ? 'chat-bubble-media w-fit max-w-[86%] border-0 bg-transparent p-0 sm:max-w-[28rem]' : `rounded-xl border ${voiceAttachment ? 'w-fit max-w-[92%] px-1 py-1 sm:max-w-[20rem]' : `w-fit max-w-[86%] ${compactTextOnly ? 'px-2.5 py-1' : 'px-2.5 py-1.5'} sm:max-w-[28rem]`} ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}`}
+                          className={`chat-bubble relative min-w-0 ${compactTextOnly ? 'chat-bubble-text-only' : ''} ${messageSelectionMode ? 'cursor-pointer' : ''} ${emojiOnly ? 'chat-bubble-emoji w-fit max-w-[86%] border-0 bg-transparent px-1 py-0' : bareAttachment ? 'chat-bubble-media w-fit max-w-[86%] border-0 bg-transparent p-0 sm:max-w-[24rem]' : `rounded-xl border ${voiceAttachment ? 'w-fit max-w-[92%] px-1 py-1 sm:max-w-[20rem]' : `w-fit max-w-[86%] ${compactTextOnly ? 'px-2.5 py-1' : 'px-2.5 py-1.5'} sm:max-w-[24rem]`} ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}`}
                         >
                           <span
                             aria-hidden="true"
@@ -4360,9 +4525,19 @@ export default function ChatWorkspace({ adminMode = false }) {
                           )}
                           {message.pending && !message.suppressPendingIndicator && (
                             <div className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-wider text-brass/70" role="status">
-                              <span className={chatAnimationsEnabled ? 'chat-sending-dot' : ''} />
+                              <Loader2 size={12} className={chatAnimationsEnabled ? 'animate-spin' : ''} />
                               {message.pendingUploadItemId ? `Sending ${uploadProgress[message.pendingUploadItemId] || 1}%` : 'Sending'}
                             </div>
+                          )}
+                          {message.failed && (
+                            <button
+                              type="button"
+                              onClick={() => retryOutboxMessage(message)}
+                              className="chat-retry-message mb-1.5 flex items-center gap-1.5 rounded-full border border-rose-400/30 px-2 py-1 text-[10px] font-semibold text-rose-300 hover:bg-rose-400/10"
+                              title={message.sendError || 'Message not sent'}
+                            >
+                              <RotateCcw size={11} /> Failed · Retry
+                            </button>
                           )}
                           {message.deletedForEveryone ? (
                             <div className="flex items-center gap-3">
@@ -4511,9 +4686,9 @@ export default function ChatWorkspace({ adminMode = false }) {
                           )}
                           {message.starredBy?.includes(user.id) && <Star size={12} className="absolute right-2 top-2 fill-brass text-brass" aria-label="Starred message" />}
                           {message.pinned && <Pin size={12} className="absolute right-7 top-2 fill-brass text-brass" aria-label="Pinned message" />}
-                          <div className="mt-1.5 flex flex-wrap items-end gap-2">
+                          <div className="chat-message-footer mt-1 flex items-end gap-1.5">
                             {!message.deletedForEveryone && (
-                              <div data-chat-popover className={`relative flex items-center gap-1 ${compactTextOnly ? `chat-text-actions absolute top-1/2 -translate-y-1/2 ${mine ? 'right-full mr-1' : 'left-full ml-1'}` : ''}`}>
+                              <div data-chat-popover className={`chat-message-actions flex items-center gap-0.5 ${mine ? 'chat-message-actions--mine' : 'chat-message-actions--incoming'}`}>
                                 <button
                                   type="button"
                                   onClick={() => setReplyingTo(message)}
@@ -4550,13 +4725,17 @@ export default function ChatWorkspace({ adminMode = false }) {
                                 </button>
                               </div>
                             )}
-                            <div className="ml-auto flex shrink-0 items-center gap-1 self-end text-[10px] leading-none text-ivory/35">
+                            <div className="chat-delivery-meta ml-auto flex shrink-0 items-center gap-1 self-end text-[10px] leading-none text-ivory/35">
                               {message.editedAt && <span>edited · </span>}
                               {new Date(message.created_date).toLocaleTimeString([], {
                                 hour: '2-digit',
                                 minute: '2-digit',
                               })}
-                              {mine && (message.readAt
+                              {mine && (message.failed
+                                ? <WifiOff size={12} aria-label="Failed" className="text-rose-300" />
+                                : message.pending
+                                  ? <Timer size={11} aria-label="Sending" className="text-ivory/30" />
+                                  : message.readAt || (message.readBy || []).some((readerId) => readerId !== user.id)
                                 ? <CheckCheck size={13} aria-label="Read" className="text-sky-400" />
                                 : message.deliveredAt
                                   ? <CheckCheck size={13} aria-label="Delivered" className="text-ivory/35" />

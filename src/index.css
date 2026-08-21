@@ -651,6 +651,59 @@
   transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
+/* Message controls stay attached to their bubble instead of reserving a wide,
+   empty row. Pointer devices reveal them on hover; touch devices keep a small
+   stable action row below the content. */
+.chat-message-actions {
+  flex: 0 0 auto;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .chat-message-actions {
+    position: absolute;
+    top: 50%;
+    z-index: 3;
+    padding: .15rem;
+    border: 1px solid rgb(201 169 110 / .12);
+    border-radius: 999px;
+    background: rgb(15 15 16 / .94);
+    box-shadow: 0 .4rem 1rem rgb(0 0 0 / .22);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-50%) scale(.96);
+    transition: opacity 140ms ease, transform 140ms ease;
+  }
+
+  .chat-message-actions--mine { right: calc(100% + .35rem); }
+  .chat-message-actions--incoming { left: calc(100% + .35rem); }
+  .chat-bubble:hover .chat-message-actions,
+  .chat-bubble:focus-within .chat-message-actions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .chat-message-actions {
+    order: 0;
+    margin-left: -.25rem;
+  }
+
+  .chat-message-actions button {
+    width: 1.8rem;
+    height: 1.65rem;
+  }
+}
+
+.chat-bubble-text-only .chat-message-footer {
+  margin-top: .2rem;
+}
+
+.chat-bubble-text-only p + .chat-message-footer {
+  min-height: .8rem;
+}
+
 .chat-unread-divider {
   animation: chat-unread-divider-in 220ms ease-out both;
 }
