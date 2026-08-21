@@ -16,6 +16,7 @@ import {
   CalendarDays,
   Camera,
   Clapperboard,
+  ClipboardPaste,
   Download,
   File,
   FileArchive,
@@ -2352,6 +2353,67 @@ export default function ChatWorkspace({ adminMode = false }) {
       setError('This photo could not be added. Please close other apps and try once more.');
     }
   };
+  const clipboardFiles = (clipboardData) => {
+    const itemFiles = [...(clipboardData?.items || [])]
+      .filter((item) => item.kind === 'file')
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+    return itemFiles.length ? itemFiles : [...(clipboardData?.files || [])];
+  };
+  const handleComposerPaste = async (event) => {
+    const files = clipboardFiles(event.clipboardData);
+    if (!files.length) return;
+    event.preventDefault();
+    const pastedText = event.clipboardData?.getData('text/plain') || '';
+    if (pastedText) setText((current) => `${current}${pastedText}`);
+    await chooseFiles(files);
+  };
+  const pasteFromSystemClipboard = async () => {
+    setShowAttachmentMenu(false);
+    setAttachmentMenuPosition(null);
+    setError('');
+    if (!navigator.clipboard?.read) {
+      composerRef.current?.focus();
+      setError('Your browser protects direct clipboard access. Tap the message box, then use Paste from your keyboard or device menu.');
+      return;
+    }
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      const files = [];
+      let clipboardText = '';
+      for (const item of clipboardItems) {
+        for (const type of item.types) {
+          if (type === 'text/plain') {
+            if (!clipboardText) clipboardText = await (await item.getType(type)).text();
+            continue;
+          }
+          if (type === 'text/html') continue;
+          const blob = await item.getType(type);
+          const extension = type.split('/')[1]?.replace(/[^a-z0-9.+-]/gi, '') || 'bin';
+          const name = `clipboard-${Date.now()}-${files.length + 1}.${extension === 'jpeg' ? 'jpg' : extension}`;
+          if (typeof File === 'function') {
+            files.push(new File([blob], name, { type, lastModified: Date.now() }));
+          } else {
+            Object.defineProperties(blob, {
+              name: { value: name, configurable: true },
+              lastModified: { value: Date.now(), configurable: true },
+            });
+            files.push(blob);
+          }
+        }
+      }
+      if (clipboardText) setText((current) => `${current}${clipboardText}`);
+      if (files.length) await chooseFiles(files);
+      if (!clipboardText && !files.length) setError('There is no supported text, image, or file in the clipboard.');
+      composerRef.current?.focus();
+    } catch (clipboardError) {
+      composerRef.current?.focus();
+      const denied = /denied|permission|notallowed/i.test(String(clipboardError?.name || clipboardError?.message));
+      setError(denied
+        ? 'Clipboard access was blocked. Allow it in your browser settings, or tap the message box and use Paste.'
+        : 'This clipboard item could not be pasted. Try copying it again, then paste into the message box.');
+    }
+  };
   const removeAttachment = (id) =>
     setAttachments((current) => {
       const removed = current.find((item) => item.id === id);
@@ -4466,7 +4528,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     Retry failed upload
                   </button>
                 )}
-                <div className={`chat-composer-shell flex min-w-0 items-end gap-0.5 ${recording ? 'chat-composer-shell--recording bg-transparent p-0 shadow-none' : 'rounded-[1.55rem] border border-brass/20 bg-obsidian p-1 shadow-inner'}`}>
+                <div onPaste={handleComposerPaste} className={`chat-composer-shell flex min-w-0 items-end gap-0.5 ${recording ? 'chat-composer-shell--recording bg-transparent p-0 shadow-none' : 'rounded-[1.55rem] border border-brass/20 bg-obsidian p-1 shadow-inner'}`}>
                   <div data-chat-popover className={`relative ${recording ? 'md:hidden' : ''}`}>
                     <button
                       type="button"
@@ -4510,6 +4572,14 @@ export default function ChatWorkspace({ adminMode = false }) {
                         >
                           <FileText size={15} className="text-purple-400" />
                           <span>Documents</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={pasteFromSystemClipboard}
+                          className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/70 hover:bg-brass/10"
+                        >
+                          <ClipboardPaste size={15} className="text-brass" />
+                          <span>Paste</span>
                         </button>
                         <button
                           type="button"
