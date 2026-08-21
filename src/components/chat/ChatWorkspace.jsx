@@ -3145,9 +3145,9 @@ export default function ChatWorkspace({ adminMode = false }) {
         />
       )}
       <div
-        className={`grid min-h-0 max-w-full overflow-hidden bg-carbon lg:grid-cols-[minmax(280px,350px)_minmax(0,1fr)] ${adminMode ? 'h-[clamp(360px,calc(100dvh-13rem),760px)] md:border md:border-brass/15' : 'h-full'}`}
+        className={`chat-workspace grid min-h-0 max-w-full overflow-hidden bg-carbon lg:grid-cols-[minmax(280px,350px)_minmax(0,1fr)] ${adminMode ? 'h-[clamp(360px,calc(100dvh-13rem),760px)] md:border md:border-brass/15' : 'h-full'}`}
       >
-        <aside className={`${mobileConversationOpen ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col overflow-hidden border-r border-brass/15`}>
+        <aside className={`chat-sidebar ${mobileConversationOpen ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col overflow-hidden border-r border-brass/15`}>
           <div className="shrink-0 border-b border-brass/15 p-4">
             {!adminMode && (
               <Link
@@ -3468,7 +3468,7 @@ export default function ChatWorkspace({ adminMode = false }) {
               {error}
             </p>
           )}
-          <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto pb-20 [scrollbar-gutter:stable] md:pb-5">
+          <div className="chat-scroll-pane min-h-0 flex-1 overscroll-contain overflow-y-auto pb-20 [scrollbar-gutter:stable] md:pb-5">
             {matchingConversations.map((conversation) => {
               const person = conversation.participants?.find((entry) => entry.id !== user.id);
               return (
@@ -3478,7 +3478,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     setActiveId(conversation.id);
                     setMobileConversationOpen(true);
                   }}
-                  className={`flex w-full items-center gap-3 border-b border-brass/10 p-4 text-left ${activeId === conversation.id ? 'bg-brass/10' : 'hover:bg-ivory/[0.03]'}`}
+                  className={`chat-list-item flex w-full items-center gap-3 border-b border-brass/10 p-4 text-left ${activeId === conversation.id ? 'chat-list-item--active bg-brass/10' : 'hover:bg-ivory/[0.03]'}`}
                 >
                   <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass/10 text-xs font-semibold text-brass">
                     <span className="flex h-full w-full overflow-hidden rounded-full">
@@ -3530,7 +3530,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                 <button
                   key={person.id}
                   onClick={() => start(person)}
-                  className="flex min-h-12 w-full items-center gap-3 border-b border-brass/10 text-left text-sm text-ivory/60 hover:text-ivory"
+                  className="chat-list-item flex min-h-12 w-full items-center gap-3 border-b border-brass/10 text-left text-sm text-ivory/60 hover:text-ivory"
                 >
                   <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ivory/5 text-[10px] text-brass">
                     <span className="flex h-full w-full overflow-hidden rounded-full">
@@ -3547,7 +3547,7 @@ export default function ChatWorkspace({ adminMode = false }) {
           </div>
         </aside>
 
-        <section className={`${!mobileConversationOpen ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col overflow-hidden`}>
+        <section className={`chat-conversation-panel ${!mobileConversationOpen ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col overflow-hidden`}>
           {active ? (
             <>
               <header className="shrink-0 flex items-center gap-1.5 border-b border-brass/15 px-2 py-1.5 sm:gap-3 sm:p-4">
@@ -3649,7 +3649,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     <MoreVertical size={18} />
                   </button>
                   {showConversationMenu && conversationMenuPosition && createPortal(
-                    <div data-chat-popover style={conversationMenuPosition} className="chat-conversation-menu chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
+                    <div data-chat-popover style={conversationMenuPosition} className="chat-popover-enter chat-conversation-menu chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
                       {active.type === 'group' && (
                         <button type="button" onClick={() => { setShowConversationMenu(false); openGroupSettings(); }} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-xs text-ivory/65 hover:bg-brass/10">
                           <Users size={14} /> Group info
@@ -3885,13 +3885,13 @@ export default function ChatWorkspace({ adminMode = false }) {
                 role="log"
                 aria-label={`Messages with ${conversationName(active, user.id)}`}
                 aria-live="polite"
-                className="atelier-chat-canvas relative min-h-0 min-w-0 flex-1 overscroll-contain overflow-x-hidden overflow-y-auto p-3 [scrollbar-gutter:stable] sm:p-6"
+                className="atelier-chat-canvas chat-scroll-pane relative min-h-0 min-w-0 flex-1 overscroll-contain overflow-x-hidden overflow-y-auto p-3 [scrollbar-gutter:stable] sm:p-6"
               >
                 {messagesLoading && (
                   <div className="space-y-3 py-3" role="status" aria-label="Loading messages">
                     {[0, 1, 2, 3, 4].map((row) => (
                       <div key={row} className={`flex ${row % 2 ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`h-14 animate-pulse rounded-2xl bg-ivory/[0.045] ${row % 3 === 0 ? 'w-[38%]' : 'w-[56%]'}`} />
+                        <div className={`chat-skeleton h-14 rounded-2xl bg-ivory/[0.045] ${row % 3 === 0 ? 'w-[38%]' : 'w-[56%]'}`} />
                       </div>
                     ))}
                   </div>
@@ -3950,7 +3950,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     <div
                       key={message.id}
                       data-chat-message-id={message.id}
-                      className={`min-w-0 max-w-full rounded-xl transition-[background-color,box-shadow] duration-500 ${groupedWithPrevious ? 'mt-2.5' : 'mt-4'} ${chatAnimationsEnabled ? 'chat-message-enter' : ''} ${highlightedMessageId === message.id ? 'bg-brass/10 shadow-[0_0_0_1px_rgba(200,164,91,0.35)]' : ''}`}
+                      className={`chat-message-row ${mine ? 'chat-message-row--mine' : 'chat-message-row--incoming'} min-w-0 max-w-full rounded-xl transition-[background-color,box-shadow] duration-500 ${groupedWithPrevious ? 'mt-2.5' : 'mt-4'} ${chatAnimationsEnabled ? 'chat-message-enter' : ''} ${highlightedMessageId === message.id ? 'bg-brass/10 shadow-[0_0_0_1px_rgba(200,164,91,0.35)]' : ''}`}
                     >
                       {showDate && (
                         <div className="my-4 flex items-center gap-3" aria-label={`Messages from ${new Date(message.created_date).toLocaleDateString()}`}>
@@ -4224,7 +4224,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                   <button
                     type="button"
                     onClick={jumpToLatest}
-                    className="sticky bottom-2 ml-auto flex h-10 items-center gap-2 rounded-full border border-brass/30 bg-carbon px-4 text-xs text-brass shadow-xl"
+                    className="chat-jump-latest sticky bottom-2 ml-auto flex h-10 items-center gap-2 rounded-full border border-brass/30 bg-carbon px-4 text-xs text-brass shadow-xl"
                   >
                     <ArrowDown size={14} />
                     Latest
@@ -4343,7 +4343,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     Retry failed upload
                   </button>
                 )}
-                <div className={`flex min-w-0 items-end gap-0.5 ${recording ? 'bg-transparent p-0 shadow-none' : 'rounded-[1.55rem] border border-brass/20 bg-obsidian p-1 shadow-inner'}`}>
+                <div className={`chat-composer-shell flex min-w-0 items-end gap-0.5 ${recording ? 'chat-composer-shell--recording bg-transparent p-0 shadow-none' : 'rounded-[1.55rem] border border-brass/20 bg-obsidian p-1 shadow-inner'}`}>
                   <div data-chat-popover className={`relative ${recording ? 'md:hidden' : ''}`}>
                     <button
                       type="button"
@@ -4361,7 +4361,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                       <Paperclip size={17} />
                     </button>
                     {showAttachmentMenu && attachmentMenuPosition && createPortal(
-                      <div data-chat-popover style={attachmentMenuPosition} className="chat-attachment-menu chat-mobile-sheet chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
+                      <div data-chat-popover style={attachmentMenuPosition} className="chat-popover-enter chat-attachment-menu chat-mobile-sheet chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[230] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
                         <div className="chat-sheet-heading" aria-hidden="true"><span />Share</div>
                         <button
                           type="button"
@@ -4581,7 +4581,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => event.stopPropagation()}
                     style={window.innerWidth >= 1024 ? emojiMenuPosition : undefined}
-                    className="chat-emoji-picker fixed inset-x-0 bottom-0 z-[240] h-[min(46dvh,23rem)] overflow-hidden rounded-t-2xl border border-brass/20 bg-carbon shadow-2xl lg:inset-auto lg:h-[27rem] lg:rounded-2xl"
+                    className="chat-emoji-picker chat-popover-enter fixed inset-x-0 bottom-0 z-[240] h-[min(46dvh,23rem)] overflow-hidden rounded-t-2xl border border-brass/20 bg-carbon shadow-2xl lg:inset-auto lg:h-[27rem] lg:rounded-2xl"
                   >
                     <div className="grid h-11 grid-cols-3 border-b border-white/10 px-3" aria-label="Emoji, GIF and sticker choices">
                       {['emoji', 'gif', 'stickers'].map(tab => (
@@ -4624,7 +4624,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                   </div>, document.body,
                 )}
                 {composerOptionsPosition && createPortal(
-                  <div data-chat-popover style={composerOptionsPosition} className="fixed z-[240] overflow-hidden rounded-2xl border border-brass/20 bg-carbon p-2 text-xs shadow-2xl">
+                  <div data-chat-popover style={composerOptionsPosition} className="chat-popover-enter fixed z-[240] overflow-hidden rounded-2xl border border-brass/20 bg-carbon p-2 text-xs shadow-2xl">
                     <button
                       type="button"
                       disabled={!attachments.length}
@@ -4764,7 +4764,7 @@ export default function ChatWorkspace({ adminMode = false }) {
             setMessageMenuPosition(null);
           };
           return createPortal(
-            <div data-chat-popover style={messageMenuPosition} className="chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[220] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
+            <div data-chat-popover style={messageMenuPosition} className="chat-popover-enter chat-menu-scroll chat-menu-fade chat-menu-compact fixed z-[220] overflow-y-auto overscroll-contain rounded-xl border border-brass/20 bg-carbon px-1 shadow-2xl">
               {canEdit && (
                 <button
                   type="button"
