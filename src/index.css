@@ -658,6 +658,22 @@
   flex: 0 0 auto;
 }
 
+.chat-virtual-row {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 7rem;
+}
+
+.chat-media-placeholder {
+  background: linear-gradient(100deg, rgb(255 255 255 / .035) 20%, rgb(201 169 110 / .11) 42%, rgb(255 255 255 / .035) 65%);
+  background-size: 240% 100%;
+  animation: chat-media-shimmer 1.25s ease-in-out infinite;
+}
+
+@keyframes chat-media-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
 @media (hover: hover) and (pointer: fine) {
   .chat-message-actions {
     position: absolute;
@@ -674,10 +690,17 @@
     transition: opacity 140ms ease, transform 140ms ease;
   }
 
-  .chat-message-actions--mine { right: calc(100% + .35rem); }
-  .chat-message-actions--incoming { left: calc(100% + .35rem); }
+  .chat-message-actions::before {
+    content: '';
+    position: absolute;
+    inset: -.55rem -.7rem;
+  }
+  .chat-message-actions button { position: relative; z-index: 1; }
+  .chat-message-actions--mine { right: calc(100% + .08rem); }
+  .chat-message-actions--incoming { left: calc(100% + .08rem); }
   .chat-bubble:hover .chat-message-actions,
-  .chat-bubble:focus-within .chat-message-actions {
+  .chat-bubble:focus-within .chat-message-actions,
+  .chat-message-actions:hover {
     opacity: 1;
     pointer-events: auto;
     transform: translateY(-50%) scale(1);

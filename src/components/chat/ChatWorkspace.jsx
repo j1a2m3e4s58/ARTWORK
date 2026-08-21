@@ -114,9 +114,35 @@ const writeGifSearchCache = (query, value) => {
     });
   }
 };
-// Share in-flight work across refreshes so the same attachment is not downloaded
-// and decrypted more than once while its message remains on screen.
+// Share in-flight work and retain a small LRU of decrypted blobs. Object URLs are
+// short-lived, but reopening recent media no longer downloads/decrypts it.
 const attachmentDecryptions = new Map();
+const decryptedAttachmentCache = new Map();
+const MAX_DECRYPTED_CACHE_ITEMS = 24;
+const MAX_DECRYPTED_CACHE_BYTES = 64 * 1024 * 1024;
+let decryptedAttachmentCacheBytes = 0;
+const readCachedAttachment = (key) => {
+  const blob = decryptedAttachmentCache.get(key);
+  if (!blob) return null;
+  decryptedAttachmentCache.delete(key);
+  decryptedAttachmentCache.set(key, blob);
+  return blob;
+};
+const cacheDecryptedAttachment = (key, blob) => {
+  if (!blob || blob.size > MAX_DECRYPTED_CACHE_BYTES) return blob;
+  const previous = decryptedAttachmentCache.get(key);
+  if (previous) decryptedAttachmentCacheBytes -= previous.size || 0;
+  decryptedAttachmentCache.delete(key);
+  decryptedAttachmentCache.set(key, blob);
+  decryptedAttachmentCacheBytes += blob.size || 0;
+  while (decryptedAttachmentCache.size > MAX_DECRYPTED_CACHE_ITEMS || decryptedAttachmentCacheBytes > MAX_DECRYPTED_CACHE_BYTES) {
+    const oldestKey = decryptedAttachmentCache.keys().next().value;
+    const oldest = decryptedAttachmentCache.get(oldestKey);
+    decryptedAttachmentCache.delete(oldestKey);
+    decryptedAttachmentCacheBytes -= oldest?.size || 0;
+  }
+  return blob;
+};
 const isEmojiOnlyMessage = value => {
   const text = String(value || '').trim();
   if (!text || text.length > 48 || !/\p{Extended_Pictographic}/u.test(text)) return false;
@@ -352,6 +378,16 @@ const VoiceMessagePlayer = memo(function VoiceMessagePlayer({ src, name = 'Voice
     setDuration(Math.max(0, Number(knownDuration) || 0));
   }, [src, knownDuration]);
 
+  useEffect(() => () => {
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    const player = audioRef.current;
+    if (player) {
+      player.pause();
+      player.removeAttribute('src');
+      player.load();
+    }
+  }, []);
+
   useEffect(() => {
     if (!playing) {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
@@ -411,7 +447,7 @@ const VoiceMessagePlayer = memo(function VoiceMessagePlayer({ src, name = 'Voice
       <audio
         ref={audioRef}
         src={src}
-        preload="auto"
+        preload="metadata"
         onLoadedMetadata={(event) => {
           const player = event.currentTarget;
           if (!synchronizeDuration(player)) {
@@ -961,6 +997,57 @@ function QuotedMessage({ message, target, senderName = 'Reply', onActivate }) {
   );
 }
 
+function LazyMediaImage({ src, alt, className = '', frameClassName = '' }) {
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setLoaded(false); setFailed(false); }, [src]);
+  return (
+    <span className={`chat-media-frame relative block overflow-hidden ${frameClassName}`}>
+      {!loaded && !failed && <span className="chat-media-placeholder absolute inset-0" aria-hidden="true" />}
+      {failed ? (
+        <span className="absolute inset-0 flex items-center justify-center gap-2 bg-obsidian/80 text-xs text-ivory/45"><Image size={18} /> Media unavailable</span>
+      ) : (
+        <img src={src} alt={alt} loading="lazy" decoding="async" onLoad={() => setLoaded(true)} onError={() => setFailed(true)} className={`${className} transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`} />
+      )}
+    </span>
+  );
+}
+
+function ManagedVideo({ src, className = '', controls = true }) {
+  const frameRef = useRef(null);
+  const videoRef = useRef(null);
+  const [nearViewport, setNearViewport] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame || typeof IntersectionObserver === 'undefined') { setNearViewport(true); return undefined; }
+    const observer = new IntersectionObserver(([entry]) => setNearViewport(entry.isIntersecting), { rootMargin: '320px 0px' });
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    const player = videoRef.current;
+    if (!nearViewport && player) {
+      player.pause();
+      player.removeAttribute('src');
+      player.load();
+      setReady(false);
+    }
+  }, [nearViewport]);
+  useEffect(() => () => {
+    const player = videoRef.current;
+    if (player) { player.pause(); player.removeAttribute('src'); player.load(); }
+  }, []);
+  return (
+    <span ref={frameRef} className="chat-media-frame relative block aspect-video overflow-hidden bg-black">
+      {!ready && !failed && <span className="chat-media-placeholder absolute inset-0" aria-hidden="true" />}
+      {failed && <span className="absolute inset-0 flex items-center justify-center gap-2 text-xs text-ivory/45"><Video size={18} /> Video unavailable</span>}
+      <video ref={videoRef} src={nearViewport ? src : undefined} controls={controls} preload="metadata" playsInline onLoadedData={() => setReady(true)} onError={() => setFailed(true)} className={`${className} h-full w-full object-contain transition-opacity duration-200 ${ready ? 'opacity-100' : 'opacity-0'}`} />
+    </span>
+  );
+}
+
 function EncryptedAttachmentPreview({ attachment, compact, onOpen }) {
   const [resolved, setResolved] = useState(null);
   const [failure, setFailure] = useState('');
@@ -970,7 +1057,9 @@ function EncryptedAttachmentPreview({ attachment, compact, onOpen }) {
     setResolved(null);
     setFailure('');
     const decryptionKey = `${attachment.messageId}:${attachment.url}:${attachment.encryptedMetadata?.key || ''}:${attachment.encryptedMetadata?.iv || ''}`;
-    let decrypting = attachmentDecryptions.get(decryptionKey);
+    let decrypting = readCachedAttachment(decryptionKey);
+    if (decrypting) decrypting = Promise.resolve(decrypting);
+    else decrypting = attachmentDecryptions.get(decryptionKey);
     if (!decrypting) {
       decrypting = fetch(attachment.url, { credentials: 'include', cache: 'force-cache' })
         .then((response) => {
@@ -978,6 +1067,7 @@ function EncryptedAttachmentPreview({ attachment, compact, onOpen }) {
           return response.blob();
         })
         .then((blob) => decryptChatAttachment(blob, attachment.encryptedMetadata))
+        .then((blob) => cacheDecryptedAttachment(decryptionKey, blob))
         .finally(() => attachmentDecryptions.delete(decryptionKey));
       attachmentDecryptions.set(decryptionKey, decrypting);
     }
@@ -1024,20 +1114,23 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
     const gif = /image\/gif/i.test(type) || /\.gif(?:$|[?#])/i.test(name || url);
     return (
       <button type="button" onClick={() => onOpen?.(attachment)} className={`mt-1 block overflow-hidden rounded-xl bg-transparent text-left ${gif ? 'w-[9rem] sm:w-[10.5rem]' : ''}`}>
-        <img
+        <LazyMediaImage
           src={url}
           alt={name || (gif ? 'Shared GIF' : 'Shared image')}
           className={gif
-            ? 'aspect-square w-full rounded-xl bg-black/20 object-cover'
-            : `${compact ? 'max-h-40' : 'max-h-72'} w-full rounded-xl object-contain`}
+            ? 'h-full w-full rounded-xl object-cover'
+            : 'h-full w-full rounded-xl object-contain'}
+          frameClassName={gif
+            ? 'aspect-square w-full rounded-xl'
+            : `${compact ? 'h-40' : 'aspect-[4/3] max-h-72'} w-full rounded-xl`}
         />
       </button>
     );
   }
   if (type?.startsWith('video/'))
     return (
-      <div className="mt-1 overflow-hidden rounded-xl bg-black">
-        <video src={url} controls preload="metadata" playsInline className={`${compact ? 'max-h-40' : 'max-h-72'} w-full rounded-xl`} />
+      <div className={`mt-1 overflow-hidden rounded-xl bg-black ${compact ? 'max-h-40' : 'max-h-72'}`}>
+        <ManagedVideo src={url} className="rounded-xl" />
       </div>
     );
   const { Icon, label, color } = fileVisual(type, name);
@@ -1170,10 +1263,10 @@ function PreviewOverlay({ attachment, onClose }) {
           </div>
         </header>
         <div className="min-h-0 flex-1 bg-black/40 p-2 sm:p-4">
-          {attachment.type?.startsWith('image/') && <img src={previewUrl} alt={attachment.name || 'Shared image'} className="h-full w-full object-contain" />}
+          {attachment.type?.startsWith('image/') && <LazyMediaImage src={previewUrl} alt={attachment.name || 'Shared image'} frameClassName="h-full w-full" className="h-full w-full object-contain" />}
           {isPdf && (
             <>
-              <iframe src={previewUrl} title={attachment.name || 'PDF preview'} className="hidden h-full w-full bg-white md:block" />
+              <iframe src={previewUrl} loading="lazy" title={attachment.name || 'PDF preview'} className="hidden h-full w-full bg-white md:block" />
               <div className="flex h-full flex-col items-center justify-center px-5 text-center md:hidden">
                 <span className="flex h-20 w-20 items-center justify-center bg-red-600 text-white">
                   <FileText size={38} />
@@ -1669,6 +1762,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [groupBusy, setGroupBusy] = useState(false);
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const loadingOlderRef = useRef(false);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [unreadMarker, setUnreadMarker] = useState(null);
   const [swipeReply, setSwipeReply] = useState(null);
@@ -3343,9 +3437,11 @@ export default function ChatWorkspace({ adminMode = false }) {
     }
   };
   const loadOlderMessages = async () => {
-    if (!activeId || !nextCursor || loadingOlder) return;
+    if (!activeId || !nextCursor || loadingOlderRef.current) return;
     const pane = messagesPaneRef.current;
     const previousHeight = pane?.scrollHeight || 0;
+    const previousScrollTop = pane?.scrollTop || 0;
+    loadingOlderRef.current = true;
     setLoadingOlder(true);
     try {
       const response = await studioClient.chat.messages(activeId, {
@@ -3353,20 +3449,22 @@ export default function ChatWorkspace({ adminMode = false }) {
         limit: 60,
       });
       const older = await decryptMessageRows(response.items || [], user.id);
-      setMessages((current) => [...older, ...current]);
+      setMessages((current) => [...older, ...current].filter((item, index, rows) => rows.findIndex((candidate) => candidate.id === item.id) === index));
       setNextCursor(response.nextCursor || null);
-      window.requestAnimationFrame(() => {
-        if (pane) pane.scrollTop = pane.scrollHeight - previousHeight;
-      });
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+        if (pane) pane.scrollTop = previousScrollTop + (pane.scrollHeight - previousHeight);
+      }));
     } catch (olderError) {
       setError(olderError.message);
     } finally {
+      loadingOlderRef.current = false;
       setLoadingOlder(false);
     }
   };
   const handleMessageScroll = (event) => {
     const pane = event.currentTarget;
     setShowJumpToLatest(pane.scrollHeight - pane.scrollTop - pane.clientHeight > 220);
+    if (pane.scrollTop < 180 && nextCursor && !messageQuery && !loadingOlderRef.current) loadOlderMessages();
   };
   const jumpToLatest = () => {
     const pane = messagesPaneRef.current;
@@ -4460,7 +4558,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     <div
                       key={message.id}
                       data-chat-message-id={message.id}
-                      className={`chat-message-row ${mine ? 'chat-message-row--mine' : 'chat-message-row--incoming'} min-w-0 max-w-full rounded-xl transition-[background-color,box-shadow] duration-500 ${groupedWithPrevious ? 'mt-2.5' : 'mt-4'} ${chatAnimationsEnabled ? 'chat-message-enter' : ''} ${highlightedMessageId === message.id ? 'bg-brass/10 shadow-[0_0_0_1px_rgba(200,164,91,0.35)]' : ''}`}
+                      className={`chat-message-row chat-virtual-row ${mine ? 'chat-message-row--mine' : 'chat-message-row--incoming'} min-w-0 max-w-full rounded-xl transition-[background-color,box-shadow] duration-500 ${groupedWithPrevious ? 'mt-2.5' : 'mt-4'} ${chatAnimationsEnabled ? 'chat-message-enter' : ''} ${highlightedMessageId === message.id ? 'bg-brass/10 shadow-[0_0_0_1px_rgba(200,164,91,0.35)]' : ''}`}
                     >
                       {showDate && (
                         <div className="my-4 flex items-center gap-3" aria-label={`Messages from ${new Date(message.created_date).toLocaleDateString()}`}>
