@@ -80,6 +80,10 @@ const STICKERS = ['🎨', '✨', '🔥', '👏', '💯', '🥳', '😍', '🙌',
 const MAX_FILE_BYTES = 75 * 1024 * 1024;
 const DEFAULT_GIF_QUERY = 'art reactions';
 const gifSearchMemoryCache = new Map();
+// Preserve the already-decoded picker thumbnail while its saved chat row is
+// reconciled. This prevents a GIF from flashing blank or changing size when
+// the optimistic row is replaced by the server response.
+const gifDisplaySources = new Map();
 const readGifSearchCache = query => {
   const key = String(query || '').trim().toLowerCase();
   if (!key) return null;
@@ -1012,12 +1016,20 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
       <VoiceMessagePlayer src={url} name={name} knownDuration={attachment.duration} />
       </div>
     );
-  if (type?.startsWith('image/'))
+  if (type?.startsWith('image/')) {
+    const gif = /image\/gif/i.test(type) || /\.gif(?:$|[?#])/i.test(name || url);
     return (
-      <button type="button" onClick={() => onOpen?.(attachment)} className="mt-1 block overflow-hidden rounded-xl bg-transparent text-left">
-        <img src={url} alt={name || 'Shared image'} className={`${compact ? 'max-h-40' : 'max-h-72'} w-full rounded-xl object-contain`} />
+      <button type="button" onClick={() => onOpen?.(attachment)} className={`mt-1 block overflow-hidden rounded-xl bg-transparent text-left ${gif ? 'w-[9rem] sm:w-[10.5rem]' : ''}`}>
+        <img
+          src={url}
+          alt={name || (gif ? 'Shared GIF' : 'Shared image')}
+          className={gif
+            ? 'aspect-square w-full rounded-xl bg-black/20 object-cover'
+            : `${compact ? 'max-h-40' : 'max-h-72'} w-full rounded-xl object-contain`}
+        />
       </button>
     );
+  }
   if (type?.startsWith('video/'))
     return (
       <div className="mt-1 overflow-hidden rounded-xl bg-black">
@@ -1396,6 +1408,7 @@ function AttachmentComposer({
   onClose,
   onSend,
 }) {
+  const [captionEmojiOpen, setCaptionEmojiOpen] = useState(false);
   const activeItem = items.find((item) => item.id === activeId) || items[0];
   if (!activeItem) return null;
   const mime = String(activeItem.mime || activeItem.file?.type || '');
@@ -1460,7 +1473,22 @@ function AttachmentComposer({
         )}
       </div>
 
-      <div className="shrink-0 border-t border-white/10 bg-[#111412] px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-6">
+      <div className="relative shrink-0 border-t border-white/10 bg-[#111412] px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-6">
+        {captionEmojiOpen && (
+          <div className="absolute bottom-[calc(100%+.5rem)] right-3 z-20 h-[min(42dvh,21rem)] w-[min(24rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-brass/20 bg-carbon shadow-2xl sm:right-6">
+            <EmojiPicker
+              theme={Theme.DARK}
+              emojiStyle={window.innerWidth >= 1024 ? EmojiStyle.APPLE : EmojiStyle.NATIVE}
+              width="100%"
+              height="100%"
+              lazyLoadEmojis={false}
+              previewConfig={{ showPreview: false }}
+              skinTonesDisabled={false}
+              searchPlaceHolder="Search emoji"
+              onEmojiClick={({ emoji }) => onCaption(activeItem.id, `${activeItem.caption || ''}${emoji}`)}
+            />
+          </div>
+        )}
         <div className="mx-auto flex w-full max-w-3xl items-center rounded-xl bg-[#252826] px-3">
           <Image size={18} className="shrink-0 text-ivory/45" />
           <input
@@ -1471,7 +1499,16 @@ function AttachmentComposer({
             placeholder="Add a caption…"
             className="h-12 min-w-0 flex-1 bg-transparent px-3 text-sm text-ivory outline-none placeholder:text-ivory/40"
           />
-          <Smile size={19} className="shrink-0 text-ivory/45" />
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setCaptionEmojiOpen((open) => !open)}
+            aria-label="Add emoji to caption"
+            aria-expanded={captionEmojiOpen}
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition hover:bg-white/5 ${captionEmojiOpen ? 'text-brass' : 'text-ivory/45'}`}
+          >
+            <Smile size={19} />
+          </button>
         </div>
 
         <div className="mx-auto mt-3 flex w-full max-w-3xl items-center gap-2">
@@ -2384,6 +2421,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     const clientId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
     const optimisticId = `pending-${clientId}`;
     const sentAt = new Date().toISOString();
+    gifDisplaySources.set(clientId, gif.previewUrl || gif.url);
     setMessages(current => [...current, {
       id: optimisticId,
       clientId,
@@ -2412,7 +2450,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     });
     try {
       const imported = await studioClient.chat.importGif(gif.id);
-      await studioClient.chat.send(activeId, {
+      const savedMessage = await studioClient.chat.send(activeId, {
         clientId,
         body: '',
         attachmentUrl: imported.file_url,
@@ -2421,6 +2459,18 @@ export default function ChatWorkspace({ adminMode = false }) {
         attachmentBytes: imported.media?.bytes || 0,
         allowForward: true,
       });
+      setMessages(current => current.map(message => message.id === optimisticId
+        ? {
+            ...savedMessage,
+            attachmentUrl: gifDisplaySources.get(clientId) || imported.file_url,
+            attachmentName: imported.media?.filename || gif.title || 'GIF',
+            attachmentType: imported.media?.mime || 'image/gif',
+            attachmentBytes: imported.media?.bytes || 0,
+            pending: false,
+            pendingLocalAttachment: true,
+            suppressPendingIndicator: true,
+          }
+        : message));
       refreshLatestMessages(activeId, { scrollToBottom: true, smooth: true }).catch(() => {});
       load().catch(() => {});
     } catch (sendError) {
@@ -3968,10 +4018,11 @@ export default function ChatWorkspace({ adminMode = false }) {
                 )}
                 {!messagesLoading && messages.map((message, index) => {
                   const mine = message.senderId === user.id;
+                  const stableGifUrl = message.clientId ? gifDisplaySources.get(message.clientId) : '';
                   const attachment = message.attachmentUrl
                     ? {
-                        url: message.pendingLocalAttachment ? message.attachmentUrl : studioClient.chat.attachmentUrl(message.id),
-                        previewUrl: message.pendingLocalAttachment ? message.attachmentUrl : studioClient.chat.attachmentUrl(message.id),
+                        url: stableGifUrl || (message.pendingLocalAttachment ? message.attachmentUrl : studioClient.chat.attachmentUrl(message.id)),
+                        previewUrl: stableGifUrl || (message.pendingLocalAttachment ? message.attachmentUrl : studioClient.chat.attachmentUrl(message.id)),
                         downloadUrl: message.pendingLocalAttachment ? message.attachmentUrl : studioClient.chat.attachmentUrl(message.id, true),
                         name: message.decryptedAttachment?.name || message.attachmentName,
                         type: message.decryptedAttachment?.type || message.attachmentType,
@@ -3984,6 +4035,19 @@ export default function ChatWorkspace({ adminMode = false }) {
                   const voiceAttachment = isVoiceAttachment(attachment || {});
                   const emojiOnly = !attachment && !message.sticker && !message.richMedia && isEmojiOnlyMessage(message.body);
                   const bareAttachment = Boolean(attachment && !message.body && !message.replyToId && !message.richMedia);
+                  const compactTextOnly = Boolean(
+                    message.body
+                    && !attachment
+                    && !message.sticker
+                    && !message.richMedia
+                    && !message.replyToId
+                    && !message.sharedLocation
+                    && !message.sharedContact
+                    && !message.sharedPoll
+                    && !message.sharedEvent
+                    && !message.action?.url
+                    && !firstSecureUrl(message.body),
+                  );
                   const groupedReactions = Object.values(message.reactions || {}).reduce(
                     (result, emoji) => ({
                       ...result,
@@ -4038,7 +4102,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                         )}
                         <article
                           onClick={messageSelectionMode ? () => setSelectedMessageIds(current => current.includes(message.id) ? current.filter(id => id !== message.id) : [...current, message.id]) : undefined}
-                          className={`chat-bubble relative min-w-0 ${messageSelectionMode ? 'cursor-pointer' : ''} ${emojiOnly ? 'chat-bubble-emoji w-fit max-w-[86%] border-0 bg-transparent px-1 py-0' : bareAttachment ? 'chat-bubble-media w-fit max-w-[86%] border-0 bg-transparent p-0 sm:max-w-[28rem]' : `rounded-xl border ${voiceAttachment ? 'w-fit max-w-[92%] px-1 py-1 sm:max-w-[20rem]' : 'w-fit max-w-[86%] px-2.5 py-1.5 sm:max-w-[28rem]'} ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}`}
+                          className={`chat-bubble relative min-w-0 ${compactTextOnly ? 'chat-bubble-text-only' : ''} ${messageSelectionMode ? 'cursor-pointer' : ''} ${emojiOnly ? 'chat-bubble-emoji w-fit max-w-[86%] border-0 bg-transparent px-1 py-0' : bareAttachment ? 'chat-bubble-media w-fit max-w-[86%] border-0 bg-transparent p-0 sm:max-w-[28rem]' : `rounded-xl border ${voiceAttachment ? 'w-fit max-w-[92%] px-1 py-1 sm:max-w-[20rem]' : `w-fit max-w-[86%] ${compactTextOnly ? 'px-2.5 py-1' : 'px-2.5 py-1.5'} sm:max-w-[28rem]`} ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}`}
                         >
                           {message.replyToId && (
                             <QuotedMessage
@@ -4203,7 +4267,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                           {message.pinned && <Pin size={12} className="absolute right-7 top-2 fill-brass text-brass" aria-label="Pinned message" />}
                           <div className="mt-1.5 flex flex-wrap items-end gap-2">
                             {!message.deletedForEveryone && (
-                              <div data-chat-popover className="relative flex items-center gap-1">
+                              <div data-chat-popover className={`relative flex items-center gap-1 ${compactTextOnly ? `chat-text-actions absolute top-1/2 -translate-y-1/2 ${mine ? 'right-full mr-1' : 'left-full ml-1'}` : ''}`}>
                                 <button
                                   type="button"
                                   onClick={() => setReplyingTo(message)}
