@@ -659,6 +659,10 @@
   animation: chat-info-sheet-in 220ms cubic-bezier(.2, .85, .25, 1) both;
 }
 
+.chat-pinned-banner {
+  animation: chat-pinned-banner-in 200ms cubic-bezier(.2, .85, .25, 1) both;
+}
+
 @keyframes chat-unread-divider-in {
   from { opacity: 0; transform: translateY(-.35rem); }
   to { opacity: 1; transform: translateY(0); }
@@ -667,6 +671,11 @@
 @keyframes chat-info-sheet-in {
   from { opacity: 0; transform: translateY(1rem) scale(.985); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes chat-pinned-banner-in {
+  from { opacity: 0; transform: translateY(-.35rem); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .chat-composer-footer {
@@ -753,7 +762,7 @@
 @media (prefers-reduced-motion: reduce) {
   .chat-reaction-pop, .chat-sticker-pop, .chat-message-enter, .chat-sending-dot, .chat-emoji-only,
   .chat-sidebar, .chat-conversation-panel, .chat-popover-enter, .chat-jump-latest, .chat-skeleton::after,
-  .chat-unread-divider, .chat-info-sheet { animation: none; }
+  .chat-unread-divider, .chat-info-sheet, .chat-pinned-banner { animation: none; }
 }
 
 @media (hover: hover) and (pointer: fine) {

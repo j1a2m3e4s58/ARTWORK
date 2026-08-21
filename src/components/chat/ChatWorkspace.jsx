@@ -1586,6 +1586,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [editing, setEditing] = useState(null);
   const [messageMenuId, setMessageMenuId] = useState('');
   const [messageInfo, setMessageInfo] = useState(null);
+  const [pinnedMessageIndex, setPinnedMessageIndex] = useState(0);
   const [reactionPickerId, setReactionPickerId] = useState('');
   const [messageMenuPosition, setMessageMenuPosition] = useState(null);
   const [reactionPickerPosition, setReactionPickerPosition] = useState(null);
@@ -2087,6 +2088,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     setEditing(null);
     setMessageMenuId('');
     setMessageInfo(null);
+    setPinnedMessageIndex(0);
     setReactionPickerId('');
     setShowConversationMenu(false);
     setPreview(null);
@@ -2132,6 +2134,13 @@ export default function ChatWorkspace({ adminMode = false }) {
 
   const active = conversations.find((conversation) => conversation.id === activeId);
   const other = active?.participants?.find((person) => person.id !== user.id);
+  const pinnedMessages = useMemo(() => messages
+    .filter(message => message.pinned && !message.deletedForEveryone)
+    .sort((left, right) => new Date(right.pinnedAt || right.created_date || 0) - new Date(left.pinnedAt || left.created_date || 0)), [messages]);
+  const activePinnedMessage = pinnedMessages[pinnedMessageIndex] || null;
+  useEffect(() => {
+    setPinnedMessageIndex(current => pinnedMessages.length ? Math.min(current, pinnedMessages.length - 1) : 0);
+  }, [activeId, pinnedMessages.length]);
   useEffect(() => {
     let activeEffect = true;
     const checkRecipientDevices = async () => {
@@ -2983,8 +2992,12 @@ export default function ChatWorkspace({ adminMode = false }) {
     await loadMessages(activeId, '', { mergeLatest: true });
   };
   const pinMessage = async message => {
-    const updated = await studioClient.chat.pin(message.id, !message.pinned);
-    setMessages(current => current.map(item => item.id === message.id ? { ...item, ...updated } : item));
+    try {
+      const updated = await studioClient.chat.pin(message.id, !message.pinned);
+      setMessages(current => current.map(item => item.id === message.id ? { ...item, ...updated } : item));
+    } catch (pinError) {
+      setError(pinError.message || 'The pinned message could not be updated.');
+    }
   };
   const saveMedia = async message => {
     await studioClient.chat.saveMedia(message.id, !(message.savedMediaBy || []).includes(user.id));
@@ -4022,6 +4035,69 @@ export default function ChatWorkspace({ adminMode = false }) {
                   )}
                 </div>
               </header>
+              {activePinnedMessage && (() => {
+                const pinnedContent = replyContent(activePinnedMessage);
+                const pinnedSender = activePinnedMessage.senderId === user.id
+                  ? 'You'
+                  : active.participants?.find(person => person.id === activePinnedMessage.senderId)?.name || conversationName(active, user.id);
+                return (
+                  <div className="chat-pinned-banner shrink-0 border-b border-brass/15 bg-carbon/95 px-2 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,.16)] sm:px-4">
+                    <div className="mx-auto flex max-w-full items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => jumpToRepliedMessage(activePinnedMessage.id)}
+                        className="group flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-brass/5"
+                        title="Jump to pinned message"
+                      >
+                        <span className="h-8 w-1 shrink-0 rounded-full bg-brass" />
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brass/10 text-brass">
+                          <Pin size={14} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[.12em] text-brass">
+                            Pinned message
+                            {pinnedMessages.length > 1 && <span className="text-ivory/35">{pinnedMessageIndex + 1} of {pinnedMessages.length}</span>}
+                          </span>
+                          <span className="block truncate text-xs text-ivory/65">
+                            <b className="font-medium text-ivory/80">{pinnedSender}:</b> {pinnedContent.label}
+                          </span>
+                        </span>
+                      </button>
+                      {pinnedMessages.length > 1 && (
+                        <div className="flex shrink-0 items-center">
+                          <button
+                            type="button"
+                            onClick={() => setPinnedMessageIndex(current => (current - 1 + pinnedMessages.length) % pinnedMessages.length)}
+                            className="flex h-8 w-8 items-center justify-center rounded-full text-ivory/50 transition hover:bg-brass/10 hover:text-brass"
+                            aria-label="Previous pinned message"
+                            title="Previous pinned message"
+                          >
+                            <ArrowDown size={15} className="rotate-180" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPinnedMessageIndex(current => (current + 1) % pinnedMessages.length)}
+                            className="flex h-8 w-8 items-center justify-center rounded-full text-ivory/50 transition hover:bg-brass/10 hover:text-brass"
+                            aria-label="Next pinned message"
+                            title="Next pinned message"
+                          >
+                            <ArrowDown size={15} />
+                          </button>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => pinMessage(activePinnedMessage)}
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ivory/45 transition hover:bg-red-500/10 hover:text-red-300"
+                        aria-label="Unpin message"
+                        title="Unpin message"
+                      >
+                        <X size={15} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
               {searchingMessages && (
                 <form onSubmit={runMessageSearch} className="grid gap-2 border-b border-brass/15 bg-carbon p-3 sm:grid-cols-2 lg:grid-cols-[minmax(12rem,1fr)_10rem_9rem_9rem_9rem_auto_auto]">
                   <label className="flex min-w-0 items-center gap-2 border border-brass/15 bg-obsidian px-3">
