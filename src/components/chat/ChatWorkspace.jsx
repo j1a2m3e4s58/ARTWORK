@@ -1687,6 +1687,7 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [messageMenuPosition, setMessageMenuPosition] = useState(null);
   const [reactionPickerPosition, setReactionPickerPosition] = useState(null);
   const [uploadProgress, setUploadProgress] = useState({});
+  const [uploadStage, setUploadStage] = useState({});
   const [uploadFailed, setUploadFailed] = useState(false);
   const [pushState, setPushState] = useState('unknown');
   const [showAnnouncement, setShowAnnouncement] = useState(false);
@@ -2807,6 +2808,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     setBusy(true);
     setUploadFailed(false);
     setUploadProgress(Object.fromEntries(outgoingAttachments.map((item) => [item.id, 1])));
+    setUploadStage(Object.fromEntries(outgoingAttachments.map((item) => [item.id, 'preparing'])));
     setError('');
     const clientId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
     const optimisticId = `pending-${clientId}`;
@@ -2914,6 +2916,8 @@ export default function ChatWorkspace({ adminMode = false }) {
             file: uploadFile,
             purpose: 'chat-attachment',
             signal: uploadAbortRef.current.signal,
+            fingerprint: `${clientId}-${index}:${uploadFile.size}`,
+            onState: (stage) => setUploadStage((current) => ({ ...current, [item.id]: stage })),
             onProgress: (progress) =>
               setUploadProgress((current) => ({
                 ...current,
@@ -3027,7 +3031,13 @@ export default function ChatWorkspace({ adminMode = false }) {
           deliverySecurity = 'account-protected';
         }
         const uploadFile = encrypted?.file || originalFile;
-        const uploaded = await studioClient.integrations.Core.UploadFileProgress({ file: uploadFile, purpose: 'chat-attachment' });
+        const uploaded = await studioClient.integrations.Core.UploadFileProgress({
+          file: uploadFile,
+          purpose: 'chat-attachment',
+          fingerprint: `${item.clientId}-${index}:${uploadFile.size}`,
+          onState: (stage) => setUploadStage((current) => ({ ...current, [attachment.id]: stage })),
+          onProgress: (progress) => setUploadProgress((current) => ({ ...current, [attachment.id]: progress })),
+        });
         return {
           clientId: `${item.clientId}-${index}`,
           body: encrypted ? '' : caption,
@@ -4604,7 +4614,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                             touchAction: 'pan-y',
                             transform: swipeReply?.id === message.id ? `translate3d(${swipeReply.offset}px, 0, 0)` : undefined,
                           }}
-                          className={`chat-bubble relative min-w-0 ${compactTextOnly ? 'chat-bubble-text-only' : ''} ${messageSelectionMode ? 'cursor-pointer' : ''} ${emojiOnly ? 'chat-bubble-emoji w-fit max-w-[86%] border-0 bg-transparent px-1 py-0' : bareAttachment ? 'chat-bubble-media w-fit max-w-[86%] border-0 bg-transparent p-0 sm:max-w-[24rem]' : `rounded-xl border ${voiceAttachment ? 'w-fit max-w-[92%] px-1 py-1 sm:max-w-[20rem]' : `w-fit max-w-[86%] ${compactTextOnly ? 'px-2.5 py-1' : 'px-2.5 py-1.5'} sm:max-w-[24rem]`} ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}`}
+                          className={`chat-bubble relative min-w-0 ${compactTextOnly ? 'chat-bubble-text-only' : ''} ${messageSelectionMode ? 'cursor-pointer' : ''} ${emojiOnly ? 'chat-bubble-emoji w-fit max-w-[86%] border-0 bg-transparent px-1 py-0' : bareAttachment && !voiceAttachment ? 'chat-bubble-media w-fit max-w-[86%] border-0 bg-transparent p-0 sm:max-w-[24rem]' : `rounded-xl border ${voiceAttachment ? 'chat-bubble-voice max-w-[92%] px-1 py-1 sm:max-w-[20rem]' : `w-fit max-w-[86%] ${compactTextOnly ? 'px-2.5 py-1' : 'px-2.5 py-1.5'} sm:max-w-[24rem]`} ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}`}
                         >
                           <span
                             aria-hidden="true"
@@ -4621,12 +4631,30 @@ export default function ChatWorkspace({ adminMode = false }) {
                               onActivate={() => jumpToRepliedMessage(message.replyToId)}
                             />
                           )}
-                          {message.pending && !message.suppressPendingIndicator && (
-                            <div className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-wider text-brass/70" role="status">
-                              <Loader2 size={12} className={chatAnimationsEnabled ? 'animate-spin' : ''} />
-                              {message.pendingUploadItemId ? `Sending ${uploadProgress[message.pendingUploadItemId] || 1}%` : 'Sending'}
-                            </div>
-                          )}
+                          {message.pending && !message.suppressPendingIndicator && (() => {
+                            const uploadId = message.pendingUploadItemId;
+                            const progress = uploadId ? Math.max(1, uploadProgress[uploadId] || 1) : 100;
+                            const stage = uploadId ? uploadStage[uploadId] || 'preparing' : 'sending';
+                            const label = ({ preparing: 'Preparing', uploading: 'Uploading', scanning: 'Scanning', sending: 'Sending' })[stage] || 'Sending';
+                            return (
+                              <div className="chat-transfer-status mb-2 min-w-40 text-[10px] uppercase tracking-wider text-brass/75" role="status" aria-live="polite">
+                                <div className="flex items-center gap-2">
+                                  <Loader2 size={12} className={chatAnimationsEnabled ? 'animate-spin' : ''} />
+                                  <span className="flex-1">{label}{uploadId && stage === 'uploading' ? ` ${progress}%` : ''}</span>
+                                  {uploadId && (
+                                    <button type="button" onClick={() => uploadAbortRef.current?.abort()} className="rounded-full p-1 text-ivory/45 hover:bg-white/5 hover:text-ivory" aria-label="Cancel upload">
+                                      <X size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                                {uploadId && (
+                                  <span className="mt-1 block h-0.5 overflow-hidden rounded-full bg-white/10">
+                                    <span className="block h-full rounded-full bg-brass transition-[width] duration-200" style={{ width: `${progress}%` }} />
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
                           {message.failed && (
                             <button
                               type="button"

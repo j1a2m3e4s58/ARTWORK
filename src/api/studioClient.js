@@ -37,27 +37,78 @@ const readCsrfToken = () => document.cookie
   .find(cookie => cookie.startsWith('atelier_csrf='))
   ?.split('=').slice(1).join('=');
 
-const uploadWithProgress = ({ file, purpose = '', onProgress, signal }) => new Promise((resolve, reject) => {
-  const xhr = new XMLHttpRequest();
-  const body = new FormData();
-  body.append('file', file);
-  if (purpose) body.append('purpose', purpose);
-  xhr.open('POST', '/api/upload');
-  xhr.withCredentials = true;
-  const csrf = readCsrfToken();
-  if (csrf) xhr.setRequestHeader('X-CSRF-Token', decodeURIComponent(csrf));
-  xhr.upload.onprogress = event => event.lengthComputable && onProgress?.(Math.round((event.loaded / event.total) * 100));
-  xhr.onload = () => {
-    let data = {};
-    try { data = JSON.parse(xhr.responseText || '{}'); } catch { /* use fallback */ }
-    if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-    else reject(new Error(data.error || 'Upload failed.'));
+const uploadWithProgress = async ({ file, purpose = '', onProgress, onState, signal, fingerprint: suppliedFingerprint }) => {
+  const fingerprint = suppliedFingerprint || [file.name, file.size, file.lastModified || 0, purpose].join(':');
+  const storageKey = `atelier-upload-session:${encodeURIComponent(fingerprint)}`;
+  const headers = () => {
+    const csrf = readCsrfToken();
+    return csrf ? { 'X-CSRF-Token': decodeURIComponent(csrf) } : {};
   };
-  xhr.onerror = () => reject(new Error('Upload failed because the connection was interrupted.'));
-  xhr.onabort = () => reject(new DOMException('Upload cancelled.', 'AbortError'));
-  signal?.addEventListener('abort', () => xhr.abort(), { once: true });
-  xhr.send(body);
-});
+  const readResponse = async response => {
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(data.error || 'Upload failed.');
+      error.status = response.status;
+      error.details = data;
+      throw error;
+    }
+    return data;
+  };
+  let sessionId = window.localStorage.getItem(storageKey) || '';
+  let session;
+  onState?.('preparing');
+  if (sessionId) {
+    session = await fetch(`/api/upload-sessions/${sessionId}`, { credentials: 'include', cache: 'no-store', headers: headers(), signal }).then(readResponse).catch(() => null);
+  }
+  if (!session) {
+    session = await fetch('/api/upload-sessions', {
+      method: 'POST', credentials: 'include', cache: 'no-store', signal,
+      headers: { 'Content-Type': 'application/json', ...headers() },
+      body: JSON.stringify({ name: file.name, type: file.type || 'application/octet-stream', size: file.size, purpose, fingerprint }),
+    }).then(readResponse);
+    sessionId = session.sessionId;
+    window.localStorage.setItem(storageKey, sessionId);
+  }
+  let offset = Number(session.offset || 0);
+  const chunkSize = Number(session.chunkSize || 2 * 1024 * 1024);
+  onState?.('uploading');
+  onProgress?.(Math.round((offset / file.size) * 100));
+  try {
+    while (offset < file.size) {
+      if (signal?.aborted) throw new DOMException('Upload cancelled.', 'AbortError');
+      const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size));
+      let result;
+      try {
+        result = await fetch(`/api/upload-sessions/${sessionId}/chunks`, {
+          method: 'PUT', credentials: 'include', cache: 'no-store', signal,
+          headers: { 'Content-Type': 'application/octet-stream', 'Upload-Offset': String(offset), ...headers() },
+          body: chunk,
+        }).then(readResponse);
+      } catch (error) {
+        if (error.status !== 409 || !Number.isFinite(Number(error.details?.offset))) throw error;
+        result = { offset: Number(error.details.offset) };
+      }
+      offset = Number(result.offset);
+      onProgress?.(Math.min(96, Math.round((offset / file.size) * 96)));
+    }
+    onState?.('scanning');
+    onProgress?.(98);
+    const completed = await fetch(`/api/upload-sessions/${sessionId}/complete`, {
+      method: 'POST', credentials: 'include', cache: 'no-store', signal,
+      headers: { 'Content-Type': 'application/json', ...headers() }, body: '{}',
+    }).then(readResponse);
+    window.localStorage.removeItem(storageKey);
+    onProgress?.(100);
+    onState?.('sending');
+    return completed;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      window.localStorage.removeItem(storageKey);
+      fetch(`/api/upload-sessions/${sessionId}`, { method: 'DELETE', credentials: 'include', headers: headers() }).catch(() => {});
+    }
+    throw error;
+  }
+};
 
 const requestLabels = {
   CommissionRequest: 'commission request',

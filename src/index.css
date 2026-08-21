@@ -727,6 +727,22 @@
   min-height: .8rem;
 }
 
+.chat-bubble-voice {
+  width: min(20rem, 92vw);
+}
+
+.chat-bubble-voice .chat-message-footer {
+  width: 100%;
+  justify-content: flex-end;
+  padding: 0 .3rem .1rem;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .chat-bubble-voice .chat-message-footer {
+    justify-content: space-between;
+  }
+}
+
 .chat-unread-divider {
   animation: chat-unread-divider-in 220ms ease-out both;
 }

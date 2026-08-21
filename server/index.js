@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import path from 'node:path';
 import { mkdirSync } from 'node:fs';
+import { appendFile, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
@@ -36,7 +37,9 @@ import { closeJobQueue, enqueueJob, initializeJobQueue, jobQueueHealth } from '.
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 const uploadDir = path.join(here, 'uploads');
+const uploadSessionDir = path.join(here, 'upload-sessions');
 mkdirSync(uploadDir, { recursive: true });
+mkdirSync(uploadSessionDir, { recursive: true });
 const port = Number(process.env.PORT || process.env.API_PORT || 43130);
 const host = process.env.API_HOST || (process.env.RENDER === 'true' ? '0.0.0.0' : '127.0.0.1');
 const jwtSecret = process.env.JWT_SECRET;
@@ -4263,7 +4266,96 @@ app.post('/api/wishlist/:productId', requireUser, mutationLimiter, async (req, r
   res.json(req.user.wishlistProductIds);
 });
 
-app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) => {
+const MAX_UPLOAD_BYTES = 75 * 1024 * 1024;
+const UPLOAD_CHUNK_BYTES = 2 * 1024 * 1024;
+const UPLOAD_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const uploadSessionPath = id => path.join(uploadSessionDir, `${id}.json`);
+const uploadSessionDataPath = id => path.join(uploadSessionDir, `${id}.part`);
+const validUploadSessionId = value => /^[a-f0-9-]{20,80}$/i.test(String(value || ''));
+
+async function readUploadSession(id) {
+  if (!validUploadSessionId(id)) return null;
+  try { return JSON.parse(await readFile(uploadSessionPath(id), 'utf8')); } catch { return null; }
+}
+
+async function writeUploadSession(session) {
+  session.updatedAt = now();
+  session.expiresAt = new Date(Date.now() + UPLOAD_SESSION_TTL_MS).toISOString();
+  await writeFile(uploadSessionPath(session.id), JSON.stringify(session), 'utf8');
+}
+
+async function removeUploadSession(id) {
+  if (!validUploadSessionId(id)) return;
+  await Promise.all([rm(uploadSessionPath(id), { force: true }), rm(uploadSessionDataPath(id), { force: true })]);
+}
+
+async function cleanupUploadSessions() {
+  const entries = await readdir(uploadSessionDir).catch(() => []);
+  const cutoff = Date.now() - UPLOAD_SESSION_TTL_MS;
+  await Promise.all(entries.filter(name => name.endsWith('.json')).map(async (name) => {
+    const id = name.slice(0, -5);
+    try {
+      const session = await readUploadSession(id);
+      const modified = (await stat(uploadSessionPath(id))).mtimeMs;
+      if (!session || modified < cutoff || Date.parse(session.expiresAt || 0) < Date.now()) await removeUploadSession(id);
+    } catch { await removeUploadSession(id); }
+  }));
+}
+
+const uploadCleanupTimer = setInterval(() => cleanupUploadSessions().catch(error => reportOperationalError('upload_session_cleanup_failed', error)), 30 * 60 * 1000);
+uploadCleanupTimer.unref?.();
+cleanupUploadSessions().catch(error => reportOperationalError('upload_session_cleanup_failed', error));
+
+app.post('/api/upload-sessions', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const totalBytes = Number(req.body?.size);
+  const purpose = String(req.body?.purpose || '');
+  const fingerprint = String(req.body?.fingerprint || '').slice(0, 180);
+  if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0 || totalBytes > MAX_UPLOAD_BYTES) return res.status(413).json({ error: 'This file is too large. Videos must be 75 MB or smaller.' });
+  if (!fingerprint) return res.status(400).json({ error: 'The upload fingerprint is missing.' });
+  const entries = await readdir(uploadSessionDir).catch(() => []);
+  for (const entry of entries.filter(name => name.endsWith('.json'))) {
+    const existing = await readUploadSession(entry.slice(0, -5));
+    if (existing?.userId === req.user.id && existing.fingerprint === fingerprint && existing.totalBytes === totalBytes && existing.status === 'uploading') {
+      return res.json({ sessionId: existing.id, offset: existing.receivedBytes, totalBytes, chunkSize: UPLOAD_CHUNK_BYTES, status: existing.status, resumed: true });
+    }
+  }
+  const session = {
+    id: newId(), userId: req.user.id, fingerprint, purpose,
+    name: String(req.body?.name || 'upload').slice(0, 240), type: String(req.body?.type || 'application/octet-stream').slice(0, 160),
+    totalBytes, receivedBytes: 0, status: 'uploading', createdAt: now(),
+  };
+  await writeFile(uploadSessionDataPath(session.id), Buffer.alloc(0));
+  await writeUploadSession(session);
+  res.status(201).json({ sessionId: session.id, offset: 0, totalBytes, chunkSize: UPLOAD_CHUNK_BYTES, status: session.status, resumed: false });
+});
+
+app.get('/api/upload-sessions/:id', requireVerifiedUser, async (req, res) => {
+  const session = await readUploadSession(req.params.id);
+  if (!session || session.userId !== req.user.id) return res.status(404).json({ error: 'Upload session not found.' });
+  res.json({ sessionId: session.id, offset: session.receivedBytes, totalBytes: session.totalBytes, chunkSize: UPLOAD_CHUNK_BYTES, status: session.status });
+});
+
+app.put('/api/upload-sessions/:id/chunks', requireVerifiedUser, express.raw({ type: 'application/octet-stream', limit: UPLOAD_CHUNK_BYTES + 1024 }), async (req, res) => {
+  const session = await readUploadSession(req.params.id);
+  if (!session || session.userId !== req.user.id) return res.status(404).json({ error: 'Upload session not found.' });
+  const requestedOffset = Number(req.get('upload-offset'));
+  if (session.status !== 'uploading' || requestedOffset !== session.receivedBytes) return res.status(409).json({ error: 'Upload offset changed.', offset: session.receivedBytes });
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'The upload chunk is empty.' });
+  if (session.receivedBytes + req.body.length > session.totalBytes) return res.status(413).json({ error: 'The upload exceeds its declared size.' });
+  await appendFile(uploadSessionDataPath(session.id), req.body);
+  session.receivedBytes += req.body.length;
+  await writeUploadSession(session);
+  res.json({ sessionId: session.id, offset: session.receivedBytes, totalBytes: session.totalBytes, progress: Math.round((session.receivedBytes / session.totalBytes) * 100) });
+});
+
+app.delete('/api/upload-sessions/:id', requireVerifiedUser, async (req, res) => {
+  const session = await readUploadSession(req.params.id);
+  if (!session || session.userId !== req.user.id) return res.status(404).json({ error: 'Upload session not found.' });
+  await removeUploadSession(session.id);
+  res.json({ success: true });
+});
+
+const parseLegacyUpload = (req, res, next) => {
   upload.single('file')(req, res, error => {
     if (error?.code === 'LIMIT_FILE_SIZE') {
       return res.status(413).json({ error: 'This file is too large. Videos must be 75 MB or smaller.' });
@@ -4271,7 +4363,9 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     if (error) return res.status(400).json({ error: error.message || 'The file could not be uploaded.' });
     next();
   });
-}, async (req, res) => {
+};
+
+async function processUploadedRequest(req, res) {
   const uploadPurpose = String(req.body?.purpose || '');
   const isPublicApplicationUpload = uploadPurpose === 'internship-letter';
   const isChatAttachment = uploadPurpose === 'chat-attachment';
@@ -4366,7 +4460,32 @@ app.post('/api/upload', requireVerifiedUser, mutationLimiter, (req, res, next) =
     await save(); reportOperationalError('media_processing_failed', error, { mediaId: fileId });
   }
   res.status(201).json({ file_url: stored.url, media });
+}
+
+app.post('/api/upload-sessions/:id/complete', requireVerifiedUser, mutationLimiter, async (req, res) => {
+  const session = await readUploadSession(req.params.id);
+  if (!session || session.userId !== req.user.id) return res.status(404).json({ error: 'Upload session not found.' });
+  if (session.receivedBytes !== session.totalBytes) return res.status(409).json({ error: 'Upload is incomplete.', offset: session.receivedBytes, totalBytes: session.totalBytes });
+  session.status = 'finalizing';
+  await writeUploadSession(session);
+  try {
+    const buffer = await readFile(uploadSessionDataPath(session.id));
+    req.file = { buffer, size: buffer.length, originalname: session.name, mimetype: session.type };
+    req.body = { ...(req.body || {}), purpose: session.purpose };
+    const originalJson = res.json.bind(res);
+    res.json = payload => {
+      if (res.statusCode < 400) removeUploadSession(session.id).catch(error => reportOperationalError('upload_session_cleanup_failed', error, { sessionId: session.id }));
+      return originalJson(payload);
+    };
+    await processUploadedRequest(req, res);
+  } catch (error) {
+    session.status = 'uploading';
+    await writeUploadSession(session).catch(() => {});
+    throw error;
+  }
 });
+
+app.post('/api/upload', requireVerifiedUser, mutationLimiter, parseLegacyUpload, processUploadedRequest);
 
 app.delete('/api/admin/media/:id/purge', requireAdmin, mutationLimiter, async (req, res) => {
   const media = db.data.Media.find(item => item.id === req.params.id);
