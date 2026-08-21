@@ -17,6 +17,7 @@ import SiteMetadata from '@/components/SiteMetadata';
 import PointerAccent from '@/components/PointerAccent';
 import AppBadgeSync from '@/components/AppBadgeSync';
 import RequestFeedbackOverlay from '@/components/RequestFeedbackOverlay';
+import NotificationPermissionPrompt from '@/components/NotificationPermissionPrompt';
 
 const Home = lazy(() => import('@/pages/Home'));
 const Gallery = lazy(() => import('@/pages/Gallery'));
@@ -132,6 +133,7 @@ function App() {
           <SiteMetadata />
           <AppBadgeSync />
           <RequestFeedbackOverlay />
+          <NotificationPermissionPrompt />
           <PointerAccent />
           {!loaded && <LoadingScreen onComplete={finishLoading} />}
           {loaded && (

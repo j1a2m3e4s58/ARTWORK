@@ -78,6 +78,34 @@ import {
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const STICKERS = ['🎨', '✨', '🔥', '👏', '💯', '🥳', '😍', '🙌', '🫶', '🌟', '✅', '😂'];
 const MAX_FILE_BYTES = 75 * 1024 * 1024;
+const DEFAULT_GIF_QUERY = 'art reactions';
+const gifSearchMemoryCache = new Map();
+const readGifSearchCache = query => {
+  const key = String(query || '').trim().toLowerCase();
+  if (!key) return null;
+  if (gifSearchMemoryCache.has(key)) return gifSearchMemoryCache.get(key);
+  if (typeof window === 'undefined') return null;
+  try {
+    const cached = JSON.parse(window.sessionStorage.getItem(`reigns-gifs:${key}`) || 'null');
+    if (cached?.items?.length) {
+      gifSearchMemoryCache.set(key, cached);
+      return cached;
+    }
+  } catch { /* A disabled session store should not stop chat. */ }
+  return null;
+};
+const writeGifSearchCache = (query, value) => {
+  const key = String(query || '').trim().toLowerCase();
+  if (!key) return;
+  gifSearchMemoryCache.set(key, value);
+  if (typeof window !== 'undefined') {
+    try { window.sessionStorage.setItem(`reigns-gifs:${key}`, JSON.stringify(value)); } catch { /* Cache is optional. */ }
+    value.items?.slice(0, 12).forEach(item => {
+      const image = new window.Image();
+      image.src = item.previewUrl || item.url;
+    });
+  }
+};
 // Share in-flight work across refreshes so the same attachment is not downloaded
 // and decrypted more than once while its message remains on screen.
 const attachmentDecryptions = new Map();
@@ -1539,8 +1567,8 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [shopLoading, setShopLoading] = useState(false);
   const [gifPickerOpen, setGifPickerOpen] = useState(false);
-  const [gifQuery, setGifQuery] = useState('art reactions');
-  const [gifResults, setGifResults] = useState([]);
+  const [gifQuery, setGifQuery] = useState(DEFAULT_GIF_QUERY);
+  const [gifResults, setGifResults] = useState(() => readGifSearchCache(DEFAULT_GIF_QUERY)?.items || []);
   const [gifLoading, setGifLoading] = useState(false);
   const [gifConfigured, setGifConfigured] = useState(true);
   const emptyAnnouncement = {
@@ -2323,12 +2351,21 @@ export default function ChatWorkspace({ adminMode = false }) {
   const searchGifs = async (search = gifQuery) => {
     const normalized = String(search || '').trim();
     if (!normalized) return;
+    const cached = readGifSearchCache(normalized);
+    if (cached) {
+      setGifConfigured(cached.configured !== false);
+      setGifResults(cached.items);
+      setGifLoading(false);
+      return;
+    }
     setGifLoading(true);
     setError('');
     try {
       const result = await studioClient.chat.gifs(normalized);
-      setGifConfigured(result.configured !== false);
-      setGifResults(Array.isArray(result.items) ? result.items : []);
+      const value = { configured: result.configured !== false, items: Array.isArray(result.items) ? result.items : [] };
+      writeGifSearchCache(normalized, value);
+      setGifConfigured(value.configured);
+      setGifResults(value.items);
     } catch (searchError) {
       setError(searchError.message);
       setGifResults([]);
@@ -2393,6 +2430,28 @@ export default function ChatWorkspace({ adminMode = false }) {
       setError(sendError.message);
     }
   };
+  useEffect(() => {
+    if (readGifSearchCache(DEFAULT_GIF_QUERY)?.items?.length) return undefined;
+    let cancelled = false;
+    const prefetch = async () => {
+      try {
+        const result = await studioClient.chat.gifs(DEFAULT_GIF_QUERY);
+        if (cancelled) return;
+        const value = { configured: result.configured !== false, items: Array.isArray(result.items) ? result.items : [] };
+        writeGifSearchCache(DEFAULT_GIF_QUERY, value);
+        setGifConfigured(value.configured);
+        setGifResults(value.items);
+      } catch { /* The picker can retry visibly when it is opened. */ }
+    };
+    const idleId = window.requestIdleCallback
+      ? window.requestIdleCallback(prefetch, { timeout: 1800 })
+      : window.setTimeout(prefetch, 350);
+    return () => {
+      cancelled = true;
+      if (window.cancelIdleCallback) window.cancelIdleCallback(idleId);
+      else window.clearTimeout(idleId);
+    };
+  }, []);
   const sendShopSelection = async () => {
     const chosen = shopProducts.filter((product) => selectedProducts.includes(product.id));
     if (!chosen.length || !activeId) return;
@@ -4594,7 +4653,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                       emojiStyle={window.innerWidth >= 1024 ? EmojiStyle.APPLE : EmojiStyle.NATIVE}
                       width="100%"
                       height="100%"
-                      lazyLoadEmojis
+                      lazyLoadEmojis={false}
                       previewConfig={{ showPreview: false }}
                       skinTonesDisabled={false}
                       searchPlaceHolder="Search emoji"
@@ -4614,7 +4673,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     {mobileEmojiTab === 'gif' && (
                       <div className="chat-menu-scroll h-[calc(100%_-_2.75rem)] overflow-y-auto p-2">
                         <form onSubmit={event => { event.preventDefault(); searchGifs(gifQuery); }} className="mb-2 flex gap-2"><input value={gifQuery} onChange={event => setGifQuery(event.target.value)} placeholder="Search GIFs" className="h-9 min-w-0 flex-1 rounded-full bg-obsidian px-4 text-sm outline-none" /><button className="rounded-full bg-brass px-4 text-xs text-obsidian">Search</button></form>
-                        <div className="grid grid-cols-3 gap-1">{gifResults.map(gif => <button key={gif.id} type="button" onClick={() => { sendGif(gif); setEmojiMenuPosition(null); }} className="aspect-square overflow-hidden rounded-md bg-obsidian"><img src={gif.previewUrl || gif.url} alt={gif.title || 'GIF'} className="h-full w-full object-cover" /></button>)}</div>
+                        <div className="grid grid-cols-3 gap-1">{gifResults.map(gif => <button key={gif.id} type="button" onClick={() => { sendGif(gif); setEmojiMenuPosition(null); }} className="aspect-square overflow-hidden rounded-md bg-obsidian"><img src={gif.previewUrl || gif.url} alt={gif.title || 'GIF'} loading="eager" decoding="async" className="h-full w-full object-cover" /></button>)}</div>
                         {!gifConfigured && <p className="p-6 text-center text-xs text-ivory/50">GIF search is not configured yet.</p>}
                       </div>
                     )}

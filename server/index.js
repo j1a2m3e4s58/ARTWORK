@@ -1860,9 +1860,9 @@ const publishCommunityUpdate = async update => {
   db.data.ChatMessage.push(message);
   refreshConversationSummary(conversation);
   const recipientIds = participantIds.filter(id => id !== update.createdBy);
-  recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.announcement', title: update.title, message: update.body.slice(0, 180), section: 'messages', entity: 'CommunityUpdate', entityId: update.id, priority: 'normal', read: false, created_date: now() }));
+  recipientIds.forEach(userId => db.data.Notification.push({ id: newId(), userId, type: 'chat.announcement', title: update.title, message: update.body.slice(0, 180), imageUrl: update.richMedia?.type === 'image' ? update.richMedia.imageUrl : '', attachmentUrl: update.richMedia?.url || '', attachmentType: update.richMedia?.type || '', section: 'messages', entity: 'CommunityUpdate', entityId: update.id, priority: 'normal', read: false, created_date: now() }));
   update.status = 'published'; update.publishedAt = now(); update.recipientIds = recipientIds; update.messageId = message.id; update.conversationId = conversation.id; update.updated_date = now();
-  await pushToUsers(recipientIds, { title: update.title, body: update.body.slice(0, 180), url: `/messages?conversation=${conversation.id}`, tag: `community-${update.id}`, category: 'community' }, conversation.mutedBy || []);
+  await pushToUsers(recipientIds, { title: update.title, body: update.body.slice(0, 180), image: update.richMedia?.type === 'image' ? update.richMedia.imageUrl : '', url: `/messages?conversation=${conversation.id}`, tag: `community-${update.id}`, category: 'community' }, conversation.mutedBy || []);
   emitChatEvent(participantIds, 'message', { conversationId: conversation.id, messageId: message.id });
   return true;
 };
@@ -2214,7 +2214,7 @@ app.post('/api/chat/announcements', requireAdmin, mutationLimiter, async (req, r
       return '';
     }
   };
-  const richType = ['image', 'product', 'film'].includes(req.body.richMedia?.type) ? req.body.richMedia.type : '';
+  const richType = ['image', 'document', 'product', 'film'].includes(req.body.richMedia?.type) ? req.body.richMedia.type : '';
   const richUrl = safeAnnouncementUrl(req.body.richMedia?.url);
   const richImageUrl = safeAnnouncementUrl(req.body.richMedia?.imageUrl);
   const actionUrl = safeAnnouncementUrl(req.body.action?.url);
@@ -3120,18 +3120,25 @@ app.get('/api/chat/sync', requireVerifiedUser, (req, res) => {
   res.json({ cursor: now(), conversations, messages });
 });
 
+const gifSearchCache = new Map();
 app.get('/api/chat/gifs', requireVerifiedUser, async (req, res) => {
   const key = String(process.env.GIPHY_API_KEY || '').trim();
   if (!key) return res.json({ configured: false, items: [] });
   const query = String(req.query.q || '').trim().slice(0, 80);
   if (!query) return res.json({ configured: true, items: [] });
+  const cacheKey = query.toLowerCase();
+  const cached = gifSearchCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return res.json(cached.value);
   try {
     const target = new URL('https://api.giphy.com/v1/gifs/search');
     target.searchParams.set('api_key', key); target.searchParams.set('q', query); target.searchParams.set('limit', '24'); target.searchParams.set('rating', 'g');
     const response = await fetch(target, { signal: AbortSignal.timeout(6000) });
     if (!response.ok) throw new Error('GIF provider unavailable.');
     const payload = await response.json();
-    res.json({ configured: true, items: (payload.data || []).map(item => ({ id: item.id, title: item.title, url: item.images?.fixed_height?.url, previewUrl: item.images?.fixed_height_small?.url })).filter(item => item.url) });
+    const value = { configured: true, items: (payload.data || []).map(item => ({ id: item.id, title: item.title, url: item.images?.fixed_height?.url, previewUrl: item.images?.fixed_height_small?.url })).filter(item => item.url) };
+    gifSearchCache.set(cacheKey, { value, expiresAt: Date.now() + 10 * 60 * 1000 });
+    if (gifSearchCache.size > 100) gifSearchCache.delete(gifSearchCache.keys().next().value);
+    res.json(value);
   } catch { res.status(503).json({ error: 'GIF search is temporarily unavailable.' }); }
 });
 

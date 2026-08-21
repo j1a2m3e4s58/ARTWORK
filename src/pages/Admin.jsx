@@ -36,6 +36,7 @@ import ChatWorkspace from '@/components/chat/ChatWorkspace';
 import SupportAnalyticsTab from '@/components/admin/SupportAnalyticsTab';
 import ResponsiveSelect from '@/components/ResponsiveSelect';
 import { DEFAULT_STUDIO_OPTIONS, parseStudioOptions } from '@/lib/studioOptions';
+import BroadcastsTab from '@/components/admin/BroadcastsTab';
 
 const allTabs = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard, group: 'Dashboard' },
@@ -62,6 +63,7 @@ const allTabs = [
   { id: 'internships', label: 'Internships', icon: Users, group: 'People' },
   { id: 'inbox', label: 'Inbox', icon: MessageSquare, group: 'Communication' },
   { id: 'messages', label: 'Customer Chat', icon: MessageSquare, group: 'Communication' },
+  { id: 'broadcasts', label: 'Customer Broadcasts', icon: Bell, group: 'Communication' },
   { id: 'support-analytics', label: 'Support Analytics', icon: Activity, group: 'Communication' },
   { id: 'subscribers', label: 'Subscribers', icon: Users, group: 'Communication' },
   { id: 'users', label: 'People & Access', icon: Users, group: 'People' },
@@ -795,6 +797,7 @@ export default function Admin() {
           {activeTab === 'studio-requests' && <StudioRequestsTab />}
           {activeTab === 'awards' && <AwardsTab />}
           {activeTab === 'messages' && <ChatWorkspace adminMode />}
+          {activeTab === 'broadcasts' && <BroadcastsTab />}
           {activeTab === 'support-analytics' && <SupportAnalyticsTab canRecoverJobs={user?.role === 'admin'} />}
           {activeTab === 'price-guides' && <PriceGuidesTab />}
           {activeTab === 'users' && <UsersTab currentUser={user} />}

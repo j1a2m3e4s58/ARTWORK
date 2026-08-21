@@ -1,4 +1,4 @@
-const CACHE = 'reigns-atelier-v12';
+const CACHE = 'reigns-atelier-v13';
 const CANONICAL_ORIGIN = 'https://reignsatelier.com';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/brand/reigns-app-icon-192.png', '/brand/reigns-app-icon-512.png'];
 
