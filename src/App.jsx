@@ -28,7 +28,25 @@ const Blog = lazy(() => import('@/pages/Blog'));
 const BlogPost = lazy(() => import('@/pages/BlogPost'));
 const Contact = lazy(() => import('@/pages/Contact'));
 const Testimonials = lazy(() => import('@/pages/Testimonials'));
-const Admin = lazy(() => import('@/pages/Admin'));
+const Admin = lazy(async () => {
+  const retryKey = 'atelier_admin_chunk_retry';
+  try {
+    const module = await import('@/pages/Admin');
+    sessionStorage.removeItem(retryKey);
+    return module;
+  } catch (error) {
+    // A deploy can replace a lazy chunk while an older application tab is open.
+    // One full reload fetches the current application shell and makes Studio
+    // Control open normally instead of leaving the user on an error screen.
+    if (!sessionStorage.getItem(retryKey)) {
+      sessionStorage.setItem(retryKey, '1');
+      window.location.reload();
+      return new Promise(() => {});
+    }
+    sessionStorage.removeItem(retryKey);
+    throw error;
+  }
+});
 const Videos = lazy(() => import('@/pages/Videos'));
 const Login = lazy(() => import('@/pages/Login'));
 const Register = lazy(() => import('@/pages/Register'));

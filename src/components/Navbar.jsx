@@ -191,7 +191,7 @@ export default function Navbar() {
               </div>
             ) : (
               <div className="hidden items-center gap-3 xl:flex">
-                {['admin', 'editor', 'support'].includes(user.role) && <Link to="/admin" className="flex items-center gap-1.5 font-tight text-[13px] font-medium text-brass/80 hover:text-brass"><ShieldCheck size={15} /> Admin</Link>}
+                {['admin', 'editor', 'support'].includes(user.role) && <a href="/admin" className="flex items-center gap-1.5 font-tight text-[13px] font-medium text-brass/80 hover:text-brass"><ShieldCheck size={15} /> Admin</a>}
                 <Link to="/account" className="flex items-center gap-1.5 font-tight text-[13px] font-medium text-ivory/55 hover:text-brass"><UserRound size={15} /> Account</Link>
                 <button onClick={() => logout()} className="font-tight text-[13px] font-medium text-ivory/45 hover:text-brass">Sign out</button>
               </div>
@@ -289,6 +289,7 @@ export default function Navbar() {
                   </>
                 ) : (
                   <>
+                    {['admin', 'editor', 'support'].includes(user.role) && <a href="/admin" className="col-span-2 rounded-xl border border-brass/25 bg-brass/5 px-3 py-2 text-center text-xs text-brass">Studio Control</a>}
                     <Link to="/account" className="rounded-xl border border-brass/20 px-3 py-2 text-center text-xs text-brass">My account</Link>
                     <button onClick={() => logout()} className="rounded-xl border border-ivory/10 px-3 py-2 text-xs text-ivory/60">Sign out</button>
                   </>

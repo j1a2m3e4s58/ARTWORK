@@ -13,7 +13,7 @@ export default function AccountLayout() {
             <ArrowLeft size={17} /><span className="hidden sm:inline">Back to gallery</span>
           </Link>
           <div className="flex items-center gap-2">
-            {staff && <Link to="/admin" aria-label="Studio Control" className="flex min-h-11 items-center gap-2 px-3 text-xs text-brass"><ShieldCheck size={16} /><span className="hidden sm:inline">Studio Control</span></Link>}
+            {staff && <a href="/admin" aria-label="Studio Control" className="flex min-h-11 items-center gap-2 px-3 text-xs text-brass"><ShieldCheck size={16} /><span className="hidden sm:inline">Studio Control</span></a>}
             <button onClick={() => logout()} aria-label="Sign out" className="min-h-11 border border-ivory/10 px-3 text-xs text-ivory/55 hover:border-brass/30 hover:text-brass"><span className="hidden sm:inline">Sign out</span><span className="sm:hidden">Exit</span></button>
           </div>
         </div>

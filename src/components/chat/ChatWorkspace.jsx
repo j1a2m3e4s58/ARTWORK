@@ -986,25 +986,14 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
     );
   if (type?.startsWith('image/'))
     return (
-      <button type="button" onClick={() => onOpen?.(attachment)} className="mt-2 block overflow-hidden border border-brass/15 bg-obsidian text-left">
-        <img src={url} alt={name || 'Shared image'} className={`${compact ? 'max-h-40' : 'max-h-72'} w-full object-contain`} />
-        {name && (
-          <span title={name} className="block truncate px-3 py-2 text-xs text-ivory/60">
-            {name}
-          </span>
-        )}
+      <button type="button" onClick={() => onOpen?.(attachment)} className="mt-1 block overflow-hidden rounded-xl bg-transparent text-left">
+        <img src={url} alt={name || 'Shared image'} className={`${compact ? 'max-h-40' : 'max-h-72'} w-full rounded-xl object-contain`} />
       </button>
     );
   if (type?.startsWith('video/'))
     return (
-      <div className="mt-2 overflow-hidden border border-brass/15 bg-black">
-        <video src={url} controls preload="metadata" playsInline className={`${compact ? 'max-h-40' : 'max-h-72'} w-full`} />
-        <p className="flex justify-between gap-3 px-3 py-2 text-xs text-ivory/60">
-          <span title={name || 'Video'} className="truncate">
-            {name || 'Video'}
-          </span>
-          <span>{formatBytes(bytes)}</span>
-        </p>
+      <div className="mt-1 overflow-hidden rounded-xl bg-black">
+        <video src={url} controls preload="metadata" playsInline className={`${compact ? 'max-h-40' : 'max-h-72'} w-full rounded-xl`} />
       </div>
     );
   const { Icon, label, color } = fileVisual(type, name);
@@ -2364,11 +2353,16 @@ export default function ChatWorkspace({ adminMode = false }) {
       conversationId: activeId,
       senderId: user.id,
       body: '',
-      attachmentUrl: gif.url,
+      // The picker thumbnail is already decoded in the browser, so reuse it
+      // while the full GIF is imported instead of briefly showing a broken
+      // remote image or a generic "Sending" card.
+      attachmentUrl: gif.previewUrl || gif.url,
       attachmentName: gif.title || 'GIF',
       attachmentType: 'image/gif',
       attachmentBytes: 0,
       pending: true,
+      pendingLocalAttachment: true,
+      suppressPendingIndicator: true,
       deliveredAt: null,
       readBy: [user.id],
       reactions: {},
@@ -3930,6 +3924,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     : null;
                   const voiceAttachment = isVoiceAttachment(attachment || {});
                   const emojiOnly = !attachment && !message.sticker && !message.richMedia && isEmojiOnlyMessage(message.body);
+                  const bareAttachment = Boolean(attachment && !message.body && !message.replyToId && !message.richMedia);
                   const groupedReactions = Object.values(message.reactions || {}).reduce(
                     (result, emoji) => ({
                       ...result,
@@ -3955,7 +3950,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                     <div
                       key={message.id}
                       data-chat-message-id={message.id}
-                      className={`min-w-0 max-w-full rounded-xl transition-[background-color,box-shadow] duration-500 ${groupedWithPrevious ? 'mt-1' : 'mt-3'} ${chatAnimationsEnabled ? 'chat-message-enter' : ''} ${highlightedMessageId === message.id ? 'bg-brass/10 shadow-[0_0_0_1px_rgba(200,164,91,0.35)]' : ''}`}
+                      className={`min-w-0 max-w-full rounded-xl transition-[background-color,box-shadow] duration-500 ${groupedWithPrevious ? 'mt-2.5' : 'mt-4'} ${chatAnimationsEnabled ? 'chat-message-enter' : ''} ${highlightedMessageId === message.id ? 'bg-brass/10 shadow-[0_0_0_1px_rgba(200,164,91,0.35)]' : ''}`}
                     >
                       {showDate && (
                         <div className="my-4 flex items-center gap-3" aria-label={`Messages from ${new Date(message.created_date).toLocaleDateString()}`}>
@@ -3984,7 +3979,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                         )}
                         <article
                           onClick={messageSelectionMode ? () => setSelectedMessageIds(current => current.includes(message.id) ? current.filter(id => id !== message.id) : [...current, message.id]) : undefined}
-                          className={`chat-bubble relative min-w-0 ${messageSelectionMode ? 'cursor-pointer' : ''} ${emojiOnly ? 'chat-bubble-emoji w-fit max-w-[86%] border-0 bg-transparent px-1 py-0' : `rounded-xl border ${voiceAttachment ? 'w-fit max-w-[92%] px-1 py-1 sm:max-w-[20rem]' : 'w-fit max-w-[86%] px-2.5 py-1.5 sm:max-w-[28rem]'} ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}`}
+                          className={`chat-bubble relative min-w-0 ${messageSelectionMode ? 'cursor-pointer' : ''} ${emojiOnly ? 'chat-bubble-emoji w-fit max-w-[86%] border-0 bg-transparent px-1 py-0' : bareAttachment ? 'chat-bubble-media w-fit max-w-[86%] border-0 bg-transparent p-0 sm:max-w-[28rem]' : `rounded-xl border ${voiceAttachment ? 'w-fit max-w-[92%] px-1 py-1 sm:max-w-[20rem]' : 'w-fit max-w-[86%] px-2.5 py-1.5 sm:max-w-[28rem]'} ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}`}
                         >
                           {message.replyToId && (
                             <QuotedMessage
@@ -3994,7 +3989,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                               onActivate={() => jumpToRepliedMessage(message.replyToId)}
                             />
                           )}
-                          {message.pending && (
+                          {message.pending && !message.suppressPendingIndicator && (
                             <div className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-wider text-brass/70" role="status">
                               <span className={chatAnimationsEnabled ? 'chat-sending-dot' : ''} />
                               {message.pendingUploadItemId ? `Sending ${uploadProgress[message.pendingUploadItemId] || 1}%` : 'Sending'}

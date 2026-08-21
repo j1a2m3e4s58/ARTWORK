@@ -369,6 +369,10 @@
   }
 
   html.messages-conversation-open .messages-page {
+    position: fixed;
+    top: var(--messages-viewport-top, 0px);
+    right: 0;
+    left: 0;
     height: var(--messages-viewport-height, 100dvh);
     max-height: var(--messages-viewport-height, 100dvh);
     padding-bottom: 0;
