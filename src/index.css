@@ -576,6 +576,36 @@
   animation: chat-emoji-send 480ms cubic-bezier(.18,.88,.28,1.22) both;
 }
 
+.chat-bubble-emoji,
+.chat-bubble-media {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  overflow: visible;
+}
+
+.chat-message-row--incoming .chat-bubble-emoji,
+.chat-message-row--incoming .chat-bubble-media {
+  align-items: flex-start;
+}
+
+.chat-bubble-emoji {
+  min-width: 4.25rem;
+}
+
+.chat-bubble-emoji .chat-message-footer,
+.chat-bubble-media .chat-message-footer {
+  width: 100%;
+  min-height: 1rem;
+  margin-top: .3rem;
+}
+
+.chat-message-reactions {
+  min-height: 1.35rem;
+  line-height: 1.1;
+  overflow: visible;
+}
+
 @media (max-width: 1023px) {
   .chat-composer-footer--emoji-open {
     position: fixed;
@@ -696,8 +726,8 @@
     inset: -.55rem -.7rem;
   }
   .chat-message-actions button { position: relative; z-index: 1; }
-  .chat-message-actions--mine { right: calc(100% + .08rem); }
-  .chat-message-actions--incoming { left: calc(100% + .08rem); }
+  .chat-message-actions--mine { right: calc(100% + .42rem); }
+  .chat-message-actions--incoming { left: calc(100% + .42rem); }
   .chat-bubble:hover .chat-message-actions,
   .chat-bubble:focus-within .chat-message-actions,
   .chat-message-actions:hover {

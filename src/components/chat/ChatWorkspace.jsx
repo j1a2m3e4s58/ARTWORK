@@ -997,17 +997,17 @@ function QuotedMessage({ message, target, senderName = 'Reply', onActivate }) {
   );
 }
 
-function LazyMediaImage({ src, alt, className = '', frameClassName = '' }) {
+function LazyMediaImage({ src, alt, className = '', frameClassName = '', eager = false }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => { setLoaded(false); setFailed(false); }, [src]);
   return (
     <span className={`chat-media-frame relative block overflow-hidden ${frameClassName}`}>
-      {!loaded && !failed && <span className="chat-media-placeholder absolute inset-0" aria-hidden="true" />}
+      {!loaded && !failed && !eager && <span className="chat-media-placeholder absolute inset-0" aria-hidden="true" />}
       {failed ? (
         <span className="absolute inset-0 flex items-center justify-center gap-2 bg-obsidian/80 text-xs text-ivory/45"><Image size={18} /> Media unavailable</span>
       ) : (
-        <img src={src} alt={alt} loading="lazy" decoding="async" onLoad={() => setLoaded(true)} onError={() => setFailed(true)} className={`${className} transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`} />
+        <img src={src} alt={alt} loading={eager ? 'eager' : 'lazy'} fetchPriority={eager ? 'high' : 'auto'} decoding="async" onLoad={() => setLoaded(true)} onError={() => setFailed(true)} className={`${className} transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`} />
       )}
     </span>
   );
@@ -1113,9 +1113,10 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
   if (type?.startsWith('image/')) {
     const gif = /image\/gif/i.test(type) || /\.gif(?:$|[?#])/i.test(name || url);
     return (
-      <button type="button" onClick={() => onOpen?.(attachment)} className={`mt-1 block overflow-hidden rounded-xl bg-transparent text-left ${gif ? 'w-[9rem] sm:w-[10.5rem]' : ''}`}>
+      <button type="button" onClick={() => onOpen?.(attachment)} className={`mt-1 block max-w-full overflow-hidden rounded-xl bg-transparent text-left ${gif ? 'w-[9rem] sm:w-[10.5rem]' : 'w-[78vw] sm:w-[18rem]'}`}>
         <LazyMediaImage
           src={url}
+          eager={gif}
           alt={name || (gif ? 'Shared GIF' : 'Shared image')}
           className={gif
             ? 'h-full w-full rounded-xl object-cover'
@@ -1129,7 +1130,7 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
   }
   if (type?.startsWith('video/'))
     return (
-      <div className={`mt-1 overflow-hidden rounded-xl bg-black ${compact ? 'max-h-40' : 'max-h-72'}`}>
+      <div className={`mt-1 w-[78vw] max-w-full overflow-hidden rounded-xl bg-black sm:w-[18rem] ${compact ? 'max-h-40' : 'max-h-72'}`}>
         <ManagedVideo src={url} className="rounded-xl" />
       </div>
     );
@@ -1138,7 +1139,7 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
     <button
       type="button"
       onClick={() => onOpen?.(attachment)}
-      className="mt-2 flex w-full min-w-0 max-w-full items-center gap-3 overflow-hidden border border-brass/15 bg-obsidian p-3 text-left text-xs text-brass"
+      className="mt-2 flex w-[78vw] min-w-0 max-w-full items-center gap-3 overflow-hidden border border-brass/15 bg-obsidian p-3 text-left text-xs text-brass sm:w-[21rem]"
     >
       <span className={`flex h-11 w-11 shrink-0 items-center justify-center ${color}`}>
         <Icon size={20} />
@@ -1843,13 +1844,16 @@ export default function ChatWorkspace({ adminMode = false }) {
     const availableAbove = Math.max(0, rect.top - viewportTop - gutter - 8);
     const opensBelow = availableBelow >= Math.min(preferredHeight, availableAbove);
     const maxHeight = Math.max(120, Math.min(preferredHeight, opensBelow ? availableBelow : availableAbove));
-    const top = opensBelow ? rect.bottom + 8 : Math.max(viewportTop + gutter, rect.top - maxHeight - 8);
-    return {
+    const position = {
       left,
-      top,
       width,
       maxHeight,
     };
+    if (opensBelow) return { ...position, top: rect.bottom + 7 };
+    // Anchor upward-opening menus by their real bottom edge. Using an
+    // estimated height here left short menus floating far above the button.
+    const layoutViewportHeight = document.documentElement.clientHeight || window.innerHeight;
+    return { ...position, bottom: Math.max(gutter, layoutViewportHeight - rect.top + 7) };
   };
   const menuHeight = (desktopMaximum = 440) => Math.min(desktopMaximum, Math.max(280, window.innerHeight * 0.62));
   const closeFloatingMenus = () => {
@@ -4869,7 +4873,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                             </div>
                           </div>
                           {Object.keys(groupedReactions).length > 0 && (
-                            <div className="absolute -bottom-3 right-2 rounded-full border border-brass/15 bg-carbon px-2 py-0.5 text-xs shadow-lg">
+                            <div className={`chat-message-reactions mt-1 flex w-fit items-center rounded-full border border-brass/15 bg-carbon px-2 py-0.5 text-xs shadow-lg ${mine ? 'ml-auto' : 'mr-auto'}`}>
                               {Object.entries(groupedReactions).map(([emoji, count]) => (
                                 <span key={`${emoji}-${count}`} className="chat-reaction-pop mr-1 inline-block">
                                   {emoji}
