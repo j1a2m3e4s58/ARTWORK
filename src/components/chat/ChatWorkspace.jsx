@@ -1911,11 +1911,24 @@ export default function ChatWorkspace({ adminMode = false }) {
       }
       const attempts = Number(item.attempts || 0) + 1;
       const lastError = String(sendError?.message || 'Message could not be sent.');
-      await patchOutbox(user.id, item.clientId, { status: 'failed', attempts, lastError });
+      const status = Number(sendError?.status);
+      const recoverable = !Number.isFinite(status)
+        || status === 0
+        || [408, 409, 425, 429].includes(status)
+        || status >= 500
+        || /changed while this request|temporarily unavailable|please retry/i.test(lastError);
+      const willRetry = navigator.onLine && recoverable && attempts < 4;
+      await patchOutbox(user.id, item.clientId, { status: willRetry ? 'queued' : 'failed', attempts, lastError });
       setMessages((current) => current.map((message) => messageBelongsToOutboxJob(message, item.clientId)
-        ? { ...message, pending: false, failed: true, sendError: lastError }
+        ? {
+            ...message,
+            pending: willRetry,
+            failed: !willRetry,
+            sendError: willRetry ? '' : lastError,
+            transferState: willRetry ? 'sending' : message.transferState,
+          }
         : message));
-      if (navigator.onLine && attempts < 4) {
+      if (willRetry) {
         window.clearTimeout(outboxRetryTimersRef.current.get(item.clientId));
         const timer = window.setTimeout(() => {
           outboxRetryTimersRef.current.delete(item.clientId);

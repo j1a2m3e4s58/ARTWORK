@@ -18,16 +18,23 @@
         ...options.headers,
       },
     });
-  } catch {
+  } catch (cause) {
     const message = 'Unable to reach the studio service. Check your connection and try again.';
     window.dispatchEvent(new CustomEvent('atelier:api-error', { detail: { status: 0, message, url } }));
-    throw new Error(message);
+    const error = new Error(message, { cause });
+    error.status = 0;
+    error.code = 'network_error';
+    throw error;
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const message = data.error || 'Request failed.';
     window.dispatchEvent(new CustomEvent('atelier:api-error', { detail: { status: response.status, message, code: data.code, url } }));
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    error.code = data.code;
+    error.details = data;
+    throw error;
   }
   return data;
 };
@@ -54,18 +61,60 @@ const uploadWithProgress = async ({ file, purpose = '', onProgress, onState, sig
     }
     return data;
   };
+  const retryableUploadError = error => error?.name !== 'AbortError'
+    && !(error?.status === 409 && Number.isFinite(Number(error?.details?.offset)))
+    && (!Number.isFinite(Number(error?.status))
+      || Number(error.status) === 0
+      || [408, 409, 425, 429].includes(Number(error.status))
+      || Number(error.status) >= 500);
+  const waitForRetry = delay => new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new DOMException('Upload cancelled.', 'AbortError'));
+    const timer = window.setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }, delay);
+    const abort = () => {
+      window.clearTimeout(timer);
+      reject(new DOMException('Upload cancelled.', 'AbortError'));
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+  });
+  const withRetry = async (operation, attempts = 4) => {
+    let lastError;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        return await operation(attempt);
+      } catch (error) {
+        lastError = error;
+        if (!retryableUploadError(error) || attempt === attempts - 1) throw error;
+        await waitForRetry(Math.min(5000, 450 * (2 ** attempt)));
+      }
+    }
+    throw lastError;
+  };
   let sessionId = window.localStorage.getItem(storageKey) || '';
   let session;
   onState?.('preparing');
   if (sessionId) {
-    session = await fetch(`/api/upload-sessions/${sessionId}`, { credentials: 'include', cache: 'no-store', headers: headers(), signal }).then(readResponse).catch(() => null);
+    session = await fetch(`/api/upload-sessions/${sessionId}`, { credentials: 'include', cache: 'no-store', headers: headers(), signal })
+      .then(readResponse)
+      .catch(error => {
+        if (error?.name === 'AbortError') throw error;
+        return null;
+      });
+    if (session?.status === 'completed' && session.result) {
+      window.localStorage.removeItem(storageKey);
+      onProgress?.(100);
+      onState?.('sending');
+      return session.result;
+    }
   }
   if (!session) {
-    session = await fetch('/api/upload-sessions', {
+    session = await withRetry(() => fetch('/api/upload-sessions', {
       method: 'POST', credentials: 'include', cache: 'no-store', signal,
       headers: { 'Content-Type': 'application/json', ...headers() },
       body: JSON.stringify({ name: file.name, type: file.type || 'application/octet-stream', size: file.size, purpose, fingerprint }),
-    }).then(readResponse);
+    }).then(readResponse));
     sessionId = session.sessionId;
     window.localStorage.setItem(storageKey, sessionId);
   }
@@ -79,11 +128,11 @@ const uploadWithProgress = async ({ file, purpose = '', onProgress, onState, sig
       const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size));
       let result;
       try {
-        result = await fetch(`/api/upload-sessions/${sessionId}/chunks`, {
+        result = await withRetry(() => fetch(`/api/upload-sessions/${sessionId}/chunks`, {
           method: 'PUT', credentials: 'include', cache: 'no-store', signal,
           headers: { 'Content-Type': 'application/octet-stream', 'Upload-Offset': String(offset), ...headers() },
           body: chunk,
-        }).then(readResponse);
+        }).then(readResponse));
       } catch (error) {
         if (error.status !== 409 || !Number.isFinite(Number(error.details?.offset))) throw error;
         result = { offset: Number(error.details.offset) };
@@ -93,10 +142,10 @@ const uploadWithProgress = async ({ file, purpose = '', onProgress, onState, sig
     }
     onState?.('scanning');
     onProgress?.(98);
-    const completed = await fetch(`/api/upload-sessions/${sessionId}/complete`, {
+    const completed = await withRetry(() => fetch(`/api/upload-sessions/${sessionId}/complete`, {
       method: 'POST', credentials: 'include', cache: 'no-store', signal,
       headers: { 'Content-Type': 'application/json', ...headers() }, body: '{}',
-    }).then(readResponse);
+    }).then(readResponse), 5);
     window.localStorage.removeItem(storageKey);
     onProgress?.(100);
     onState?.('sending');

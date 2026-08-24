@@ -4315,14 +4315,15 @@ app.post('/api/upload-sessions', requireVerifiedUser, mutationLimiter, async (re
   const entries = await readdir(uploadSessionDir).catch(() => []);
   for (const entry of entries.filter(name => name.endsWith('.json'))) {
     const existing = await readUploadSession(entry.slice(0, -5));
-    if (existing?.userId === req.user.id && existing.fingerprint === fingerprint && existing.totalBytes === totalBytes && existing.status === 'uploading') {
-      return res.json({ sessionId: existing.id, offset: existing.receivedBytes, totalBytes, chunkSize: UPLOAD_CHUNK_BYTES, status: existing.status, resumed: true });
+    if (existing?.userId === req.user.id && existing.fingerprint === fingerprint && existing.totalBytes === totalBytes
+      && ['uploading', 'finalizing', 'completed'].includes(existing.status)) {
+      return res.json({ sessionId: existing.id, offset: existing.receivedBytes, totalBytes, chunkSize: UPLOAD_CHUNK_BYTES, status: existing.status, result: existing.result, resumed: true });
     }
   }
   const session = {
     id: newId(), userId: req.user.id, fingerprint, purpose,
     name: String(req.body?.name || 'upload').slice(0, 240), type: String(req.body?.type || 'application/octet-stream').slice(0, 160),
-    totalBytes, receivedBytes: 0, status: 'uploading', createdAt: now(),
+    totalBytes, receivedBytes: 0, status: 'uploading', mediaId: newId(), createdAt: now(),
   };
   await writeFile(uploadSessionDataPath(session.id), Buffer.alloc(0));
   await writeUploadSession(session);
@@ -4332,7 +4333,7 @@ app.post('/api/upload-sessions', requireVerifiedUser, mutationLimiter, async (re
 app.get('/api/upload-sessions/:id', requireVerifiedUser, async (req, res) => {
   const session = await readUploadSession(req.params.id);
   if (!session || session.userId !== req.user.id) return res.status(404).json({ error: 'Upload session not found.' });
-  res.json({ sessionId: session.id, offset: session.receivedBytes, totalBytes: session.totalBytes, chunkSize: UPLOAD_CHUNK_BYTES, status: session.status });
+  res.json({ sessionId: session.id, offset: session.receivedBytes, totalBytes: session.totalBytes, chunkSize: UPLOAD_CHUNK_BYTES, status: session.status, result: session.result });
 });
 
 app.put('/api/upload-sessions/:id/chunks', requireVerifiedUser, express.raw({ type: 'application/octet-stream', limit: UPLOAD_CHUNK_BYTES + 1024 }), async (req, res) => {
@@ -4416,7 +4417,10 @@ async function processUploadedRequest(req, res) {
       return res.status(503).json({ error: 'The attachment safety scanner is temporarily unavailable. Please retry.' });
     }
   }
-  const fileId = newId();
+  // Resumable completion can be retried after a transient database conflict or
+  // a lost response. Reusing the session media id makes finalization idempotent
+  // instead of creating a second attachment on every retry.
+  const fileId = req.uploadMediaId || newId();
   // Cloudinary may reject opaque AES-GCM blobs as raw files even though they
   // are valid private-chat attachments. Keep modest encrypted payloads in the
   // database and expose them only through the authenticated attachment route.
@@ -4465,16 +4469,28 @@ async function processUploadedRequest(req, res) {
 app.post('/api/upload-sessions/:id/complete', requireVerifiedUser, mutationLimiter, async (req, res) => {
   const session = await readUploadSession(req.params.id);
   if (!session || session.userId !== req.user.id) return res.status(404).json({ error: 'Upload session not found.' });
+  if (session.status === 'completed' && session.result) return res.json(session.result);
+  if (session.status === 'finalizing') return res.status(409).json({ error: 'Upload is still being finalized. Please retry.', code: 'upload_finalizing' });
   if (session.receivedBytes !== session.totalBytes) return res.status(409).json({ error: 'Upload is incomplete.', offset: session.receivedBytes, totalBytes: session.totalBytes });
   session.status = 'finalizing';
   await writeUploadSession(session);
   try {
     const buffer = await readFile(uploadSessionDataPath(session.id));
     req.file = { buffer, size: buffer.length, originalname: session.name, mimetype: session.type };
+    req.uploadMediaId = session.mediaId || (session.mediaId = newId());
     req.body = { ...(req.body || {}), purpose: session.purpose };
     const originalJson = res.json.bind(res);
     res.json = payload => {
-      if (res.statusCode < 400) removeUploadSession(session.id).catch(error => reportOperationalError('upload_session_cleanup_failed', error, { sessionId: session.id }));
+      if (res.statusCode < 400) {
+        session.status = 'completed';
+        // Preserve the established response contract, but do not duplicate the
+        // potentially large private recovery copy in the resumable-session cache.
+        const cachedMedia = payload?.media ? { ...payload.media } : null;
+        if (cachedMedia) delete cachedMedia.preservedData;
+        session.result = cachedMedia ? { ...payload, media: cachedMedia } : payload;
+        session.completedAt = now();
+        writeUploadSession(session).catch(error => reportOperationalError('upload_session_completion_cache_failed', error, { sessionId: session.id }));
+      }
       return originalJson(payload);
     };
     await processUploadedRequest(req, res);
