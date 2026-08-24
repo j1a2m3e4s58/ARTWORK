@@ -1788,6 +1788,8 @@ export default function ChatWorkspace({ adminMode = false }) {
   const outboxRetryTimersRef = useRef(new Map());
   const activeIdRef = useRef('');
   const latestRefreshRef = useRef('');
+  const latestScrollSessionRef = useRef({ conversationId: '', until: 0 });
+  const latestScrollTimersRef = useRef(new Set());
   const text = drafts[activeId] || '';
   const draftKey = `reigns-chat-drafts:${user?.id || 'guest'}`;
   const resourceCopy = {
@@ -2037,6 +2039,43 @@ export default function ChatWorkspace({ adminMode = false }) {
       setActiveId(hydratedConversations.some((row) => row.id === requestedId) ? requestedId : hydratedConversations[0].id);
     }
   };
+  const clearLatestScrollTimers = () => {
+    latestScrollTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    latestScrollTimersRef.current.clear();
+  };
+  const scrollConversationToLatest = ({ conversationId = activeIdRef.current, smooth = false, settle = false } = {}) => {
+    if (!conversationId || activeIdRef.current !== conversationId) return;
+    if (settle) {
+      clearLatestScrollTimers();
+      latestScrollSessionRef.current = { conversationId, until: Date.now() + 1800 };
+    }
+    const move = (behavior = 'auto') => {
+      if (activeIdRef.current !== conversationId) return;
+      const pane = messagesPaneRef.current;
+      if (!pane) return;
+      pane.scrollTo({ top: pane.scrollHeight, behavior });
+      setShowJumpToLatest(false);
+      setUnreadMarker(null);
+    };
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => move(smooth ? 'smooth' : 'auto')));
+    if (!settle) return;
+    // Images, GIFs, videos and decrypted attachments can acquire their final
+    // height after the message rows render. Re-anchor briefly so opening a
+    // conversation cannot stop above the newest message.
+    [120, 320, 700, 1250, 1800].forEach((delay) => {
+      const timer = window.setTimeout(() => {
+        latestScrollTimersRef.current.delete(timer);
+        move('auto');
+        if (delay === 1800) latestScrollSessionRef.current = { conversationId: '', until: 0 };
+      }, delay);
+      latestScrollTimersRef.current.add(timer);
+    });
+  };
+  const maintainLatestAfterMediaLayout = () => {
+    const session = latestScrollSessionRef.current;
+    if (session.conversationId !== activeIdRef.current || session.until < Date.now()) return;
+    window.requestAnimationFrame(() => scrollConversationToLatest({ conversationId: session.conversationId }));
+  };
   const loadMessages = async (id, search = messageQuery, options = {}) => {
     if (!id) return;
     const showLoadingIndicator = !options.mergeLatest && !options.before;
@@ -2102,19 +2141,10 @@ export default function ChatWorkspace({ adminMode = false }) {
         if (shouldRevealUnread) {
           document.querySelector(`[data-chat-message-id="${CSS.escape(unreadIncoming[0].id)}"]`)?.scrollIntoView({ block: 'start' });
         } else if (options.scrollToTop) currentPane.scrollTop = 0;
-        else if (shouldFollowLatest) currentPane.scrollTo({ top: currentPane.scrollHeight, behavior: options.smooth ? 'smooth' : 'auto' });
+        else if (shouldFollowLatest) scrollConversationToLatest({ conversationId: id, smooth: options.smooth, settle: options.scrollToBottom });
         else if (options.mergeLatest) currentPane.scrollTop = previousScrollTop;
       }),
     );
-    if (options.scrollToBottom) {
-      window.setTimeout(() => {
-        if (activeIdRef.current !== id) return;
-        const currentPane = messagesPaneRef.current;
-        if (!currentPane) return;
-        currentPane.scrollTo({ top: currentPane.scrollHeight, behavior: options.smooth ? 'smooth' : 'auto' });
-        setShowJumpToLatest(false);
-      }, 160);
-    }
     } finally {
       if (showLoadingIndicator) setMessagesLoading(false);
     }
@@ -2317,6 +2347,8 @@ export default function ChatWorkspace({ adminMode = false }) {
       outboxJobsRef.current.clear();
       outboxRetryTimersRef.current.forEach((timer) => window.clearTimeout(timer));
       outboxRetryTimersRef.current.clear();
+      clearLatestScrollTimers();
+      latestScrollSessionRef.current = { conversationId: '', until: 0 };
       storyUploadAbortRef.current?.abort();
       liveLocationWatchesRef.current.forEach(({ watchId, timer }) => {
         navigator.geolocation?.clearWatch(watchId);
@@ -3438,16 +3470,16 @@ export default function ChatWorkspace({ adminMode = false }) {
   };
   const handleMessageScroll = (event) => {
     const pane = event.currentTarget;
+    const latestSession = latestScrollSessionRef.current;
+    if (latestSession.conversationId === activeIdRef.current && latestSession.until >= Date.now()) {
+      setShowJumpToLatest(false);
+      return;
+    }
     setShowJumpToLatest(pane.scrollHeight - pane.scrollTop - pane.clientHeight > 220);
     if (pane.scrollTop < 180 && nextCursor && !messageQuery && !loadingOlderRef.current) loadOlderMessages();
   };
   const jumpToLatest = () => {
-    const pane = messagesPaneRef.current;
-    if (pane) {
-      pane.scrollTo({ top: pane.scrollHeight, behavior: 'smooth' });
-      setShowJumpToLatest(false);
-      setUnreadMarker(null);
-    }
+    scrollConversationToLatest({ conversationId: activeIdRef.current, smooth: true, settle: true });
   };
   const startMessageSwipe = (event, message) => {
     if (
@@ -4449,6 +4481,8 @@ export default function ChatWorkspace({ adminMode = false }) {
               <div
                 ref={messagesPaneRef}
                 onScroll={handleMessageScroll}
+                onLoadCapture={maintainLatestAfterMediaLayout}
+                onLoadedMetadataCapture={maintainLatestAfterMediaLayout}
                 tabIndex={0}
                 role="log"
                 aria-label={`Messages with ${conversationName(active, user.id)}`}
