@@ -997,28 +997,63 @@ function QuotedMessage({ message, target, senderName = 'Reply', onActivate }) {
   );
 }
 
-function LazyMediaImage({ src, alt, className = '', frameClassName = '', eager = false }) {
+function mediaFrameWidth(aspectRatio, compact = false) {
+  const viewportHeight = typeof window === 'undefined' ? 800 : window.innerHeight;
+  const heightLimit = compact ? 160 : Math.min(520, viewportHeight * 0.64);
+  const widthLimit = compact ? 144 : 288;
+  if (!aspectRatio || aspectRatio >= 1) return widthLimit;
+  return Math.max(compact ? 88 : 112, Math.min(widthLimit, heightLimit * aspectRatio));
+}
+
+function LazyMediaImage({ src, alt, className = '', frameClassName = '', eager = false, preserveAspect = false, compact = false }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
-  useEffect(() => { setLoaded(false); setFailed(false); }, [src]);
+  const [aspectRatio, setAspectRatio] = useState(null);
+  useEffect(() => { setLoaded(false); setFailed(false); setAspectRatio(null); }, [src]);
   return (
-    <span className={`chat-media-frame relative block overflow-hidden ${frameClassName}`}>
+    <span
+      className={`chat-media-frame relative block overflow-hidden ${frameClassName}`}
+      style={preserveAspect ? {
+        aspectRatio: aspectRatio || '4 / 3',
+        width: `${mediaFrameWidth(aspectRatio, compact)}px`,
+        maxWidth: '78vw',
+      } : undefined}
+    >
       {!loaded && !failed && !eager && <span className="chat-media-placeholder absolute inset-0" aria-hidden="true" />}
       {failed ? (
         <span className="absolute inset-0 flex items-center justify-center gap-2 bg-obsidian/80 text-xs text-ivory/45"><Image size={18} /> Media unavailable</span>
       ) : (
-        <img src={src} alt={alt} loading={eager ? 'eager' : 'lazy'} fetchPriority={eager ? 'high' : 'auto'} decoding="async" onLoad={() => setLoaded(true)} onError={() => setFailed(true)} className={`${className} transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`} />
+        <img
+          src={src}
+          alt={alt}
+          loading={eager ? 'eager' : 'lazy'}
+          fetchPriority={eager ? 'high' : 'auto'}
+          decoding="async"
+          onLoad={(event) => {
+            const { naturalWidth, naturalHeight } = event.currentTarget;
+            if (preserveAspect && naturalWidth && naturalHeight) setAspectRatio(naturalWidth / naturalHeight);
+            setLoaded(true);
+          }}
+          onError={() => setFailed(true)}
+          className={`${className} transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        />
       )}
     </span>
   );
 }
 
-function ManagedVideo({ src, className = '', controls = true }) {
+function ManagedVideo({ src, className = '', controls = true, compact = false }) {
   const frameRef = useRef(null);
   const videoRef = useRef(null);
   const [nearViewport, setNearViewport] = useState(false);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [aspectRatio, setAspectRatio] = useState(null);
+  useEffect(() => {
+    setReady(false);
+    setFailed(false);
+    setAspectRatio(null);
+  }, [src]);
   useEffect(() => {
     const frame = frameRef.current;
     if (!frame || typeof IntersectionObserver === 'undefined') { setNearViewport(true); return undefined; }
@@ -1040,10 +1075,31 @@ function ManagedVideo({ src, className = '', controls = true }) {
     if (player) { player.pause(); player.removeAttribute('src'); player.load(); }
   }, []);
   return (
-    <span ref={frameRef} className="chat-media-frame relative block aspect-video overflow-hidden bg-black">
+    <span
+      ref={frameRef}
+      className="chat-media-frame relative block max-w-full overflow-hidden rounded-xl bg-transparent"
+      style={{
+        aspectRatio: aspectRatio || '16 / 9',
+        width: `${mediaFrameWidth(aspectRatio, compact)}px`,
+        maxWidth: '78vw',
+      }}
+    >
       {!ready && !failed && <span className="chat-media-placeholder absolute inset-0" aria-hidden="true" />}
       {failed && <span className="absolute inset-0 flex items-center justify-center gap-2 text-xs text-ivory/45"><Video size={18} /> Video unavailable</span>}
-      <video ref={videoRef} src={nearViewport ? src : undefined} controls={controls} preload="metadata" playsInline onLoadedData={() => setReady(true)} onError={() => setFailed(true)} className={`${className} h-full w-full object-contain transition-opacity duration-200 ${ready ? 'opacity-100' : 'opacity-0'}`} />
+      <video
+        ref={videoRef}
+        src={nearViewport ? src : undefined}
+        controls={controls}
+        preload="metadata"
+        playsInline
+        onLoadedMetadata={(event) => {
+          const { videoWidth, videoHeight } = event.currentTarget;
+          if (videoWidth && videoHeight) setAspectRatio(videoWidth / videoHeight);
+        }}
+        onLoadedData={() => setReady(true)}
+        onError={() => setFailed(true)}
+        className={`${className} h-full w-full object-cover transition-opacity duration-200 ${ready ? 'opacity-100' : 'opacity-0'}`}
+      />
     </span>
   );
 }
@@ -1113,25 +1169,27 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
   if (type?.startsWith('image/')) {
     const gif = /image\/gif/i.test(type) || /\.gif(?:$|[?#])/i.test(name || url);
     return (
-      <button type="button" onClick={() => onOpen?.(attachment)} className={`mt-1 block max-w-full overflow-hidden rounded-xl bg-transparent text-left ${gif ? 'w-[9rem] sm:w-[10.5rem]' : 'w-[78vw] sm:w-[18rem]'}`}>
+      <button type="button" onClick={() => onOpen?.(attachment)} className={`mt-1 block w-fit max-w-full overflow-hidden rounded-xl bg-transparent text-left ${gif ? 'w-[9rem] sm:w-[10.5rem]' : ''}`}>
         <LazyMediaImage
           src={url}
           eager={gif}
           alt={name || (gif ? 'Shared GIF' : 'Shared image')}
           className={gif
             ? 'h-full w-full rounded-xl object-cover'
-            : 'h-full w-full rounded-xl object-contain'}
+            : 'h-full w-full rounded-xl object-cover'}
           frameClassName={gif
             ? 'aspect-square w-full rounded-xl'
-            : `${compact ? 'h-40' : 'aspect-[4/3] max-h-72'} w-full rounded-xl`}
+            : 'rounded-xl'}
+          preserveAspect={!gif}
+          compact={compact}
         />
       </button>
     );
   }
   if (type?.startsWith('video/'))
     return (
-      <div className={`mt-1 w-[78vw] max-w-full overflow-hidden rounded-xl bg-black sm:w-[18rem] ${compact ? 'max-h-40' : 'max-h-72'}`}>
-        <ManagedVideo src={url} className="rounded-xl" />
+      <div className="mt-1 w-fit max-w-full overflow-hidden rounded-xl bg-transparent">
+        <ManagedVideo src={url} compact={compact} className="rounded-xl" />
       </div>
     );
   const { Icon, label, color } = fileVisual(type, name);
@@ -1626,7 +1684,19 @@ function AttachmentComposer({
             {items.length < 10 && !busy && (
               <label className="flex h-14 w-14 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-white/20 text-ivory hover:bg-white/5" aria-label="Add more attachments">
                 <Plus size={22} />
-                <input type="file" multiple className="hidden" accept="image/*,video/*,audio/*,.heic,.heif,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" onChange={(event) => { onAdd(event.target.files); event.target.value = ''; }} />
+                <input
+                  type="file"
+                  multiple
+                  className="hidden"
+                  accept="image/*,video/*,audio/*,.heic,.heif,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+                  onClick={(event) => { event.currentTarget.value = ''; }}
+                  onChange={(event) => {
+                    const input = event.currentTarget;
+                    const selected = Array.from(input.files || []);
+                    input.value = '';
+                    if (selected.length) onAdd(selected);
+                  }}
+                />
               </label>
             )}
           </div>
@@ -2629,6 +2699,19 @@ export default function ChatWorkspace({ adminMode = false }) {
     } catch {
       setError('This photo could not be added. Please close other apps and try once more.');
     }
+  };
+  const handleSelectedFiles = (event, options = {}) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const input = event.currentTarget;
+    // Copy the FileList before clearing the picker. Some mobile browsers make
+    // its live FileList empty as soon as the input value is reset.
+    const selected = Array.from(input.files || []);
+    input.value = '';
+    if (!selected.length) return;
+    void chooseFiles(selected, options).catch((selectionError) => {
+      setError(selectionError?.message || 'This attachment could not be prepared. Please try again.');
+    });
   };
   const clipboardFiles = (clipboardData) => {
     const itemFiles = [...(clipboardData?.items || [])]
@@ -4604,7 +4687,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                           <span className="h-px flex-1 bg-brass/20" />
                         </div>
                       )}
-                      <div className={`group flex min-w-0 max-w-full items-center gap-2 ${mine ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`group flex w-full min-w-0 max-w-full items-center gap-2 ${mine ? 'justify-end' : 'justify-start'}`}>
                         {messageSelectionMode && (
                           <button
                             type="button"
@@ -5012,10 +5095,8 @@ export default function ChatWorkspace({ adminMode = false }) {
                               multiple
                               className="hidden"
                               accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
-                              onChange={(event) => {
-                                chooseFiles(event.target.files);
-                                event.target.value = '';
-                              }}
+                              onClick={(event) => { event.currentTarget.value = ''; }}
+                              onChange={handleSelectedFiles}
                             />
                           </label>
                         )}
@@ -5154,10 +5235,8 @@ export default function ChatWorkspace({ adminMode = false }) {
                       multiple
                       className="hidden"
                       accept="image/*,video/*,.heic,.heif"
-                      onChange={(event) => {
-                        chooseFiles(event.target.files);
-                        event.target.value = '';
-                      }}
+                      onClick={(event) => { event.currentTarget.value = ''; }}
+                      onChange={handleSelectedFiles}
                     />
                     <input
                       ref={documentsInputRef}
@@ -5165,10 +5244,8 @@ export default function ChatWorkspace({ adminMode = false }) {
                       multiple
                       className="hidden"
                       accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
-                      onChange={(event) => {
-                        chooseFiles(event.target.files);
-                        event.target.value = '';
-                      }}
+                      onClick={(event) => { event.currentTarget.value = ''; }}
+                      onChange={handleSelectedFiles}
                     />
                     <input
                       ref={audioInputRef}
@@ -5176,10 +5253,8 @@ export default function ChatWorkspace({ adminMode = false }) {
                       multiple
                       className="hidden"
                       accept="audio/*"
-                      onChange={(event) => {
-                        chooseFiles(event.target.files);
-                        event.target.value = '';
-                      }}
+                      onClick={(event) => { event.currentTarget.value = ''; }}
+                      onChange={handleSelectedFiles}
                     />
                     <input
                       ref={cameraInputRef}
@@ -5187,10 +5262,8 @@ export default function ChatWorkspace({ adminMode = false }) {
                       className="hidden"
                       accept="image/*"
                       capture="environment"
-                      onChange={(event) => {
-                        chooseFiles(event.target.files, { camera: true });
-                        event.target.value = '';
-                      }}
+                      onClick={(event) => { event.currentTarget.value = ''; }}
+                      onChange={(event) => handleSelectedFiles(event, { camera: true })}
                     />
                   </div>
                   {!recording && (
