@@ -1784,7 +1784,8 @@ export default function ChatWorkspace({ adminMode = false }) {
   const initializedSelectionRef = useRef(false);
   const typingLastSentRef = useRef({ value: false, at: 0 });
   const outboxSenderRef = useRef(null);
-  const outboxFlushRef = useRef(false);
+  const outboxJobsRef = useRef(new Map());
+  const outboxRetryTimersRef = useRef(new Map());
   const activeIdRef = useRef('');
   const latestRefreshRef = useRef('');
   const text = drafts[activeId] || '';
@@ -1877,39 +1878,60 @@ export default function ChatWorkspace({ adminMode = false }) {
     if (!user?.id) return [];
     const rows = await listOutbox(user.id);
     setOutboxItems(rows);
-    setQueuedCount(rows.length);
+    setQueuedCount(rows.filter((row) => row.status !== 'failed').length);
     return rows;
   };
-  const flushOutbox = async (onlyClientId = '') => {
-    if (!navigator.onLine || outboxFlushRef.current || !outboxSenderRef.current) return;
-    outboxFlushRef.current = true;
+  const messageBelongsToOutboxJob = (message, clientId) =>
+    message.clientId === clientId || message.clientId?.startsWith(`${clientId}-`);
+  const processOutboxItem = async (item) => {
+    if (!item?.clientId || !navigator.onLine || !outboxSenderRef.current || outboxJobsRef.current.has(item.clientId)) return;
+    const controller = new AbortController();
+    const job = { controller, cancelled: false };
+    outboxJobsRef.current.set(item.clientId, job);
     try {
-      const rows = (await listOutbox(user.id)).filter(item => !onlyClientId || item.clientId === onlyClientId);
-      for (const item of rows) {
-        try {
-          await patchOutbox(user.id, item.clientId, { status: 'sending', lastError: '' });
-          setMessages(current => current.map(message => message.clientId === item.clientId || message.clientId?.startsWith(`${item.clientId}-`)
-            ? { ...message, pending: true, failed: false }
-            : message));
-          await outboxSenderRef.current(item);
-          await removeOutbox(user.id, item.clientId);
-        } catch (sendError) {
-          const attempts = Number(item.attempts || 0) + 1;
-          await patchOutbox(user.id, item.clientId, { status: 'failed', attempts, lastError: String(sendError?.message || 'Message could not be sent.') });
-          setMessages(current => current.map(message => message.clientId === item.clientId || message.clientId?.startsWith(`${item.clientId}-`)
-            ? { ...message, pending: false, failed: true, sendError: String(sendError?.message || '') }
-            : message));
-          if (navigator.onLine && attempts < 4) {
-            window.setTimeout(() => flushOutbox(item.clientId), Math.min(30000, 2500 * (2 ** attempts)));
-          }
-        }
+      await patchOutbox(user.id, item.clientId, { status: 'sending', lastError: '' });
+      setMessages((current) => current.map((message) => messageBelongsToOutboxJob(message, item.clientId)
+        ? { ...message, pending: true, failed: false, sendError: '' }
+        : message));
+      await outboxSenderRef.current(item, { signal: controller.signal });
+      if (job.cancelled || controller.signal.aborted) return;
+      await removeOutbox(user.id, item.clientId);
+      setMessages((current) => current.filter((message) => !messageBelongsToOutboxJob(message, item.clientId) || !message.pending));
+      if (activeIdRef.current === item.conversationId) {
+        await loadMessages(item.conversationId, '', { mergeLatest: true, scrollToBottom: true, smooth: true }).catch(() => {});
       }
-      await refreshOutbox();
-      if (activeIdRef.current) await loadMessages(activeIdRef.current, '', { mergeLatest: true }).catch(() => {});
       load().catch(() => {});
+    } catch (sendError) {
+      if (job.cancelled || controller.signal.aborted || sendError?.name === 'AbortError') {
+        await removeOutbox(user.id, item.clientId);
+        setMessages((current) => current.filter((message) => !messageBelongsToOutboxJob(message, item.clientId)));
+        return;
+      }
+      const attempts = Number(item.attempts || 0) + 1;
+      const lastError = String(sendError?.message || 'Message could not be sent.');
+      await patchOutbox(user.id, item.clientId, { status: 'failed', attempts, lastError });
+      setMessages((current) => current.map((message) => messageBelongsToOutboxJob(message, item.clientId)
+        ? { ...message, pending: false, failed: true, sendError: lastError }
+        : message));
+      if (navigator.onLine && attempts < 4) {
+        window.clearTimeout(outboxRetryTimersRef.current.get(item.clientId));
+        const timer = window.setTimeout(() => {
+          outboxRetryTimersRef.current.delete(item.clientId);
+          flushOutbox(item.clientId);
+        }, Math.min(30000, 2500 * (2 ** attempts)));
+        outboxRetryTimersRef.current.set(item.clientId, timer);
+      }
     } finally {
-      outboxFlushRef.current = false;
+      outboxJobsRef.current.delete(item.clientId);
+      await refreshOutbox().catch(() => {});
     }
+  };
+  const flushOutbox = async (onlyClientId = '') => {
+    if (!navigator.onLine || !outboxSenderRef.current || !user?.id) return;
+    const rows = (await listOutbox(user.id)).filter((item) => !onlyClientId || item.clientId === onlyClientId);
+    // Every outbox item owns its upload and retry lifecycle. A large video can
+    // keep uploading while later text, GIF or voice messages proceed normally.
+    rows.forEach((item) => { void processOutboxItem(item); });
   };
   useEffect(() => {
     if (!user?.id) return undefined;
@@ -2047,7 +2069,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     if (options.filters?.attachmentType) rows = rows.filter(message => messageMatchesAttachmentFilter(message, options.filters.attachmentType));
     if (!search && !options.filters) cacheMessages(user.id, id, encryptedRows).catch(() => {});
     const unreadIncoming = rows.filter((message) => message.senderId !== user.id && !(message.readBy || []).includes(user.id));
-    const shouldRevealUnread = !options.mergeLatest && !options.before && !search && !options.filters && unreadIncoming.length > 0;
+    const shouldRevealUnread = !options.scrollToBottom && !options.mergeLatest && !options.before && !search && !options.filters && unreadIncoming.length > 0;
     if (shouldRevealUnread) {
       setUnreadMarker({ conversationId: id, messageId: unreadIncoming[0].id, count: unreadIncoming.length });
     } else if (options.mergeLatest && !shouldFollowLatest) {
@@ -2084,6 +2106,15 @@ export default function ChatWorkspace({ adminMode = false }) {
         else if (options.mergeLatest) currentPane.scrollTop = previousScrollTop;
       }),
     );
+    if (options.scrollToBottom) {
+      window.setTimeout(() => {
+        if (activeIdRef.current !== id) return;
+        const currentPane = messagesPaneRef.current;
+        if (!currentPane) return;
+        currentPane.scrollTo({ top: currentPane.scrollHeight, behavior: options.smooth ? 'smooth' : 'auto' });
+        setShowJumpToLatest(false);
+      }, 160);
+    }
     } finally {
       if (showLoadingIndicator) setMessagesLoading(false);
     }
@@ -2263,7 +2294,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       return [];
     });
     setActiveAttachmentId('');
-    loadMessages(activeId, '', { scrollToBottom: true }).catch((loadError) => setError(loadError.message));
+    loadMessages(activeId, '', { scrollToBottom: true, smooth: true }).catch((loadError) => setError(loadError.message));
   }, [activeId]);
   useEffect(() => {
     if (!activeId || new URLSearchParams(window.location.search).get('compose') !== '1') return;
@@ -2282,6 +2313,10 @@ export default function ChatWorkspace({ adminMode = false }) {
     return () => {
       window.clearTimeout(typingTimerRef.current);
       uploadAbortRef.current?.abort();
+      outboxJobsRef.current.forEach(({ controller }) => controller.abort());
+      outboxJobsRef.current.clear();
+      outboxRetryTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      outboxRetryTimersRef.current.clear();
       storyUploadAbortRef.current?.abort();
       liveLocationWatchesRef.current.forEach(({ watchId, timer }) => {
         navigator.geolocation?.clearWatch(watchId);
@@ -2809,7 +2844,6 @@ export default function ChatWorkspace({ adminMode = false }) {
     const outgoingText = String(body || '').trim();
     const outgoingAttachments = Array.isArray(items) ? items : [];
     if ((!outgoingText && !outgoingAttachments.length) || !activeId) return false;
-    setBusy(true);
     setUploadFailed(false);
     setUploadProgress(Object.fromEntries(outgoingAttachments.map((item) => [item.id, 1])));
     setUploadStage(Object.fromEntries(outgoingAttachments.map((item) => [item.id, 'preparing'])));
@@ -2851,7 +2885,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       replyToId: replyingTo?.id || null,
       viewOnce,
       disappearAfter,
-      status: 'sending',
+      status: 'queued',
       createdAt: new Date().toISOString(),
     };
     await putOutbox(outboxJob);
@@ -2863,121 +2897,14 @@ export default function ChatWorkspace({ adminMode = false }) {
     setViewOnce(false);
     window.requestAnimationFrame(() => {
       const pane = messagesPaneRef.current;
-      if (pane) pane.scrollTop = pane.scrollHeight;
+      if (pane) pane.scrollTo({ top: pane.scrollHeight, behavior: 'smooth' });
     });
-    try {
-      if (!outgoingAttachments.length) {
-        const shouldEncrypt = active?.type !== 'announcement';
-        let ciphertext = '';
-        let deliverySecurity = shouldEncrypt ? 'end-to-end-encrypted' : 'standard';
-        if (shouldEncrypt) {
-          try {
-            ciphertext = await encryptChatText(studioClient, { body: outgoingText, participantIds: active?.participantIds || [], userId: user.id });
-          } catch (encryptionError) {
-            const recipientHasNoDevice = /not enabled encrypted messaging|no verified recipient devices/i.test(String(encryptionError.message || ''));
-            if (!recipientHasNoDevice) throw encryptionError;
-            deliverySecurity = 'account-protected';
-          }
-        }
-        await studioClient.chat.send(activeId, {
-          clientId,
-          body: ciphertext ? '' : outgoingText,
-          ciphertext,
-          encryption: ciphertext ? { algorithm: 'ECDH-P256+AES-256-GCM', version: 1 } : null,
-          deliverySecurity,
-          replyToId: replyingTo?.id || null,
-          expiresInSeconds: disappearAfter,
-          allowForward: false,
-        });
-      } else {
-        uploadAbortRef.current = new AbortController();
-        const messages = await mapWithConcurrency(outgoingAttachments, 3, async (item, index) => {
-          const shouldEncrypt = active?.type !== 'announcement';
-          const originalType = isVoiceAttachment({ name: item.file.name, type: item.mime || item.file.type })
-            ? item.mime || item.file.type || 'audio/webm'
-            : item.mime || item.file.type || 'application/octet-stream';
-          const originalFile = item.file.type === originalType
-            ? item.file
-            : new File([item.file], item.file.name, { type: originalType, lastModified: item.file.lastModified });
-          let encrypted = null;
-          let deliverySecurity = shouldEncrypt ? 'end-to-end-encrypted' : 'standard';
-          try {
-            encrypted = shouldEncrypt
-              ? await encryptChatAttachment(studioClient, {
-                file: originalFile,
-                body: String(item.caption || '').trim() || (index === 0 ? outgoingText : ''),
-                participantIds: active?.participantIds || [],
-                userId: user.id,
-              })
-              : null;
-          } catch (encryptionError) {
-            const recipientHasNoDevice = /not enabled encrypted messaging|no verified recipient devices/i.test(String(encryptionError.message || ''));
-            if (!recipientHasNoDevice) throw encryptionError;
-            deliverySecurity = 'account-protected';
-          }
-          const uploadFile = encrypted?.file || originalFile;
-          const uploaded = await studioClient.integrations.Core.UploadFileProgress({
-            file: uploadFile,
-            purpose: 'chat-attachment',
-            signal: uploadAbortRef.current.signal,
-            fingerprint: `${clientId}-${index}:${uploadFile.size}`,
-            onState: (stage) => setUploadStage((current) => ({ ...current, [item.id]: stage })),
-            onProgress: (progress) =>
-              setUploadProgress((current) => ({
-                ...current,
-                [item.id]: progress,
-              })),
-          });
-          return {
-            clientId: `${clientId}-${index}`,
-            body: encrypted ? '' : String(item.caption || '').trim() || (index === 0 ? outgoingText : ''),
-            ciphertext: encrypted?.ciphertext || '',
-            encryption: encrypted ? { algorithm: 'ECDH-P256+AES-256-GCM', version: 1, attachment: 'AES-256-GCM' } : null,
-            deliverySecurity,
-            attachmentUrl: uploaded.file_url,
-            // Encrypted files keep their metadata inside the device envelope.
-            // A protected compatibility fallback keeps the original metadata
-            // and is explicitly marked as account-protected, never as E2EE.
-            attachmentName: encrypted ? 'encrypted-attachment.bin' : item.file.name,
-            attachmentType: encrypted ? 'application/vnd.reigns.encrypted' : uploaded.media?.mime || originalType,
-            attachmentBytes: uploadFile.size,
-            voiceDurationSeconds: isVoiceAttachment({ name: item.file.name, type: originalType })
-              ? Math.max(0, Number(item.file.voiceDurationSeconds) || 0)
-              : 0,
-            replyToId: index === 0 ? replyingTo?.id || null : null,
-            viewOnce,
-            expiresInSeconds: disappearAfter,
-            allowForward: false,
-          };
-        });
-        await studioClient.chat.sendBatch(activeId, messages);
-      }
-      setUploadProgress({});
-      await removeOutbox(user.id, clientId);
-      refreshOutbox().catch(() => {});
-      await loadMessages(activeId, '', { mergeLatest: true, scrollToBottom: true, smooth: true });
-      await load();
-      outgoingAttachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-      return true;
-    } catch (sendError) {
-      await patchOutbox(user.id, clientId, { status: 'failed', lastError: String(sendError.message || 'Message could not be sent.') });
-      refreshOutbox().catch(() => {});
-      setMessages(current => current.map(message => optimisticMessages.some(pending => pending.id === message.id)
-        ? { ...message, pending: false, failed: true, sendError: String(sendError.message || '') }
-        : message));
-      setUploadFailed(Boolean(outgoingAttachments.length) && sendError.name !== 'AbortError');
-      setError(sendError.name === 'AbortError'
-        ? 'Upload cancelled. Tap retry when you are ready.'
-        : navigator.onLine
-          ? 'Message not sent. Tap retry on the message.'
-          : 'You are offline. The message will send automatically after reconnection.');
-      return false;
-    } finally {
-      setBusy(false);
-      uploadAbortRef.current = null;
-    }
+    // Sending runs independently in the outbox. Do not keep the composer busy:
+    // later messages must be able to pass a large or temporarily stalled file.
+    window.setTimeout(() => flushOutbox(clientId), 0);
+    return true;
   };
-  const deliverQueuedOutbox = async (item) => {
+  const deliverQueuedOutbox = async (item, { signal } = {}) => {
     if (item.kind === 'gif') {
       const imported = await studioClient.chat.importGif(item.gif.id);
       gifDisplaySources.set(item.clientId, item.gif.previewUrl || item.gif.url || imported.file_url);
@@ -3038,6 +2965,7 @@ export default function ChatWorkspace({ adminMode = false }) {
         const uploaded = await studioClient.integrations.Core.UploadFileProgress({
           file: uploadFile,
           purpose: 'chat-attachment',
+          signal,
           fingerprint: `${item.clientId}-${index}:${uploadFile.size}`,
           onState: (stage) => setUploadStage((current) => ({ ...current, [attachment.id]: stage })),
           onProgress: (progress) => setUploadProgress((current) => ({ ...current, [attachment.id]: progress })),
@@ -3064,6 +2992,33 @@ export default function ChatWorkspace({ adminMode = false }) {
     throw new Error('This queued message type is not supported.');
   };
   outboxSenderRef.current = deliverQueuedOutbox;
+  const cancelOutboxMessage = async (message) => {
+    const rootClientId = outboxItems.find((item) => messageBelongsToOutboxJob(message, item.clientId))?.clientId || '';
+    if (!rootClientId) return false;
+    const runningJob = outboxJobsRef.current.get(rootClientId);
+    if (runningJob) {
+      runningJob.cancelled = true;
+      runningJob.controller.abort();
+    }
+    window.clearTimeout(outboxRetryTimersRef.current.get(rootClientId));
+    outboxRetryTimersRef.current.delete(rootClientId);
+    await removeOutbox(user.id, rootClientId);
+    const remaining = outboxItems.filter((item) => item.clientId !== rootClientId);
+    setOutboxItems(remaining);
+    setQueuedCount(remaining.filter((item) => item.status !== 'failed').length);
+    setMessages((current) => current.filter((item) => !messageBelongsToOutboxJob(item, rootClientId)));
+    setUploadProgress((current) => {
+      const next = { ...current };
+      outboxItems.find((item) => item.clientId === rootClientId)?.attachments?.forEach((attachment) => delete next[attachment.id]);
+      return next;
+    });
+    setUploadStage((current) => {
+      const next = { ...current };
+      outboxItems.find((item) => item.clientId === rootClientId)?.attachments?.forEach((attachment) => delete next[attachment.id]);
+      return next;
+    });
+    return true;
+  };
   const retryOutboxMessage = async (message) => {
     const rootClientId = outboxItems.find(item => message.clientId === item.clientId || message.clientId?.startsWith(`${item.clientId}-`))?.clientId || '';
     if (!rootClientId) return;
@@ -3331,6 +3286,12 @@ export default function ChatWorkspace({ adminMode = false }) {
     }
   };
   const removeMessage = async (message, mode) => {
+    if (message.pending || message.failed) {
+      await cancelOutboxMessage(message);
+      setMessageMenuId('');
+      setMessageInfo(null);
+      return;
+    }
     const previousMessages = messages;
     setMessageMenuId('');
     setMessageInfo(null);
@@ -4646,7 +4607,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                                   <Loader2 size={12} className={chatAnimationsEnabled ? 'animate-spin' : ''} />
                                   <span className="flex-1">{label}{uploadId && stage === 'uploading' ? ` ${progress}%` : ''}</span>
                                   {uploadId && (
-                                    <button type="button" onClick={() => uploadAbortRef.current?.abort()} className="rounded-full p-1 text-ivory/45 hover:bg-white/5 hover:text-ivory" aria-label="Cancel upload">
+                                    <button type="button" onClick={() => cancelOutboxMessage(message)} className="rounded-full p-1 text-ivory/45 hover:bg-white/5 hover:text-ivory" aria-label="Cancel and remove upload">
                                       <X size={12} />
                                     </button>
                                   )}
