@@ -4490,6 +4490,15 @@ app.post('/api/upload-sessions/:id/complete', requireVerifiedUser, mutationLimit
         session.result = cachedMedia ? { ...payload, media: cachedMedia } : payload;
         session.completedAt = now();
         writeUploadSession(session).catch(error => reportOperationalError('upload_session_completion_cache_failed', error, { sessionId: session.id }));
+      } else {
+        // A handled upload failure (scanner unavailable, validation, database
+        // conflict, etc.) returns through res.json instead of throwing. Release
+        // the finalizing lock so Retry can resume or safely fall back rather
+        // than receiving upload_finalizing forever.
+        session.status = 'uploading';
+        session.lastError = String(payload?.error || 'Upload finalization failed.').slice(0, 500);
+        session.updatedAt = now();
+        writeUploadSession(session).catch(error => reportOperationalError('upload_session_unlock_failed', error, { sessionId: session.id }));
       }
       return originalJson(payload);
     };

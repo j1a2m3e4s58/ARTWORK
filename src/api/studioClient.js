@@ -44,7 +44,7 @@ const readCsrfToken = () => document.cookie
   .find(cookie => cookie.startsWith('atelier_csrf='))
   ?.split('=').slice(1).join('=');
 
-const uploadWithProgress = async ({ file, purpose = '', onProgress, onState, signal, fingerprint: suppliedFingerprint }) => {
+const resumableUploadWithProgress = async ({ file, purpose = '', onProgress, onState, signal, fingerprint: suppliedFingerprint }) => {
   const fingerprint = suppliedFingerprint || [file.name, file.size, file.lastModified || 0, purpose].join(':');
   const storageKey = `atelier-upload-session:${encodeURIComponent(fingerprint)}`;
   const headers = () => {
@@ -156,6 +156,81 @@ const uploadWithProgress = async ({ file, purpose = '', onProgress, onState, sig
       fetch(`/api/upload-sessions/${sessionId}`, { method: 'DELETE', credentials: 'include', headers: headers() }).catch(() => {});
     }
     throw error;
+  }
+};
+
+const directUploadWithProgress = ({ file, purpose = '', onProgress, onState, signal }) => new Promise((resolve, reject) => {
+  const xhr = new XMLHttpRequest();
+  const form = new FormData();
+  form.append('file', file);
+  if (purpose) form.append('purpose', purpose);
+  xhr.open('POST', '/api/upload');
+  xhr.withCredentials = true;
+  const csrf = readCsrfToken();
+  if (csrf) xhr.setRequestHeader('X-CSRF-Token', decodeURIComponent(csrf));
+  const abort = () => xhr.abort();
+  signal?.addEventListener('abort', abort, { once: true });
+  xhr.upload.addEventListener('progress', event => {
+    if (!event.lengthComputable) return;
+    onProgress?.(Math.min(96, Math.round((event.loaded / event.total) * 96)));
+  });
+  xhr.addEventListener('load', () => {
+    signal?.removeEventListener('abort', abort);
+    let data = {};
+    try { data = JSON.parse(xhr.responseText || '{}'); } catch { data = {}; }
+    if (xhr.status >= 200 && xhr.status < 300) {
+      onProgress?.(100);
+      onState?.('sending');
+      resolve(data);
+      return;
+    }
+    const error = new Error(data.error || 'Upload failed.');
+    error.status = xhr.status;
+    error.code = data.code;
+    error.details = data;
+    reject(error);
+  });
+  xhr.addEventListener('error', () => {
+    signal?.removeEventListener('abort', abort);
+    const error = new Error('Unable to reach the studio service. Check your connection and try again.');
+    error.status = 0;
+    error.code = 'network_error';
+    reject(error);
+  });
+  xhr.addEventListener('abort', () => {
+    signal?.removeEventListener('abort', abort);
+    reject(new DOMException('Upload cancelled.', 'AbortError'));
+  });
+  onState?.('uploading');
+  onProgress?.(0);
+  xhr.send(form);
+});
+
+const uploadWithProgress = async options => {
+  const { file, purpose = '', signal, fingerprint: suppliedFingerprint } = options;
+  const fingerprint = suppliedFingerprint || [file.name, file.size, file.lastModified || 0, purpose].join(':');
+  const storageKey = `atelier-upload-session:${encodeURIComponent(fingerprint)}`;
+  try {
+    return await resumableUploadWithProgress(options);
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error;
+    const status = Number(error?.status);
+    const canFallback = !Number.isFinite(status)
+      || status === 0
+      || [404, 408, 409, 425, 429].includes(status)
+      || status >= 500;
+    if (!canFallback) throw error;
+    const staleSessionId = window.localStorage.getItem(storageKey);
+    window.localStorage.removeItem(storageKey);
+    if (staleSessionId) {
+      const csrf = readCsrfToken();
+      fetch(`/api/upload-sessions/${staleSessionId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: csrf ? { 'X-CSRF-Token': decodeURIComponent(csrf) } : {},
+      }).catch(() => {});
+    }
+    return directUploadWithProgress(options);
   }
 };
 
