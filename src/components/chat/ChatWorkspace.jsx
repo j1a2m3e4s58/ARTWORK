@@ -443,7 +443,7 @@ const VoiceMessagePlayer = memo(function VoiceMessagePlayer({ src, name = 'Voice
   };
 
   return (
-    <div className="flex w-full min-w-0 max-w-full items-center gap-2 rounded-xl bg-black/30 px-2 py-1.5 sm:w-[20rem]">
+    <div className="flex w-[min(19rem,78vw)] min-w-0 max-w-full items-center gap-2 rounded-2xl bg-black/45 px-2 py-1.5">
       <audio
         ref={audioRef}
         src={src}
@@ -1162,8 +1162,8 @@ function AttachmentPreview({ attachment, compact = false, onOpen }) {
   // remains the reliable signal for recordings made in chat.
   if (isVoiceAttachment(attachment))
     return (
-      <div className="mt-1 w-full min-w-0 max-w-full sm:w-[23rem]">
-      <VoiceMessagePlayer src={url} name={name} knownDuration={attachment.duration} />
+      <div className="w-[min(19rem,78vw)] min-w-0 max-w-full">
+        <VoiceMessagePlayer src={url} name={name} knownDuration={attachment.duration} />
       </div>
     );
   if (type?.startsWith('image/')) {
@@ -1797,7 +1797,6 @@ export default function ChatWorkspace({ adminMode = false }) {
   const [recording, setRecording] = useState(false);
   const [viewOnce, setViewOnce] = useState(false);
   const [disappearAfter, setDisappearAfter] = useState(0);
-  const [transcribingId, setTranscribingId] = useState('');
   const [error, setError] = useState('');
   const [connectionState, setConnectionState] = useState('connecting');
   const [encryptionState, setEncryptionState] = useState('starting');
@@ -1950,7 +1949,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     if (!user?.id) return [];
     const rows = await listOutbox(user.id);
     setOutboxItems(rows);
-    setQueuedCount(rows.filter((row) => row.status !== 'failed').length);
+    setQueuedCount(rows.filter((row) => row.status === 'queued' || row.status === 'sending').length);
     return rows;
   };
   const messageBelongsToOutboxJob = (message, clientId) =>
@@ -3090,11 +3089,13 @@ export default function ChatWorkspace({ adminMode = false }) {
           deliverySecurity = 'account-protected';
         }
         const uploadFile = encrypted?.file || originalFile;
+        const voiceUpload = isVoiceAttachment({ name: originalFile.name, type: originalType });
         const uploaded = await studioClient.integrations.Core.UploadFileProgress({
           file: uploadFile,
           purpose: 'chat-attachment',
           signal,
           fingerprint: `${item.clientId}-${index}:${uploadFile.size}`,
+          preferDirect: voiceUpload,
           onState: (stage) => setUploadStage((current) => ({ ...current, [attachment.id]: stage })),
           onProgress: (progress) => setUploadProgress((current) => ({ ...current, [attachment.id]: progress })),
         });
@@ -3133,7 +3134,7 @@ export default function ChatWorkspace({ adminMode = false }) {
     await removeOutbox(user.id, rootClientId);
     const remaining = outboxItems.filter((item) => item.clientId !== rootClientId);
     setOutboxItems(remaining);
-    setQueuedCount(remaining.filter((item) => item.status !== 'failed').length);
+    setQueuedCount(remaining.filter((item) => item.status === 'queued' || item.status === 'sending').length);
     setMessages((current) => current.filter((item) => !messageBelongsToOutboxJob(item, rootClientId)));
     setUploadProgress((current) => {
       const next = { ...current };
@@ -3256,18 +3257,6 @@ export default function ChatWorkspace({ adminMode = false }) {
       await load();
     } catch (shareError) {
       setError(shareError.message);
-    }
-  };
-  const transcribeMessage = async (message) => {
-    setTranscribingId(message.id);
-    setError('');
-    try {
-      await studioClient.chat.transcribe(message.id, 'auto');
-      setError('Transcription requested. It will appear when the speech service finishes.');
-    } catch (transcribeError) {
-      setError(transcribeError.message);
-    } finally {
-      setTranscribingId('');
     }
   };
   const beginCall = async (kind) => {
@@ -4709,7 +4698,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                             touchAction: 'pan-y',
                             transform: swipeReply?.id === message.id ? `translate3d(${swipeReply.offset}px, 0, 0)` : undefined,
                           }}
-                          className={`chat-bubble relative min-w-0 ${compactTextOnly ? 'chat-bubble-text-only' : ''} ${messageSelectionMode ? 'cursor-pointer' : ''} ${emojiOnly ? 'chat-bubble-emoji w-fit max-w-[86%] border-0 bg-transparent px-1 py-0' : bareAttachment && !voiceAttachment ? 'chat-bubble-media w-fit max-w-[86%] border-0 bg-transparent p-0 sm:max-w-[24rem]' : `rounded-xl border ${voiceAttachment ? 'chat-bubble-voice max-w-[92%] px-1 py-1 sm:max-w-[20rem]' : `w-fit max-w-[86%] ${compactTextOnly ? 'px-2.5 py-1' : 'px-2.5 py-1.5'} sm:max-w-[24rem]`} ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}`}
+                          className={`chat-bubble relative min-w-0 ${compactTextOnly ? 'chat-bubble-text-only' : ''} ${messageSelectionMode ? 'cursor-pointer' : ''} ${emojiOnly ? 'chat-bubble-emoji w-fit max-w-[86%] border-0 bg-transparent px-1 py-0' : bareAttachment && !voiceAttachment ? 'chat-bubble-media w-fit max-w-[86%] border-0 bg-transparent p-0 sm:max-w-[24rem]' : voiceAttachment ? 'chat-bubble-voice w-fit max-w-[92%] border-0 bg-transparent p-0 sm:max-w-[20rem]' : `rounded-xl border w-fit max-w-[86%] ${compactTextOnly ? 'px-2.5 py-1' : 'px-2.5 py-1.5'} sm:max-w-[24rem] ${mine ? 'chat-bubble-mine border-brass/20 bg-brass/10' : 'chat-bubble-incoming border-ivory/10 bg-carbon'} ${!groupedWithNext ? 'chat-bubble-tail' : ''}`}`}
                         >
                           <span
                             aria-hidden="true"
@@ -4888,17 +4877,6 @@ export default function ChatWorkspace({ adminMode = false }) {
                           ) : (
                             <AttachmentPreview attachment={attachment} onOpen={setPreview} />
                           )}
-                          {voiceAttachment && !attachment?.encryptedMetadata && (
-                            <button
-                              type="button"
-                              disabled={transcribingId === message.id}
-                              onClick={() => transcribeMessage(message)}
-                              className="mt-2 text-[10px] uppercase tracking-wider text-brass disabled:opacity-40"
-                            >
-                              {transcribingId === message.id ? 'Requesting transcription…' : 'Transcribe voice note'}
-                            </button>
-                          )}
-                          {message.transcription?.text && <p className="mt-2 border-l-2 border-brass/30 px-3 text-xs leading-5 text-ivory/55">{message.transcription.text}</p>}
                           {message.expiresAt && (
                             <p className="mt-2 flex items-center gap-1 text-[10px] text-ivory/30">
                               <Timer size={11} />

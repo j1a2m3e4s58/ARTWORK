@@ -207,9 +207,16 @@ const directUploadWithProgress = ({ file, purpose = '', onProgress, onState, sig
 });
 
 const uploadWithProgress = async options => {
-  const { file, purpose = '', signal, fingerprint: suppliedFingerprint } = options;
+  const { file, purpose = '', signal, fingerprint: suppliedFingerprint, preferDirect = false } = options;
   const fingerprint = suppliedFingerprint || [file.name, file.size, file.lastModified || 0, purpose].join(':');
   const storageKey = `atelier-upload-session:${encodeURIComponent(fingerprint)}`;
+  if (preferDirect) {
+    // Voice notes are intentionally small. Sending them through a resumable
+    // session adds several round trips and can leave a tiny recording stuck in
+    // "preparing" when a stale upload session survives a refresh.
+    try { window.localStorage.removeItem(storageKey); } catch { /* storage may be disabled */ }
+    return directUploadWithProgress(options);
+  }
   try {
     return await resumableUploadWithProgress(options);
   } catch (error) {
