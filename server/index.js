@@ -4378,7 +4378,7 @@ async function processUploadedRequest(req, res) {
   if (!req.file) return res.status(400).json({ error: 'Choose a supported image, video, or PDF file.' });
   const detected = await fileTypeFromBuffer(req.file.buffer);
   const encryptedChatAttachment = isChatAttachment
-    && req.file.mimetype === 'application/octet-stream'
+    && ['application/octet-stream', 'application/vnd.reigns.encrypted'].includes(req.file.mimetype)
     && req.file.originalname === 'encrypted-attachment.bin';
   const uploadType = encryptedChatAttachment ? { mime: 'application/octet-stream', ext: 'bin' } : detected;
   const allowed = new Set([
@@ -4414,7 +4414,15 @@ async function processUploadedRequest(req, res) {
       scanStatus = 'clean';
     } catch (error) {
       reportOperationalError('malware_scan_failed', error, { userId: req.user.id });
-      return res.status(503).json({ error: 'The attachment safety scanner is temporarily unavailable. Please retry.' });
+      const scannerRequired = String(process.env.MALWARE_SCAN_REQUIRED || '').toLowerCase() === 'true';
+      if (!isChatAttachment || scannerRequired) {
+        return res.status(503).json({ error: 'The attachment safety scanner is temporarily unavailable. Please retry.' });
+      }
+
+      // An unavailable third-party scanner must not strand authenticated chat
+      // media forever. The upload remains access-controlled and is explicitly
+      // marked so it can be rescanned later when the scanner recovers.
+      scanStatus = 'unavailable';
     }
   }
   // Resumable completion can be retried after a transient database conflict or
