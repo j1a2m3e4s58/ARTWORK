@@ -4905,7 +4905,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                           )}
                           {message.starredBy?.includes(user.id) && <Star size={12} className="absolute right-2 top-2 fill-brass text-brass" aria-label="Starred message" />}
                           {message.pinned && <Pin size={12} className="absolute right-7 top-2 fill-brass text-brass" aria-label="Pinned message" />}
-                          <div className="chat-message-footer mt-1 flex items-end gap-1.5">
+                          <div className={`chat-message-footer mt-1 flex items-end gap-1.5 ${attachment ? (mine ? 'justify-end' : 'justify-start') : ''}`}>
                             {!message.deletedForEveryone && (
                               <div data-chat-popover className={`chat-message-actions flex items-center gap-0.5 ${mine ? 'chat-message-actions--mine' : 'chat-message-actions--incoming'}`}>
                                 <button
@@ -4944,7 +4944,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                                 </button>
                               </div>
                             )}
-                            <div className="chat-delivery-meta ml-auto flex shrink-0 items-center gap-1 self-end text-[10px] leading-none text-ivory/35">
+                            <div className={`chat-delivery-meta flex shrink-0 items-center gap-1 self-end text-[10px] leading-none text-ivory/35 ${attachment && !mine ? 'order-first mr-auto' : 'ml-auto'}`}>
                               {message.editedAt && <span>edited · </span>}
                               {new Date(message.created_date).toLocaleTimeString([], {
                                 hour: '2-digit',

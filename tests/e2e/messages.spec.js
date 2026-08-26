@@ -83,6 +83,11 @@ test('sends images, documents, voice notes and GIFs without refresh', async ({ p
     json: { items: [{
       id: 'e2e-message', conversationId: 'e2e-chat', senderId: 'seed', body: 'Ready for media.',
       created_date: new Date().toISOString(), reactions: {}, readBy: [],
+    }, {
+      id: 'received-audio', conversationId: 'e2e-chat', senderId: 'e2e-client', body: '',
+      attachmentUrl: 'https://media.example.test/received-audio.webm', attachmentName: 'voice-message-received.webm',
+      attachmentType: 'audio/webm', attachmentBytes: 10, voiceDurationSeconds: 8,
+      created_date: new Date().toISOString(), reactions: {}, readBy: [],
     }, ...savedMessages], nextCursor: null },
   }));
   await page.route('**/api/upload-sessions**', async route => {
@@ -149,6 +154,11 @@ test('sends images, documents, voice notes and GIFs without refresh', async ({ p
 
   await page.goto('/messages?conversation=e2e-chat');
   await expect(page.locator('section header').getByText('Preview Client', { exact: true })).toBeVisible();
+  const receivedAudio = page.locator('[data-chat-message-id="received-audio"] article');
+  const receivedTime = receivedAudio.locator('.chat-delivery-meta');
+  await expect(receivedTime).toBeVisible();
+  const [audioBox, timeBox] = await Promise.all([receivedAudio.boundingBox(), receivedTime.boundingBox()]);
+  expect(Math.abs(timeBox.x - audioBox.x)).toBeLessThan(12);
   const photoInput = page.locator('input[type="file"][multiple][accept^="image/"]');
   await photoInput.setInputFiles(path.resolve('public/brand/reigns-app-icon-192.png'));
   await page.getByRole('button', { name: 'Send attachments' }).click();
