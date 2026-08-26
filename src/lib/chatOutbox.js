@@ -1,6 +1,7 @@
 const DB_NAME = 'reigns-chat-outbox';
 const DB_VERSION = 1;
 const STORE_NAME = 'outbox';
+const memoryFallback = new Map();
 
 const fallbackKey = userId => `reigns-chat-outbox-fallback:${userId || 'guest'}`;
 
@@ -46,11 +47,15 @@ const writeFallback = (userId, items) => {
 };
 
 export async function listOutbox(userId) {
+  const inMemory = [...memoryFallback.values()].filter(item => item.userId === userId);
   try {
     const all = await transact('readonly', store => store.getAll());
-    return (all || []).filter(item => item.userId === userId).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+    return [...new Map([...(all || []).filter(item => item.userId === userId), ...inMemory]
+      .map(item => [item.clientId, item])).values()]
+      .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
   } catch {
-    return readFallback(userId);
+    return [...new Map([...readFallback(userId), ...inMemory].map(item => [item.clientId, item])).values()]
+      .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
   }
 }
 
@@ -58,9 +63,12 @@ export async function putOutbox(item) {
   const row = { ...item, updatedAt: new Date().toISOString() };
   try {
     await transact('readwrite', store => store.put(row));
+    memoryFallback.delete(row.clientId);
   } catch {
-    // JSON fallback supports text and GIF jobs. Binary jobs remain in memory when
-    // a browser disables IndexedDB because localStorage cannot safely hold files.
+    // Keep binary jobs alive for the current page when IndexedDB is unavailable.
+    // localStorage cannot clone Blob/File values, but dropping the job here leaves
+    // its optimistic message stuck at "Preparing" and prevents an online send.
+    memoryFallback.set(row.clientId, row);
     if (!row.attachments?.length) {
       const rows = readFallback(row.userId).filter(entry => entry.clientId !== row.clientId);
       writeFallback(row.userId, [...rows, row].slice(-100));
@@ -77,6 +85,7 @@ export async function patchOutbox(userId, clientId, changes) {
 }
 
 export async function removeOutbox(userId, clientId) {
+  memoryFallback.delete(clientId);
   try { await transact('readwrite', store => store.delete(clientId)); } catch { /* fallback below */ }
   writeFallback(userId, readFallback(userId).filter(item => item.clientId !== clientId));
 }

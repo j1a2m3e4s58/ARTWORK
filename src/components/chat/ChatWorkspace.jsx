@@ -18,7 +18,7 @@ import {
   Clapperboard,
   ClipboardPaste,
   Download,
-  File,
+  File as FileIcon,
   FileArchive,
   FileSpreadsheet,
   FileText,
@@ -87,6 +87,8 @@ const gifSearchMemoryCache = new Map();
 // reconciled. This prevents a GIF from flashing blank or changing size when
 // the optimistic row is replaced by the server response.
 const gifDisplaySources = new Map();
+const accountProtectedEncryptionFallback = error => /not enabled encrypted messaging|no verified recipient devices|encrypted messaging is not supported/i
+  .test(String(error?.message || error || ''));
 const outboxPreviewSources = new Map();
 const readGifSearchCache = query => {
   const key = String(query || '').trim().toLowerCase();
@@ -297,7 +299,7 @@ const fileVisual = (type, name = '') => {
       label: 'Archive',
       color: 'bg-purple-600 text-white',
     };
-  return { Icon: File, label: 'Shared file', color: 'bg-brass/15 text-brass' };
+  return { Icon: FileIcon, label: 'Shared file', color: 'bg-brass/15 text-brass' };
 };
 const formatBytes = (bytes) => {
   if (!bytes) return '';
@@ -1954,19 +1956,23 @@ export default function ChatWorkspace({ adminMode = false }) {
   };
   const messageBelongsToOutboxJob = (message, clientId) =>
     message.clientId === clientId || message.clientId?.startsWith(`${clientId}-`);
-  const processOutboxItem = async (item) => {
-    if (!item?.clientId || !navigator.onLine || !outboxSenderRef.current || outboxJobsRef.current.has(item.clientId)) return;
+  const processOutboxItem = async (item, sender = outboxSenderRef.current, persistence = null) => {
+    // navigator.onLine is only a connectivity hint and returns false on some
+    // working mobile/private-mode connections. Let the request establish
+    // reachability; recoverable network failures remain queued below.
+    if (!item?.clientId || !sender || outboxJobsRef.current.has(item.clientId)) return;
     const controller = new AbortController();
     const job = { controller, cancelled: false };
     outboxJobsRef.current.set(item.clientId, job);
     try {
-      await patchOutbox(user.id, item.clientId, { status: 'sending', lastError: '' });
+      void patchOutbox(user.id, item.clientId, { status: 'sending', lastError: '' }).catch(() => {});
       setMessages((current) => current.map((message) => messageBelongsToOutboxJob(message, item.clientId)
         ? { ...message, pending: true, failed: false, sendError: '' }
         : message));
-      await outboxSenderRef.current(item, { signal: controller.signal });
+      await sender(item, { signal: controller.signal });
       if (job.cancelled || controller.signal.aborted) return;
-      await removeOutbox(user.id, item.clientId);
+      void removeOutbox(user.id, item.clientId);
+      persistence?.then(() => removeOutbox(user.id, item.clientId)).catch(() => {});
       setMessages((current) => current.filter((message) => !messageBelongsToOutboxJob(message, item.clientId) || !message.pending));
       if (activeIdRef.current === item.conversationId) {
         await loadMessages(item.conversationId, '', { mergeLatest: true, scrollToBottom: true, smooth: true }).catch(() => {});
@@ -1986,8 +1992,9 @@ export default function ChatWorkspace({ adminMode = false }) {
         || [408, 409, 425, 429].includes(status)
         || status >= 500
         || /changed while this request|temporarily unavailable|please retry/i.test(lastError);
-      const willRetry = navigator.onLine && recoverable && attempts < 4;
-      await patchOutbox(user.id, item.clientId, { status: willRetry ? 'queued' : 'failed', attempts, lastError });
+      const willRetry = recoverable && attempts < 4;
+      const failureState = { status: willRetry ? 'queued' : 'failed', attempts, lastError };
+      void (persistence || Promise.resolve()).then(() => patchOutbox(user.id, item.clientId, failureState)).catch(() => {});
       setMessages((current) => current.map((message) => messageBelongsToOutboxJob(message, item.clientId)
         ? {
             ...message,
@@ -1997,7 +2004,7 @@ export default function ChatWorkspace({ adminMode = false }) {
             transferState: willRetry ? 'sending' : message.transferState,
           }
         : message));
-      if (willRetry) {
+      if (willRetry && navigator.onLine) {
         window.clearTimeout(outboxRetryTimersRef.current.get(item.clientId));
         const timer = window.setTimeout(() => {
           outboxRetryTimersRef.current.delete(item.clientId);
@@ -2007,15 +2014,15 @@ export default function ChatWorkspace({ adminMode = false }) {
       }
     } finally {
       outboxJobsRef.current.delete(item.clientId);
-      await refreshOutbox().catch(() => {});
+      void (persistence || Promise.resolve()).then(() => refreshOutbox()).catch(() => {});
     }
   };
-  const flushOutbox = async (onlyClientId = '') => {
-    if (!navigator.onLine || !outboxSenderRef.current || !user?.id) return;
+  const flushOutbox = async (onlyClientId = '', sender = outboxSenderRef.current) => {
+    if (!sender || !user?.id) return;
     const rows = (await listOutbox(user.id)).filter((item) => !onlyClientId || item.clientId === onlyClientId);
     // Every outbox item owns its upload and retry lifecycle. A large video can
     // keep uploading while later text, GIF or voice messages proceed normally.
-    rows.forEach((item) => { void processOutboxItem(item); });
+    rows.forEach((item) => { void processOutboxItem(item, sender); });
   };
   useEffect(() => {
     if (!user?.id) return undefined;
@@ -2045,7 +2052,7 @@ export default function ChatWorkspace({ adminMode = false }) {
             return {
               id: `pending-${itemClientId}`, clientId: itemClientId, conversationId: item.conversationId, senderId: user.id,
               body: attachment.caption || (index === 0 ? item.body : ''), attachmentUrl: outboxPreviewSources.get(previewKey) || '',
-              attachmentName: attachment.file?.name || 'Attachment', attachmentType: attachment.mime || attachment.file?.type || '',
+              attachmentName: attachment.name || attachment.file?.name || 'Attachment', attachmentType: attachment.mime || attachment.file?.type || '',
               attachmentBytes: attachment.file?.size || 0, voiceDurationSeconds: attachment.voiceDurationSeconds || 0,
               replyToId: index === 0 ? item.replyToId : null, pending: item.status !== 'failed', failed: item.status === 'failed',
               pendingLocalAttachment: true, reactions: {}, readBy: [user.id], created_date: item.createdAt,
@@ -2864,7 +2871,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       reactions: {},
       created_date: sentAt,
     }]);
-    await putOutbox({
+    const gifPersistence = putOutbox({
       clientId,
       userId: user.id,
       conversationId: activeId,
@@ -2873,7 +2880,7 @@ export default function ChatWorkspace({ adminMode = false }) {
       status: 'sending',
       createdAt: sentAt,
     });
-    refreshOutbox().catch(() => {});
+    gifPersistence.then(() => refreshOutbox()).catch(() => {});
     setGifPickerOpen(false);
     window.requestAnimationFrame(() => {
       const pane = messagesPaneRef.current;
@@ -2893,7 +2900,10 @@ export default function ChatWorkspace({ adminMode = false }) {
       setMessages(current => current.map(message => message.id === optimisticId
         ? {
             ...savedMessage,
-            attachmentUrl: gifDisplaySources.get(clientId) || imported.file_url,
+            // Once the server accepts the message, switch away from the remote
+            // provider thumbnail. The authenticated attachment route is stable,
+            // same-origin, and available immediately without a page refresh.
+            attachmentUrl: studioClient.chat.attachmentUrl(savedMessage.id),
             attachmentName: imported.media?.filename || gif.title || 'GIF',
             attachmentType: imported.media?.mime || 'image/gif',
             attachmentBytes: imported.media?.bytes || 0,
@@ -2902,7 +2912,9 @@ export default function ChatWorkspace({ adminMode = false }) {
             suppressPendingIndicator: true,
           }
         : message));
-      await removeOutbox(user.id, clientId);
+      gifDisplaySources.delete(clientId);
+      void removeOutbox(user.id, clientId);
+      gifPersistence.then(() => removeOutbox(user.id, clientId)).catch(() => {});
       refreshOutbox().catch(() => {});
       refreshLatestMessages(activeId, { scrollToBottom: true, smooth: true }).catch(() => {});
       load().catch(() => {});
@@ -3003,6 +3015,8 @@ export default function ChatWorkspace({ adminMode = false }) {
       attachments: outgoingAttachments.map(item => ({
         id: item.id,
         file: item.file,
+        name: item.file.name,
+        lastModified: item.file.lastModified || Date.now(),
         caption: String(item.caption || ''),
         mime: item.mime || item.file.type || 'application/octet-stream',
         voiceDurationSeconds: Number(item.file.voiceDurationSeconds) || 0,
@@ -3015,8 +3029,8 @@ export default function ChatWorkspace({ adminMode = false }) {
       status: 'queued',
       createdAt: new Date().toISOString(),
     };
-    await putOutbox(outboxJob);
-    refreshOutbox().catch(() => {});
+    const outboxPersistence = putOutbox(outboxJob);
+    outboxPersistence.then(() => refreshOutbox()).catch(() => {});
     setText('');
     setAttachments([]);
     setActiveAttachmentId('');
@@ -3028,7 +3042,10 @@ export default function ChatWorkspace({ adminMode = false }) {
     });
     // Sending runs independently in the outbox. Do not keep the composer busy:
     // later messages must be able to pass a large or temporarily stalled file.
-    window.setTimeout(() => flushOutbox(clientId), 0);
+    // Deliver the live job directly after the render completes. The outbox is a
+    // recovery copy, not a prerequisite for an online send: browser storage may
+    // reject binary structured clones even while the network works normally.
+    window.setTimeout(() => { void processOutboxItem(outboxJob, deliverQueuedOutbox, outboxPersistence); }, 0);
     return true;
   };
   const deliverQueuedOutbox = async (item, { signal } = {}) => {
@@ -3053,7 +3070,7 @@ export default function ChatWorkspace({ adminMode = false }) {
         try {
           ciphertext = await encryptChatText(studioClient, { body: item.body, participantIds: item.participantIds || [], userId: user.id });
         } catch (encryptionError) {
-          if (!/not enabled encrypted messaging|no verified recipient devices/i.test(String(encryptionError.message || ''))) throw encryptionError;
+          if (!accountProtectedEncryptionFallback(encryptionError)) throw encryptionError;
           deliverySecurity = 'account-protected';
         }
       }
@@ -3075,7 +3092,10 @@ export default function ChatWorkspace({ adminMode = false }) {
         const originalType = attachment.mime || file.type || 'application/octet-stream';
         const originalFile = file instanceof File && file.type === originalType
           ? file
-          : new File([file], file.name || `attachment-${index + 1}`, { type: originalType, lastModified: file.lastModified || Date.now() });
+          : new File([file], attachment.name || file.name || `attachment-${index + 1}`, {
+            type: originalType,
+            lastModified: attachment.lastModified || file.lastModified || Date.now(),
+          });
         const caption = String(attachment.caption || '').trim() || (index === 0 ? item.body : '');
         const shouldEncrypt = item.conversationType !== 'announcement';
         let encrypted = null;
@@ -3085,7 +3105,7 @@ export default function ChatWorkspace({ adminMode = false }) {
             ? await encryptChatAttachment(studioClient, { file: originalFile, body: caption, participantIds: item.participantIds || [], userId: user.id })
             : null;
         } catch (encryptionError) {
-          if (!/not enabled encrypted messaging|no verified recipient devices/i.test(String(encryptionError.message || ''))) throw encryptionError;
+          if (!accountProtectedEncryptionFallback(encryptionError)) throw encryptionError;
           deliverySecurity = 'account-protected';
         }
         const uploadFile = encrypted?.file || originalFile;
@@ -4719,7 +4739,7 @@ export default function ChatWorkspace({ adminMode = false }) {
                             const uploadId = message.pendingUploadItemId;
                             const progress = uploadId ? Math.max(1, uploadProgress[uploadId] || 1) : 100;
                             const stage = uploadId ? uploadStage[uploadId] || 'preparing' : 'sending';
-                            const label = ({ preparing: 'Preparing', uploading: 'Uploading', scanning: 'Scanning', sending: 'Sending' })[stage] || 'Sending';
+                            const label = ({ queued: 'Waiting for connection', preparing: 'Preparing', uploading: 'Uploading', scanning: 'Scanning', sending: 'Sending' })[stage] || 'Sending';
                             return (
                               <div className="chat-transfer-status mb-2 min-w-40 text-[10px] uppercase tracking-wider text-brass/75" role="status" aria-live="polite">
                                 <div className="flex items-center gap-2">
