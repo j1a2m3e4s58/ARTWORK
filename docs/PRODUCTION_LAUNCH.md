@@ -6,7 +6,8 @@ Create the Render Blueprint from `render.yaml`, then set every secret marked `sy
 
 Required provider checks:
 
-1. PostgreSQL is attached through `DATABASE_URL`; `/api/ready` reports `postgresql-relational`.
+1. The pooled Neon PostgreSQL URL (hostname containing `-pooler`) is stored in
+   Render's `DATABASE_URL` secret; `/api/ready` reports `postgresql-relational`.
 2. Cloudinary is configured and `STORAGE_PROVIDER=cloudinary`.
 3. SMTP sends verification, invitation, reset, message-reply and order emails.
 4. Turnstile succeeds and fails closed on public mutation forms.
@@ -46,7 +47,7 @@ Create a disposable PostgreSQL database, never the production database, and set 
 npm run backup:rehearse
 ```
 
-Record the archive timestamp, restored table inventory and reviewer. Also perform a Render-managed backup restoration rehearsal before launch.
+Record the archive timestamp, restored table inventory and reviewer. Also perform a Neon backup restoration rehearsal before launch.
 
 ## Go/no-go
 

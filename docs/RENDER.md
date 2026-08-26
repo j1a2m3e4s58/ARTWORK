@@ -8,6 +8,9 @@ branch.
 
 Enter these values during the first Blueprint creation:
 
+- `DATABASE_URL`: the pooled Neon production connection string. Keep
+  connection pooling enabled in Neon and use the URL whose hostname contains
+  `-pooler`. Store it only as a Render secret; never commit the URL or password.
 - `APP_ORIGIN` and `SITE_URL`: the final HTTPS Render URL, for example
   `https://reigns-atelier.onrender.com`. If Render assigns a suffixed hostname,
   update both values to the exact URL and redeploy.
@@ -39,7 +42,8 @@ Do not put any of these secret values in Git.
 The Blueprint creates:
 
 - one Node web service;
-- one PostgreSQL database connected through `DATABASE_URL`;
+- a secret `DATABASE_URL` input for the existing pooled Neon database (it does
+  not provision or link a Render PostgreSQL database);
 - `/api/ready` as the deployment health check;
 - Cloudinary as the required persistent media provider;
 - generated JWT and metrics secrets;
