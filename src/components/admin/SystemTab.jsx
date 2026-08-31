@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, BellRing, CheckCircle2, CheckSquare, Cloud, CreditCard, DatabaseBackup, MailCheck, MailWarning, RefreshCw, Server, Square, Trash2 } from 'lucide-react';
 import { studioClient } from '@/api/studioClient';
 import { useAuth } from '@/lib/AuthContext';
@@ -15,6 +15,9 @@ export default function SystemTab() {
   const [recoveryPassword, setRecoveryPassword] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');
   const [recoveryCodes, setRecoveryCodes] = useState([]);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryError, setRecoveryError] = useState('');
+  const recoveryPanelRef = useRef(null);
   const [testing, setTesting] = useState('');
   const [selectedLogs, setSelectedLogs] = useState(new Set());
   const [auditDelete, setAuditDelete] = useState(null);
@@ -76,11 +79,21 @@ export default function SystemTab() {
     setNotice('Queued email delivery was retried.');
   };
   const regenerateRecoveryCodes = async () => {
-    const result = await studioClient.mfa.regenerateRecoveryCodes(recoveryPassword, recoveryCode);
-    setRecoveryPassword('');
-    setRecoveryCode('');
-    setRecoveryCodes(result.recoveryCodes || []);
-    setNotice('Previous recovery codes were revoked. Save the new codes now.');
+    if (!recoveryPassword || recoveryCode.length !== 6 || recoveryBusy) return;
+    setRecoveryBusy(true);
+    setRecoveryError('');
+    try {
+      const result = await studioClient.mfa.regenerateRecoveryCodes(recoveryPassword, recoveryCode);
+      setRecoveryPassword('');
+      setRecoveryCode('');
+      setRecoveryCodes(result.recoveryCodes || []);
+      setNotice('Previous recovery codes were revoked. Save the new codes now.');
+      setTimeout(() => recoveryPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+    } catch (error) {
+      setRecoveryError(error.message || 'Recovery codes could not be generated. Request a fresh authenticator code and try again.');
+    } finally {
+      setRecoveryBusy(false);
+    }
   };
   const rehearse = async (name, action, successMessage) => {
     setTesting(name);
@@ -182,11 +195,23 @@ export default function SystemTab() {
         )}
         {user?.mfaEnabled && (
           <>
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              <input type="password" value={recoveryPassword} onChange={event => setRecoveryPassword(event.target.value)} placeholder="Current password" className="border border-brass/15 bg-obsidian px-3 py-2 text-sm text-ivory" />
-              <input value={recoveryCode} onChange={event => setRecoveryCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Authenticator code" className="border border-brass/15 bg-obsidian px-3 py-2 text-sm text-ivory" />
-              <button onClick={regenerateRecoveryCodes} className="border border-brass/25 px-4 py-2 text-sm text-brass">Generate new recovery codes</button>
-            </div>
+            <form className="mt-4 grid gap-2 sm:grid-cols-3" onSubmit={event => { event.preventDefault(); regenerateRecoveryCodes(); }}>
+              <input type="password" autoComplete="current-password" value={recoveryPassword} onChange={event => setRecoveryPassword(event.target.value)} placeholder="Current password" aria-label="Current password for recovery codes" className="border border-brass/15 bg-obsidian px-3 py-2 text-sm text-ivory" />
+              <input inputMode="numeric" autoComplete="one-time-code" value={recoveryCode} onChange={event => setRecoveryCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Authenticator code" aria-label="Authenticator code for recovery codes" className="border border-brass/15 bg-obsidian px-3 py-2 text-sm text-ivory" />
+              <button type="submit" disabled={!recoveryPassword || recoveryCode.length !== 6 || recoveryBusy} className="border border-brass/25 px-4 py-2 text-sm text-brass disabled:cursor-not-allowed disabled:opacity-40">
+                {recoveryBusy ? 'Generating…' : 'Generate new recovery codes'}
+              </button>
+            </form>
+            {recoveryError && <p role="alert" className="mt-3 border border-red-400/25 bg-red-400/5 p-3 text-sm text-red-200">{recoveryError}</p>}
+            {recoveryCodes.length > 0 && (
+              <div ref={recoveryPanelRef} id="mfa-recovery-codes" role="status" className="mt-4 border border-yellow-300/25 bg-yellow-300/5 p-4">
+                <p className="text-sm text-yellow-100">Save these one-time codes securely. They will disappear when you leave this section.</p>
+                <div className="mt-3 grid grid-cols-2 gap-2 font-mono text-sm text-brass sm:grid-cols-5">
+                  {recoveryCodes.map(code => <code key={code}>{code}</code>)}
+                </div>
+                <button type="button" onClick={() => setRecoveryCodes([])} className="mt-4 border border-brass/25 px-3 py-2 text-xs text-brass">I saved these codes</button>
+              </div>
+            )}
             <details className="mt-4 border-t border-ivory/10 pt-4">
               <summary className="cursor-pointer text-xs text-red-300/75">Disable two-factor authentication</summary>
               <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -196,15 +221,6 @@ export default function SystemTab() {
               </div>
             </details>
           </>
-        )}
-        {recoveryCodes.length > 0 && (
-          <div className="mt-5 border border-yellow-300/25 bg-yellow-300/5 p-4">
-            <p className="text-sm text-yellow-100">Save these one-time codes securely. They will disappear when you leave this section.</p>
-            <div className="mt-3 grid grid-cols-2 gap-2 font-mono text-sm text-brass sm:grid-cols-5">
-              {recoveryCodes.map(code => <code key={code}>{code}</code>)}
-            </div>
-            <button onClick={() => setRecoveryCodes([])} className="mt-4 border border-brass/25 px-3 py-2 text-xs text-brass">I saved these codes</button>
-          </div>
         )}
       </section>
       <div className="mb-4 mt-10 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">

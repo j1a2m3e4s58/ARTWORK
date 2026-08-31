@@ -7,6 +7,7 @@ import path from 'node:path';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { createDecipheriv, createHash } from 'node:crypto';
+import { authenticator } from 'otplib';
 
 let baseUrl;
 
@@ -114,6 +115,24 @@ test('API keeps public reads open while blocking unverified customer mutations',
       ...unlockResponse.headers.getSetCookie().map(value => value.split(';')[0]),
     ].join('; ');
     const securedHeaders = { 'Content-Type': 'application/json', Cookie: adminCookieHeader, 'X-CSRF-Token': adminCsrf };
+    const mfaSetupResponse = await fetch(`${baseUrl}/api/admin/mfa/setup`, { method: 'POST', headers: securedHeaders });
+    assert.equal(mfaSetupResponse.status, 200);
+    const mfaSetup = await mfaSetupResponse.json();
+    assert.ok(mfaSetup.manualKey);
+    const enableMfaResponse = await fetch(`${baseUrl}/api/admin/mfa/enable`, {
+      method: 'POST', headers: securedHeaders, body: JSON.stringify({ code: authenticator.generate(mfaSetup.manualKey) }),
+    });
+    assert.equal(enableMfaResponse.status, 200);
+    const initialRecoveryCodes = (await enableMfaResponse.json()).recoveryCodes;
+    assert.ok(initialRecoveryCodes.length > 0);
+    const regenerateRecoveryCodesResponse = await fetch(`${baseUrl}/api/admin/mfa/recovery-codes`, {
+      method: 'POST', headers: securedHeaders,
+      body: JSON.stringify({ password: 'AdminCanvas2026!', code: authenticator.generate(mfaSetup.manualKey) }),
+    });
+    assert.equal(regenerateRecoveryCodesResponse.status, 200);
+    const regeneratedRecoveryCodes = (await regenerateRecoveryCodesResponse.json()).recoveryCodes;
+    assert.equal(regeneratedRecoveryCodes.length, initialRecoveryCodes.length);
+    assert.notDeepEqual(regeneratedRecoveryCodes, initialRecoveryCodes);
     const readOutbox = async () => {
       const response = await fetch(`${baseUrl}/api/entities/Outbox?limit=100`, { headers: { Cookie: adminCookieHeader } });
       assert.equal(response.status, 200);
