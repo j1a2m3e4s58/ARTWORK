@@ -600,5 +600,14 @@ export const studioClient = {
       method: 'POST',
       body: JSON.stringify({ password, code }),
     }),
+    startReenrollment: (password, recoveryCode) => request('/api/admin/mfa/reenroll/start', {
+      method: 'POST',
+      body: JSON.stringify({ password, recoveryCode }),
+    }),
+    cancelReenrollment: () => request('/api/admin/mfa/reenroll', { method: 'DELETE' }),
+    confirmReenrollment: (challenge, code) => request('/api/admin/mfa/reenroll/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ challenge, code }),
+    }),
   },
 };

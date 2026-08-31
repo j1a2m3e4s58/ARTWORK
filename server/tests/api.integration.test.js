@@ -133,6 +133,17 @@ test('API keeps public reads open while blocking unverified customer mutations',
     const regeneratedRecoveryCodes = (await regenerateRecoveryCodesResponse.json()).recoveryCodes;
     assert.equal(regeneratedRecoveryCodes.length, initialRecoveryCodes.length);
     assert.notDeepEqual(regeneratedRecoveryCodes, initialRecoveryCodes);
+    const directReenrollmentStart = await fetch(`${baseUrl}/api/admin/mfa/reenroll/start`, {
+      method: 'POST', headers: securedHeaders,
+      body: JSON.stringify({ password: 'AdminCanvas2026!', recoveryCode: regeneratedRecoveryCodes[1] }),
+    });
+    assert.equal(directReenrollmentStart.status, 200, 'A signed-in administrator should be able to start replacement with password and one unused recovery code.');
+    const cancelledReenrollment = await directReenrollmentStart.json();
+    assert.equal((await fetch(`${baseUrl}/api/admin/mfa/reenroll`, { method: 'DELETE', headers: securedHeaders })).status, 200);
+    assert.equal((await fetch(`${baseUrl}/api/admin/mfa/reenroll/confirm`, {
+      method: 'POST', headers: securedHeaders,
+      body: JSON.stringify({ challenge: cancelledReenrollment.challenge, code: authenticator.generate(cancelledReenrollment.manualKey) }),
+    })).status, 400, 'Cancelling replacement must invalidate its pending secret.');
     const readOutbox = async () => {
       const response = await fetch(`${baseUrl}/api/entities/Outbox?limit=100`, { headers: { Cookie: adminCookieHeader } });
       assert.equal(response.status, 200);
@@ -577,6 +588,69 @@ test('API keeps public reads open while blocking unverified customer mutations',
     assert.equal(accountOrders.some(item => item.id === firstOrder.id), false, 'A dismissed unfinished order should leave the account view.');
     const productsAfter = await fetch(`${baseUrl}/api/entities/ShopProduct?limit=10`, { headers: { Cookie: adminCookieHeader } }).then(response => response.json());
     assert.equal(productsAfter.find(item => item.id === product.id).inventory, 2);
+
+    const recoveryLoginResponse = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@example.test', password: 'AdminCanvas2026!' }),
+    });
+    assert.equal(recoveryLoginResponse.status, 200);
+    const recoveryLoginChallenge = (await recoveryLoginResponse.json()).challenge;
+    assert.ok(recoveryLoginChallenge);
+    const recoveryVerificationResponse = await fetch(`${baseUrl}/api/auth/mfa/verify-login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challenge: recoveryLoginChallenge, code: regeneratedRecoveryCodes[0] }),
+    });
+    assert.equal(recoveryVerificationResponse.status, 200);
+    let recoverySessionCookies = recoveryVerificationResponse.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
+    const recoverySessionCsrf = decodeURIComponent(recoverySessionCookies.match(/atelier_csrf=([^;]+)/)?.[1] || '');
+    const recoveryUnlockResponse = await fetch(`${baseUrl}/api/admin/unlock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: recoverySessionCookies, 'X-CSRF-Token': recoverySessionCsrf },
+      body: JSON.stringify({ password: 'AdminCanvas2026!' }),
+    });
+    assert.equal(recoveryUnlockResponse.status, 200);
+    recoverySessionCookies = [
+      ...recoverySessionCookies.split('; ').filter(value => !value.startsWith('atelier_admin_access=')),
+      ...recoveryUnlockResponse.headers.getSetCookie().map(value => value.split(';')[0]),
+    ].join('; ');
+    const recoverySessionHeaders = { 'Content-Type': 'application/json', Cookie: recoverySessionCookies, 'X-CSRF-Token': recoverySessionCsrf };
+    const reenrollmentStartResponse = await fetch(`${baseUrl}/api/admin/mfa/reenroll/start`, {
+      method: 'POST', headers: recoverySessionHeaders,
+      body: JSON.stringify({ password: 'AdminCanvas2026!', recoveryCode: '' }),
+    });
+    assert.equal(reenrollmentStartResponse.status, 200);
+    const reenrollmentSetup = await reenrollmentStartResponse.json();
+    assert.ok(reenrollmentSetup.challenge);
+    assert.ok(reenrollmentSetup.manualKey);
+    const reenrollmentConfirmResponse = await fetch(`${baseUrl}/api/admin/mfa/reenroll/confirm`, {
+      method: 'POST', headers: recoverySessionHeaders,
+      body: JSON.stringify({ challenge: reenrollmentSetup.challenge, code: authenticator.generate(reenrollmentSetup.manualKey) }),
+    });
+    assert.equal(reenrollmentConfirmResponse.status, 200);
+    const reenrollmentResult = await reenrollmentConfirmResponse.json();
+    assert.equal(reenrollmentResult.sessionsRevoked, true);
+    assert.equal(reenrollmentResult.recoveryCodes.length, regeneratedRecoveryCodes.length);
+    assert.notDeepEqual(reenrollmentResult.recoveryCodes, regeneratedRecoveryCodes);
+    assert.equal(await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: adminCookieHeader } }).then(response => response.json()), null, 'The pre-recovery administrator session must be revoked.');
+    assert.equal(await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: recoverySessionCookies } }).then(response => response.json()), null, 'The recovery session must be replaced after MFA changes.');
+    let replacementCookies = reenrollmentConfirmResponse.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
+    const recoveredAdmin = await fetch(`${baseUrl}/api/auth/me`, { headers: { Cookie: replacementCookies } }).then(response => response.json());
+    assert.equal(recoveredAdmin.email, 'admin@example.test', 'The browser completing recovery should receive a replacement session.');
+    const replacementCsrf = decodeURIComponent(replacementCookies.match(/atelier_csrf=([^;]+)/)?.[1] || '');
+    const replacementUnlock = await fetch(`${baseUrl}/api/admin/unlock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: replacementCookies, 'X-CSRF-Token': replacementCsrf },
+      body: JSON.stringify({ password: 'AdminCanvas2026!' }),
+    });
+    assert.equal(replacementUnlock.status, 200);
+    replacementCookies = [
+      ...replacementCookies.split('; ').filter(value => !value.startsWith('atelier_admin_access=')),
+      ...replacementUnlock.headers.getSetCookie().map(value => value.split(';')[0]),
+    ].join('; ');
+    const recoveryAudit = await fetch(`${baseUrl}/api/entities/AuditLog?limit=100`, { headers: { Cookie: replacementCookies } }).then(response => response.json());
+    assert.ok(recoveryAudit.some(item => item.action === 'account.mfa_reenrolled'), 'MFA replacement must create an audit record.');
+    const recoveryOutbox = await fetch(`${baseUrl}/api/entities/Outbox?limit=100`, { headers: { Cookie: replacementCookies } }).then(response => response.json());
+    assert.ok(recoveryOutbox.some(item => item.to === 'admin@example.test' && item.subject === 'Your authenticator was replaced'), 'MFA replacement must send a security email.');
   } finally {
     child.kill();
     if (child.exitCode === null) await once(child, 'exit');

@@ -18,6 +18,12 @@ export default function SystemTab() {
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [recoveryError, setRecoveryError] = useState('');
   const recoveryPanelRef = useRef(null);
+  const [reenrollPassword, setReenrollPassword] = useState('');
+  const [reenrollRecoveryCode, setReenrollRecoveryCode] = useState('');
+  const [reenrollSetup, setReenrollSetup] = useState(null);
+  const [reenrollCode, setReenrollCode] = useState('');
+  const [reenrollBusy, setReenrollBusy] = useState(false);
+  const [reenrollError, setReenrollError] = useState('');
   const [testing, setTesting] = useState('');
   const [selectedLogs, setSelectedLogs] = useState(new Set());
   const [auditDelete, setAuditDelete] = useState(null);
@@ -93,6 +99,58 @@ export default function SystemTab() {
       setRecoveryError(error.message || 'Recovery codes could not be generated. Request a fresh authenticator code and try again.');
     } finally {
       setRecoveryBusy(false);
+    }
+  };
+  const startMfaReenrollment = async event => {
+    event.preventDefault();
+    const recoveryLength = reenrollRecoveryCode.replace(/[^a-f0-9]/gi, '').length;
+    if (!reenrollPassword || ![0, 12].includes(recoveryLength) || reenrollBusy) return;
+    setReenrollBusy(true);
+    setReenrollError('');
+    try {
+      const result = await studioClient.mfa.startReenrollment(reenrollPassword, reenrollRecoveryCode);
+      setReenrollPassword('');
+      setReenrollRecoveryCode('');
+      setReenrollSetup(result);
+      setNotice('Recovery code accepted. Scan the replacement authenticator and confirm its new code.');
+    } catch (error) {
+      setReenrollError(error.message || 'Authenticator replacement could not be started.');
+    } finally {
+      setReenrollBusy(false);
+    }
+  };
+  const confirmMfaReenrollment = async event => {
+    event.preventDefault();
+    if (!reenrollSetup?.challenge || reenrollCode.length !== 6 || reenrollBusy) return;
+    setReenrollBusy(true);
+    setReenrollError('');
+    try {
+      const result = await studioClient.mfa.confirmReenrollment(reenrollSetup.challenge, reenrollCode);
+      setReenrollSetup(null);
+      setReenrollCode('');
+      setRecoveryCodes(result.recoveryCodes || []);
+      setNotice('Authenticator replaced. Older sessions were signed out. Save the new recovery codes now.');
+      await checkUserAuth();
+      setTimeout(() => recoveryPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+    } catch (error) {
+      setReenrollError(error.message || 'The replacement authenticator could not be confirmed.');
+    } finally {
+      setReenrollBusy(false);
+    }
+  };
+  const cancelMfaReenrollment = async () => {
+    if (reenrollBusy) return;
+    setReenrollBusy(true);
+    setReenrollError('');
+    try {
+      await studioClient.mfa.cancelReenrollment();
+      setReenrollSetup(null);
+      setReenrollCode('');
+      setNotice('Authenticator replacement cancelled. Your existing authenticator is still active.');
+    } catch (error) {
+      setReenrollError(error.message || 'Authenticator replacement could not be cancelled safely.');
+    } finally {
+      setReenrollBusy(false);
     }
   };
   const rehearse = async (name, action, successMessage) => {
@@ -212,6 +270,38 @@ export default function SystemTab() {
                 <button type="button" onClick={() => setRecoveryCodes([])} className="mt-4 border border-brass/25 px-3 py-2 text-xs text-brass">I saved these codes</button>
               </div>
             )}
+            <details className="mt-4 border-t border-brass/15 pt-4">
+              <summary className="cursor-pointer text-xs text-brass">Replace a lost authenticator using a recovery code</summary>
+              <p className="mt-3 text-xs leading-relaxed text-ivory/45">
+                This consumes one recovery code. Your existing authenticator remains active until the replacement is confirmed. Completing recovery signs out every older device and replaces all recovery codes.
+                If you signed in with a recovery code within the last 15 minutes, leave the recovery-code field empty—the recent sign-in is already your recovery proof.
+              </p>
+              {!reenrollSetup ? (
+                <form onSubmit={startMfaReenrollment} className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <input type="password" autoComplete="current-password" value={reenrollPassword} onChange={event => setReenrollPassword(event.target.value)} placeholder="Current password" aria-label="Current password for authenticator replacement" className="border border-brass/15 bg-obsidian px-3 py-2 text-sm text-ivory" />
+                  <input autoCapitalize="characters" autoComplete="one-time-code" value={reenrollRecoveryCode} onChange={event => setReenrollRecoveryCode(event.target.value.toUpperCase().replace(/[^A-F0-9-]/g, '').slice(0, 14))} placeholder="Recovery code (if requested)" aria-label="Recovery code for authenticator replacement" className="border border-brass/15 bg-obsidian px-3 py-2 font-mono text-sm uppercase text-ivory" />
+                  <button type="submit" disabled={!reenrollPassword || ![0, 12].includes(reenrollRecoveryCode.replace(/[^A-F0-9]/g, '').length) || reenrollBusy} className="border border-brass/25 px-4 py-2 text-sm text-brass disabled:cursor-not-allowed disabled:opacity-40">
+                    {reenrollBusy ? 'Checking…' : 'Start secure replacement'}
+                  </button>
+                </form>
+              ) : (
+                <div className="mt-4 grid gap-5 sm:grid-cols-[180px_1fr]">
+                  <img src={reenrollSetup.qrDataUrl} alt="Replacement authenticator QR code" className="h-44 w-44 bg-white p-2" />
+                  <form onSubmit={confirmMfaReenrollment}>
+                    <p className="text-xs text-ivory/45">Scan this replacement code, or enter the key manually:</p>
+                    <code className="mt-2 block break-all text-xs text-brass">{reenrollSetup.manualKey}</code>
+                    <input inputMode="numeric" autoComplete="one-time-code" value={reenrollCode} onChange={event => setReenrollCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="New 6-digit code" aria-label="Code from replacement authenticator" className="mt-4 w-full border border-brass/15 bg-obsidian px-3 py-2 text-sm text-ivory" />
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button type="submit" disabled={reenrollCode.length !== 6 || reenrollBusy} className="bg-brass px-4 py-2 text-sm text-obsidian disabled:cursor-not-allowed disabled:opacity-40">
+                        {reenrollBusy ? 'Replacing…' : 'Confirm replacement'}
+                      </button>
+                      <button type="button" disabled={reenrollBusy} onClick={cancelMfaReenrollment} className="border border-brass/20 px-4 py-2 text-sm text-ivory/60">Cancel</button>
+                    </div>
+                  </form>
+                </div>
+              )}
+              {reenrollError && <p role="alert" className="mt-3 border border-red-400/25 bg-red-400/5 p-3 text-sm text-red-200">{reenrollError}</p>}
+            </details>
             <details className="mt-4 border-t border-ivory/10 pt-4">
               <summary className="cursor-pointer text-xs text-red-300/75">Disable two-factor authentication</summary>
               <div className="mt-3 grid gap-2 sm:grid-cols-3">

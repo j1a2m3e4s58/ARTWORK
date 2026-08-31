@@ -193,7 +193,7 @@ const staffRoles = new Set(['admin', 'editor', 'support']);
 const contentEntities = new Set(['Artwork', 'Award', 'BlogPost', 'HeroSlide', 'Media', 'PriceGuide', 'Quote', 'ShopProduct', 'SiteContent', 'Testimonial', 'Video']);
 const supportEntities = new Set(['ArtRequest', 'CommissionRequest', 'FilmRequest', 'InternshipApplication', 'Message', 'Order']);
 const hiddenUserFields = ({
-  passwordHash, mfaSecret, pendingMfaSecret, mfaRecoveryCodeHashes,
+  passwordHash, mfaSecret, pendingMfaSecret, pendingMfaReenrollment, mfaRecoveryCodeHashes,
   managedPasswordFingerprint, ...user
 }) => user;
 const hashToken = token => createHash('sha256').update(token).digest('hex');
@@ -207,6 +207,10 @@ const setRecoveryCodes = user => {
   const codes = createRecoveryCodes();
   user.mfaRecoveryCodeHashes = codes.map(code => hashToken(normalizeRecoveryCode(code)));
   return codes;
+};
+const recoveryCodeIndex = (user, value) => {
+  const candidateHash = hashToken(normalizeRecoveryCode(value));
+  return user?.mfaRecoveryCodeHashes?.findIndex(item => safeEqual(item, candidateHash)) ?? -1;
 };
 const secureCookie = process.env.NODE_ENV === 'production';
 const encryptionKey = createHash('sha256').update(jwtSecret).digest();
@@ -627,12 +631,13 @@ function sign(user, sessionId = '') {
   return jwt.sign({ id: user.id, version: user.sessionVersion || 0, sessionId }, jwtSecret, { expiresIn: '7d' });
 }
 
-function setSession(res, user, req = null) {
+function setSession(res, user, req = null, security = {}) {
   const sessionId = newId();
   db.data.ChatDevice.push({
     id: sessionId, userId: user.id,
     label: String(req?.get?.('user-agent') || 'Browser session').slice(0, 240),
     ipHash: req?.ip ? createHash('sha256').update(`${req.ip}:${jwtSecret}`).digest('hex').slice(0, 24) : '',
+    ...(security.mfaRecoveryAuthenticatedAt ? { mfaRecoveryAuthenticatedAt: security.mfaRecoveryAuthenticatedAt } : {}),
     lastSeenAt: now(), created_date: now(),
   });
   res.clearCookie('atelier_admin_access');
@@ -1351,8 +1356,7 @@ app.post('/api/auth/mfa/verify-login', authLimiter, async (req, res) => {
     const suppliedCode = String(req.body.code || '');
     const authenticatorValid = user?.mfaSecret && /^\d{6}$/.test(suppliedCode)
       && authenticator.check(suppliedCode, decrypt(user.mfaSecret));
-    const recoveryHash = hashToken(normalizeRecoveryCode(suppliedCode));
-    const recoveryIndex = user?.mfaRecoveryCodeHashes?.findIndex(item => safeEqual(item, recoveryHash)) ?? -1;
+    const recoveryIndex = recoveryCodeIndex(user, suppliedCode);
     if (!user?.mfaSecret || (!authenticatorValid && recoveryIndex < 0)) {
       return res.status(401).json({ error: 'Invalid authentication code.' });
     }
@@ -1368,7 +1372,7 @@ app.post('/api/auth/mfa/verify-login', authLimiter, async (req, res) => {
         text: 'A one-time recovery code was used to sign in. If this was not you, reset your password immediately.',
       });
     }
-    setSession(res, user, req);
+    setSession(res, user, req, recoveryIndex >= 0 ? { mfaRecoveryAuthenticatedAt: now() } : {});
     res.json(hiddenUserFields(user));
   } catch {
     res.status(401).json({ error: 'The authentication challenge expired. Sign in again.' });
@@ -1685,6 +1689,93 @@ app.post('/api/admin/mfa/recovery-codes', requireAdmin, authLimiter, async (req,
     text: 'Your previous Reigns Atelier recovery codes were replaced. If this was not you, reset your password immediately.',
   });
   res.json({ success: true, recoveryCodes });
+});
+
+app.post('/api/admin/mfa/reenroll/start', requireAdmin, authLimiter, async (req, res) => {
+  const passwordValid = await bcrypt.compare(String(req.body.password || ''), req.user.passwordHash);
+  const usedRecoveryCode = recoveryCodeIndex(req.user, req.body.recoveryCode);
+  const currentDevice = db.data.ChatDevice.find(item => item.id === req.user._sessionId && item.userId === req.user.id && !item.revokedAt);
+  const recentRecoverySignIn = Date.parse(currentDevice?.mfaRecoveryAuthenticatedAt || 0) > Date.now() - 15 * 60 * 1000;
+  if (!passwordValid || (!recentRecoverySignIn && usedRecoveryCode < 0)) {
+    return res.status(400).json({ error: 'Password or recovery code is incorrect.' });
+  }
+
+  const secret = authenticator.generateSecret();
+  const challenge = token();
+  const label = encodeURIComponent(`Reigns Atelier:${req.user.email}`);
+  const issuer = encodeURIComponent('Reigns Atelier');
+  const otpauth = `otpauth://totp/${label}?secret=${secret}&issuer=${issuer}`;
+  const qrDataUrl = await QRCode.toDataURL(otpauth);
+  // Consume the recovery code before disclosing a replacement secret. The
+  // existing authenticator remains active until the new one is confirmed.
+  if (!recentRecoverySignIn) req.user.mfaRecoveryCodeHashes.splice(usedRecoveryCode, 1);
+  req.user.pendingMfaReenrollment = encrypt(JSON.stringify({
+    secret,
+    challengeHash: hashToken(challenge),
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+  }));
+  await audit(req.user, 'account.mfa_reenrollment_started', 'User', req.user.id, {
+    remainingCodes: req.user.mfaRecoveryCodeHashes.length,
+    recoveryProof: recentRecoverySignIn ? 'recent-recovery-sign-in' : 'one-time-recovery-code',
+  });
+  await save();
+  await deliverEmail({
+    to: req.user.email,
+    subject: 'Authenticator replacement started',
+    text: 'A password and one-time recovery code were used to start replacing your Reigns Atelier authenticator. Your existing authenticator remains active until the replacement is confirmed. If this was not you, reset your password immediately.',
+  });
+  res.json({
+    challenge,
+    qrDataUrl,
+    manualKey: secret,
+    expiresInSeconds: 600,
+  });
+});
+
+app.delete('/api/admin/mfa/reenroll', requireAdmin, authLimiter, async (req, res) => {
+  delete req.user.pendingMfaReenrollment;
+  await audit(req.user, 'account.mfa_reenrollment_cancelled', 'User', req.user.id);
+  await save();
+  res.json({ success: true });
+});
+
+app.post('/api/admin/mfa/reenroll/confirm', requireAdmin, authLimiter, async (req, res) => {
+  let pending;
+  try {
+    pending = JSON.parse(decrypt(req.user.pendingMfaReenrollment));
+  } catch {
+    return res.status(400).json({ error: 'Start authenticator replacement again.' });
+  }
+  const challengeValid = safeEqual(pending.challengeHash, hashToken(String(req.body.challenge || '')));
+  const unexpired = Date.parse(pending.expiresAt || 0) > Date.now();
+  const codeValid = /^\d{6}$/.test(String(req.body.code || ''))
+    && authenticator.check(String(req.body.code), pending.secret);
+  if (!challengeValid || !unexpired || !codeValid) {
+    return res.status(400).json({ error: unexpired ? 'The new authenticator code is incorrect.' : 'Authenticator replacement expired. Start again.' });
+  }
+
+  req.user.mfaSecret = encrypt(pending.secret);
+  req.user.mfaEnabled = true;
+  delete req.user.pendingMfaSecret;
+  delete req.user.pendingMfaReenrollment;
+  const recoveryCodes = setRecoveryCodes(req.user);
+  req.user.sessionVersion = (req.user.sessionVersion || 0) + 1;
+  const revokedAt = now();
+  db.data.ChatDevice
+    .filter(item => item.userId === req.user.id && !item.revokedAt)
+    .forEach(item => { item.revokedAt = revokedAt; item.updated_date = revokedAt; });
+  await audit(req.user, 'account.mfa_reenrolled', 'User', req.user.id, {
+    sessionsRevoked: true,
+    recoveryCodesReplaced: true,
+  });
+  setSession(res, req.user, req);
+  await save();
+  await deliverEmail({
+    to: req.user.email,
+    subject: 'Your authenticator was replaced',
+    text: 'Your Reigns Atelier authenticator and recovery codes were replaced, and all older sessions were signed out. If this was not you, reset your password and contact the studio immediately.',
+  });
+  res.json({ success: true, recoveryCodes, sessionsRevoked: true });
 });
 
 const chatTyping = new Map();
